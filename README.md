@@ -72,6 +72,18 @@ Le script `scripts/dev.mjs` fait tout dans l'ordre :
 
 Options : `npm run dev -- --rebuild` force un nouveau build, `npm run dev -- --ip 192.168.1.20` impose l'IP du PC.
 
+**PC sans Docker** (Windows allégé sans WSL, par exemple) : fais tourner l'API sur une autre machine du réseau, puis pointe l'app dessus.
+
+```sh
+# Sur une VM Linux (Ubuntu Server sur Proxmox par exemple)
+curl -fsSL https://get.docker.com | sh
+git clone https://github.com/cytrafps/zelo && cd zelo
+docker compose -f infra/compose.yaml up -d --build
+
+# Sur le PC
+npm run dev -- --api http://<ip-de-la-vm>:8080
+```
+
 API seule :
 
 ```sh

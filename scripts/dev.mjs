@@ -5,9 +5,11 @@
 //   npm run dev               tout démarrer
 //   npm run dev -- --rebuild  forcer un nouveau development build
 //   npm run dev -- --ip 192.168.1.20   imposer l'IP du PC
+//   npm run dev -- --api http://192.168.1.50:8080   utiliser une API déjà lancée ailleurs
+//                             (homelab, serveur) : Docker n'est alors pas nécessaire sur ce PC
 //   npm run stop              arrêter l'API et la base (les données sont gardées)
 //
-// Aucune dépendance : Node 20+ et Docker suffisent. Windows, macOS et Linux.
+// Aucune dépendance : Node 20+ et Docker (sauf avec --api) suffisent. Windows, macOS et Linux.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -62,18 +64,28 @@ async function main() {
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major < 20 || (major === 20 && minor < 19)) fail(`Node ${process.versions.node} trop ancien.`, 'Installe Node 22 LTS : https://nodejs.org');
   ok(`Node ${process.versions.node}`);
-  if (run('docker', ['info']).code !== 0) fail('Docker ne répond pas.', WIN ? 'Lance Docker Desktop puis relance la commande.' : 'Démarre Docker puis relance la commande.');
-  ok('Docker');
+  const remote = option('--api')?.replace(/\/$/, '');
+  if (!remote) {
+    if (run('docker', ['info']).code !== 0) fail('Docker ne répond pas.', WIN ? 'Lance Docker Desktop, ou utilise une API distante : npm run dev -- --api http://<ip-du-serveur>:8080' : 'Démarre Docker, ou utilise une API distante avec --api.');
+    ok('Docker');
+  }
 
   const ip = option('--ip') ?? lanAddress();
   if (!ip) fail('Aucune adresse réseau local trouvée.', 'Connecte le PC au Wi-Fi, ou passe --ip <adresse>.');
   ok(`IP du PC sur le réseau local : ${bold(ip)}`);
 
-  await startApi(ip);
+  const apiUrl = remote ?? `http://${ip}:${API_PORT}`;
+  if (remote) {
+    step('API distante');
+    if (!(await waitFor(`${remote}/healthz`, 5_000))) fail(`${remote}/healthz ne répond pas.`, 'Vérifie que l’API tourne sur le serveur et que le port 8080 est ouvert.');
+    ok(`API prête : ${remote}`);
+  } else {
+    await startApi(ip);
+  }
   installDependencies();
   ensureEasAccount();
   await ensureDevBuild();
-  startMetro(ip);
+  startMetro(ip, apiUrl);
 }
 
 // --- API ---------------------------------------------------------------------
@@ -219,17 +231,17 @@ function saveMarker(fingerprint) {
   writeFileSync(MARKER, JSON.stringify({ fingerprint, builtAt: new Date().toISOString() }, null, 2));
 }
 
-function startMetro(ip) {
+function startMetro(ip, apiUrl) {
   step('Serveur de développement (Metro)');
   console.log(`  Dans l’app Zelo sur le téléphone (même Wi-Fi que le PC), scanne le QR code ci-dessous.`);
-  console.log(dim(`  API utilisée par l’app : http://${ip}:${API_PORT} · Ctrl+C pour quitter (l’API reste lancée, « npm run stop » pour l’arrêter)\n`));
+  console.log(dim(`  API utilisée par l’app : ${apiUrl} · Ctrl+C pour quitter\n`));
   const child = spawn('npx', ['expo', 'start', '--dev-client'], {
     cwd: MOBILE,
     stdio: 'inherit',
     shell: WIN,
     env: {
       ...process.env,
-      EXPO_PUBLIC_API_URL: `http://${ip}:${API_PORT}`,
+      EXPO_PUBLIC_API_URL: apiUrl,
       // Sans ça, Expo peut mettre dans le QR code l'IP d'une carte virtuelle (WSL, Docker…).
       REACT_NATIVE_PACKAGER_HOSTNAME: ip,
     },
