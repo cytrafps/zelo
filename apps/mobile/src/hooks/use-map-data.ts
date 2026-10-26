@@ -79,7 +79,7 @@ export function useMapData(view: BBox | null) {
   const upsertReport = useCallback((r: Report) => {
     setReports((list) => {
       const i = list.findIndex((x) => x.id === r.id);
-      return i === -1 ? [...list, r] : list.with(i, r);
+      return i === -1 ? [...list, r] : list.map((x, j) => (j === i ? r : x));
     });
   }, []);
 
