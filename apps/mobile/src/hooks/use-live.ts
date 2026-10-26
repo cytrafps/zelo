@@ -9,9 +9,10 @@ import { LIVE_URL, type LiveEvent, type Report } from '@/api/zelo';
  * (pas de batterie gaspillée) et rouvert au retour. Après chaque reconnexion,
  * `onResync` permet de recharger ce qui a pu être manqué pendant la coupure.
  */
-export function useLive(onReport: (r: Report) => void, onResync: () => void) {
+export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) => void, onResync: () => void) {
   const [connected, setConnected] = useState(false);
   const report = useEffectEvent(onReport);
+  const removed = useEffectEvent(onRemoved);
   const resync = useEffectEvent(onResync);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export function useLive(onReport: (r: Report) => void, onResync: () => void) {
         try {
           const ev = JSON.parse(String(e.data)) as LiveEvent;
           if (ev.type === 'report') report(ev.report);
+          else if (ev.type === 'report_removed') removed(ev.id);
         } catch {
           // message illisible : ignoré
         }

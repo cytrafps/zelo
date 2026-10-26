@@ -3,6 +3,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,7 +48,8 @@ type Store interface {
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(context.Context, store.BBox, int) ([]store.Parking, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
-	AddReport(context.Context, string, float64, float64, time.Duration) (store.Report, error)
+	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
+	Vote(ctx context.Context, id int64, voter string, up bool, ttl func(kind string) time.Duration) (store.Report, bool, error)
 }
 
 type Config struct {
@@ -61,11 +64,14 @@ type API struct {
 	hub     *live.Hub
 	log     *slog.Logger
 	cfg     Config
-	limiter *ipLimiter
+	limiter *ipLimiter // création de signalements
+	votes   *ipLimiter // votes, plus fréquents
 }
 
 func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
-	a := &API{store: s, hub: hub, log: log, cfg: cfg, limiter: newIPLimiter(rate.Every(12*time.Second), 5)}
+	a := &API{store: s, hub: hub, log: log, cfg: cfg,
+		limiter: newIPLimiter(rate.Every(12*time.Second), 5),
+		votes:   newIPLimiter(rate.Every(3*time.Second), 10)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /healthz", a.health)
@@ -74,6 +80,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /v1/parkings", a.parkings)
 	mux.HandleFunc("GET /v1/reports", a.reports)
 	mux.HandleFunc("POST /v1/reports", a.addReport)
+	mux.HandleFunc("POST /v1/reports/{id}/votes", a.vote)
 	mux.HandleFunc("GET /v1/live", a.liveFeed)
 	return mux
 }
@@ -152,14 +159,62 @@ func (a *API) addReport(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, "position invalide")
 		return
 	}
-	rep, err := a.store.AddReport(r.Context(), in.Kind, in.Lat, in.Lon, ttl)
+	rep, created, err := a.store.AddReport(r.Context(), in.Kind, in.Lat, in.Lon, ttl, a.voter(r))
 	if err != nil {
 		a.serverError(w, r, err)
 		return
 	}
 	// La diffusion passe par PostgreSQL (NOTIFY) pour atteindre les clients de toutes les instances.
+	if !created { // doublon à moins de 150 m : compté comme une confirmation
+		writeJSON(w, http.StatusOK, rep)
+		return
+	}
 	metrics.Reports.WithLabelValues(in.Kind).Inc()
 	writeJSON(w, http.StatusCreated, rep)
+}
+
+func (a *API) vote(w http.ResponseWriter, r *http.Request) {
+	if !a.votes.allow(a.clientIP(r)) {
+		httpError(w, http.StatusTooManyRequests, "trop de votes, réessaie dans un instant")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		httpError(w, http.StatusNotFound, store.ErrReportNotFound.Error())
+		return
+	}
+	var in struct {
+		Up *bool `json:"up"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || in.Up == nil {
+		httpError(w, http.StatusBadRequest, `JSON attendu : {"up": true|false}`)
+		return
+	}
+	rep, removed, err := a.store.Vote(r.Context(), id, a.voter(r), *in.Up, func(kind string) time.Duration { return ReportTTL[kind] })
+	switch {
+	case errors.Is(err, store.ErrReportNotFound):
+		httpError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, store.ErrOwnReport):
+		httpError(w, http.StatusConflict, err.Error())
+	case err != nil:
+		a.serverError(w, r, err)
+	default:
+		metrics.Votes.WithLabelValues(strconv.FormatBool(*in.Up)).Inc()
+		writeJSON(w, http.StatusOK, map[string]any{"report": rep, "removed": removed})
+	}
+}
+
+// voter identifie un appareil sans compte : l'identifiant aléatoire envoyé par l'app
+// (X-Zelo-Device), à défaut l'IP. Seule une empreinte est conservée.
+func (a *API) voter(r *http.Request) string {
+	id := r.Header.Get("X-Zelo-Device")
+	if len(id) < 16 || len(id) > 64 {
+		id = "ip:" + a.clientIP(r)
+	}
+	sum := sha256.Sum256([]byte("zelo-voter:" + id))
+	return hex.EncodeToString(sum[:16])
 }
 
 // liveFeed pousse chaque nouveau signalement aux clients connectés.

@@ -17,6 +17,7 @@ import { ChargeLayer, FuelLayer, ParkingLayer, ReportLayer } from './layers';
 import { CarMarker, DestinationMarker } from './markers';
 import { NearbySheet } from './nearby-sheet';
 import { PlaceSheet, type Selection } from './place-sheet';
+import { ReportDetailSheet } from './report-detail-sheet';
 import { ReportSheet } from './report-sheet';
 import { SEARCH_BAR_HEIGHT, SearchBar } from './search-bar';
 
@@ -44,7 +45,9 @@ export function MapScreen() {
   const parked = useParkedCar();
 
   const data = useMapData(view);
-  const live = useLive(data.addReport, data.reload);
+  const live = useLive(data.upsertReport, data.removeReport, data.reload);
+  const [reportId, setReportId] = useState<number | null>(null);
+  const openReport = data.reports.find((r) => r.id === reportId) ?? null;
   const location = useUserLocation();
 
   const select =
@@ -108,7 +111,14 @@ export function MapScreen() {
         <ParkingLayer parkings={data.parkings} c={c} onPress={select('parking')} />
         <FuelLayer stations={data.fuel} c={c} onPress={select('fuel')} />
         <ChargeLayer stations={data.charge} c={c} onPress={select('charge')} />
-        <ReportLayer reports={data.reports} />
+        <ReportLayer
+          reports={data.reports}
+          onPress={(e) => {
+            e.stopPropagation();
+            const id = e.nativeEvent.features[0]?.properties?.id;
+            if (typeof id === 'number') setReportId(id);
+          }}
+        />
         {location.granted && <UserLocation accuracy />}
         {destination && <DestinationMarker at={destination} c={c} />}
         {parked.car && <CarMarker at={parked.car} c={c} onPress={() => setCarOpen(true)} />}
@@ -199,7 +209,12 @@ export function MapScreen() {
           camera.current?.flyTo({ center: [car.lon, car.lat], zoom: 17, duration: 800 });
         }}
       />
-      <ReportSheet isPresented={reporting} onDismiss={() => setReporting(false)} position={here} onCreated={data.addReport} />
+      <ReportSheet isPresented={reporting} onDismiss={() => setReporting(false)} position={here} onCreated={data.upsertReport} />
+      <ReportDetailSheet
+        report={openReport}
+        onDismiss={() => setReportId(null)}
+        onVoted={(r, removed) => (removed ? data.removeReport(r.id) : data.upsertReport(r))}
+      />
     </View>
   );
 }

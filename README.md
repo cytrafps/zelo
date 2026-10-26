@@ -104,8 +104,15 @@ go run ./cmd/api -once   # collecte une fois toutes les sources puis quitte
 | `GET /v1/parkings?bbox=…` | Parkings publics : places, payant ou gratuit, hauteur max, places PMR et recharge, horaires (plus grands d'abord) |
 | `GET /v1/reports?bbox=…` | Signalements encore actifs |
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
-| `GET /v1/live` | WebSocket : chaque nouveau signalement est poussé aux clients |
+| `POST /v1/reports/{id}/votes` | `{"up": true}` (toujours là) ou `false` (plus là) ; un vote par appareil (`X-Zelo-Device`), modifiable ; jamais sur son propre signalement (409) |
+| `GET /v1/live` | WebSocket : `report` (nouveau ou mis à jour) et `report_removed` sont poussés à tous les clients, quelle que soit l'instance |
 | `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus |
+
+Fiabilité des signalements, comme sur Waze :
+- un signalement du même type à moins de 150 m d'un signalement actif n'en crée pas un second, il le confirme ;
+- chaque « toujours là » prolonge le signalement de la moitié de sa durée de vie ;
+- dès que 2 personnes ou plus disent « plus là » et qu'elles sont plus nombreuses que celles qui confirment, il disparaît pour tout le monde ;
+- l'identifiant d'appareil est aléatoire et sans compte, et le serveur n'en garde qu'une empreinte.
 
 Aucun signalement de contrôle de police ni de radar n'est accepté (décret 2012-3, article R413-15 du code de la route).
 

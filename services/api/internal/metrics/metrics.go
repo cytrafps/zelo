@@ -37,4 +37,9 @@ var (
 		Name: "zelo_collector_leader",
 		Help: "1 si cette instance fait les collectes (verrou PostgreSQL), 0 sinon.",
 	})
+
+	Votes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "zelo_report_votes_total",
+		Help: "Votes sur les signalements (up=true : toujours là).",
+	}, []string{"up"})
 )

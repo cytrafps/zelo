@@ -75,8 +75,16 @@ export function useMapData(view: BBox | null) {
     return () => clearInterval(id);
   }, []);
 
-  const addReport = useCallback((r: Report) => {
-    setReports((list) => (list.some((x) => x.id === r.id) ? list : [...list, r]));
+  /** Ajoute ou met à jour (votes, expiration prolongée) un signalement. */
+  const upsertReport = useCallback((r: Report) => {
+    setReports((list) => {
+      const i = list.findIndex((x) => x.id === r.id);
+      return i === -1 ? [...list, r] : list.with(i, r);
+    });
+  }, []);
+
+  const removeReport = useCallback((id: number) => {
+    setReports((list) => list.filter((x) => x.id !== id));
   }, []);
 
   const reload = useCallback(() => {
@@ -85,5 +93,5 @@ export function useMapData(view: BBox | null) {
   }, []);
 
   const tooWide = view !== null && fetchArea(view) === null;
-  return { area, fuel, charge, parkings, reports, status: tooWide ? ('zoom-out' as const) : status, addReport, reload };
+  return { area, fuel, charge, parkings, reports, status: tooWide ? ('zoom-out' as const) : status, upsertReport, removeReport, reload };
 }

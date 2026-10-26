@@ -11,7 +11,7 @@ Ce prototype affiche autour de Reims :
 - « Ma voiture » : enregistre où tu t'es garé et t'y ramène à pied par l'app de cartes du téléphone ;
 - les signalements, reçus en temps réel par WebSocket.
 
-Le bouton « Signaler » publie un événement à ta position.
+Le bouton « Signaler » publie un événement à ta position. Toucher un signalement permet de répondre « Toujours là » ou « Plus là » : les signalements confirmés restent plus longtemps, et ceux qu'on infirme disparaissent pour tout le monde.
 
 ## Lancer sur ton téléphone Android
 
