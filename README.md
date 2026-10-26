@@ -8,7 +8,7 @@ Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
 | Dossier | Rôle |
 |---|---|
 | `services/api` | API en Go : collecte des données ouvertes, API REST, signalements en temps réel (WebSocket), métriques Prometheus |
-| `apps/mobile` | App React Native + Expo (à venir) |
+| `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, signalements en temps réel |
 | `infra` | Environnement de développement (Docker Compose) ; manifestes K3s et Argo CD à venir |
 
 ## Démarrer
