@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
+	"github.com/cytrafps/zelo/services/api/internal/parking"
 )
 
 //go:embed schema.sql
@@ -141,6 +143,47 @@ func (s *Store) SaveChargeStatus(ctx context.Context, statuses []irve.Status) er
 	})
 }
 
+// SaveParkings remplace les parkings de la zone importée : un parking disparu d'OSM disparaît ici.
+func (s *Store) SaveParkings(ctx context.Context, parkings []parking.Parking) error {
+	if len(parkings) == 0 {
+		return errors.New("aucun parking reçu : import ignoré pour ne pas vider la table")
+	}
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_pk (
+			id text, name text, operator text, kind text, lon float8, lat float8, capacity int, disabled int,
+			charging int, fee boolean, max_height real, opening_hours text, park_ride boolean) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_pk"},
+			[]string{"id", "name", "operator", "kind", "lon", "lat", "capacity", "disabled", "charging", "fee", "max_height", "opening_hours", "park_ride"},
+			pgx.CopyFromSlice(len(parkings), func(i int) ([]any, error) {
+				p := parkings[i]
+				var h *float32
+				if p.MaxHeight != nil {
+					v := float32(*p.MaxHeight)
+					h = &v
+				}
+				return []any{p.ID, p.Name, p.Operator, p.Kind, p.Lon, p.Lat, p.Capacity, p.Disabled, p.Charging,
+					p.Fee, h, p.OpeningHours, p.ParkRide}, nil
+			})); err != nil {
+			return err
+		}
+		// now() vaut l'heure de début de la transaction : tout ce qui n'a pas été vu dans cet import est supprimé.
+		_, err := tx.Exec(ctx, `
+			INSERT INTO parking (id, name, operator, kind, geom, capacity, disabled, charging, fee, max_height, opening_hours, park_ride, seen_at)
+			SELECT DISTINCT ON (id) id, name, operator, kind, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography,
+				capacity, disabled, charging, fee, max_height, opening_hours, park_ride, now()
+			FROM tmp_pk
+			ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, operator = EXCLUDED.operator, kind = EXCLUDED.kind,
+				geom = EXCLUDED.geom, capacity = EXCLUDED.capacity, disabled = EXCLUDED.disabled, charging = EXCLUDED.charging,
+				fee = EXCLUDED.fee, max_height = EXCLUDED.max_height, opening_hours = EXCLUDED.opening_hours,
+				park_ride = EXCLUDED.park_ride, seen_at = now();
+
+			DELETE FROM parking WHERE seen_at < now();`)
+		return err
+	})
+}
+
 // --- Lectures
 
 type FuelStation struct {
@@ -215,6 +258,37 @@ func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]Charge
 		}
 		return c, err
 	})
+}
+
+type Parking struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Operator     string   `json:"operator"`
+	Kind         string   `json:"kind"`
+	Lat          float64  `json:"lat"`
+	Lon          float64  `json:"lon"`
+	Capacity     *int     `json:"capacity"`
+	Disabled     *int     `json:"disabled"`
+	Charging     *int     `json:"charging"`
+	Fee          *bool    `json:"fee"`
+	MaxHeight    *float32 `json:"maxHeight"`
+	OpeningHours string   `json:"openingHours"`
+	ParkRide     bool     `json:"parkRide"`
+}
+
+// Parkings renvoie les plus grands d'abord, pour qu'une limite atteinte coupe les petits.
+func (s *Store) Parkings(ctx context.Context, b BBox, limit int) ([]Parking, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, name, operator, kind, ST_Y(geom::geometry), ST_X(geom::geometry),
+			capacity, disabled, charging, fee, max_height, opening_hours, park_ride
+		FROM parking
+		WHERE ST_Intersects(geom, `+envelope+`)
+		ORDER BY capacity DESC NULLS LAST
+		LIMIT $5`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Parking])
 }
 
 // --- Signalements
