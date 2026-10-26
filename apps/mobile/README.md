@@ -7,6 +7,8 @@ Ce prototype affiche autour de Reims :
 - les stations-service et leurs prix ;
 - les bornes de recharge et le nombre de points libres ;
 - les parkings publics, avec leurs places, leur tarif (payant ou gratuit) et leur hauteur maximale ;
+- la recherche d'une destination (adresses et lieux de la Géoplateforme de l'IGN), puis les parkings, bornes et stations les plus proches de l'arrivée, triés par distance à pied ;
+- « Ma voiture » : enregistre où tu t'es garé et t'y ramène à pied par l'app de cartes du téléphone ;
 - les signalements, reçus en temps réel par WebSocket.
 
 Le bouton « Signaler » publie un événement à ta position.
@@ -27,6 +29,10 @@ Si le téléphone n'atteint pas l'API :
 
 iPhone : un development build demande un compte Apple Developer payant (99 €/an).
 
+## Vie privée
+
+L'emplacement de la voiture est stocké **uniquement sur le téléphone** (SQLite local, `expo-sqlite/kv-store`) et n'est jamais envoyé à l'API Zelo. Les recherches de destination partent directement du téléphone vers la Géoplateforme (IGN), sans passer par nos serveurs.
+
 ## Organisation
 
 | Chemin | Rôle |
@@ -34,7 +40,9 @@ iPhone : un development build demande un compte Apple Developer payant (99 €/a
 | `src/app/` | Routes Expo Router uniquement |
 | `src/screens/map/` | Écran carte : couches, feuille station, feuille « Signaler » |
 | `src/api/zelo.ts` | Client de l'API et types partagés |
-| `src/hooks/` | Données de la vue (`use-map-data`), flux temps réel (`use-live`), position (`use-user-location`) |
+| `src/api/geocode.ts` | Géocodage Géoplateforme (adresses + lieux), reclassé par proximité |
+| `src/hooks/` | Données de la vue (`use-map-data`), flux temps réel (`use-live`), position (`use-user-location`), recherche (`use-geocode`), voiture garée (`use-parked-car`) |
+| `src/utils/` | Logique pure testée : distances, tri par proximité, formats |
 | `src/theme.ts` | Jetons de l'interface (variables Figma) |
 
 ## Choix
@@ -47,5 +55,7 @@ iPhone : un development build demande un compte Apple Developer payant (99 €/a
 ## Vérifier
 
 ```sh
-npm run typecheck && npm run lint && npx expo-doctor
+npm run typecheck && npm run lint && npm test && npx expo-doctor
 ```
+
+`npm test` lance les tests de la logique pure (`src/**/*.test.ts`) avec le lanceur intégré à Node, sans dépendance.

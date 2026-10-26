@@ -46,5 +46,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm test
       - run: npx expo-doctor
       - run: npx expo export --platform android --platform ios --output-dir dist

@@ -4,15 +4,21 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { Place } from '@/api/geocode';
 import type { BBox } from '@/api/zelo';
 import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus } from '@/hooks/use-map-data';
+import { useParkedCar } from '@/hooks/use-parked-car';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
 
+import { CarSheet } from './car-sheet';
 import { ChargeLayer, FuelLayer, ParkingLayer, ReportLayer } from './layers';
-import { ReportSheet } from './report-sheet';
+import { CarMarker, DestinationMarker } from './markers';
+import { NearbySheet } from './nearby-sheet';
 import { PlaceSheet, type Selection } from './place-sheet';
+import { ReportSheet } from './report-sheet';
+import { SEARCH_BAR_HEIGHT, SearchBar } from './search-bar';
 
 // Fond de carte OpenStreetMap gratuit et sans clé (OpenFreeMap) pour le prototype ;
 // à remplacer par nos tuiles PMTiles auto-hébergées.
@@ -30,6 +36,12 @@ export function MapScreen() {
   const [center, setCenter] = useState(REIMS);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [reporting, setReporting] = useState(false);
+  const [destination, setDestination] = useState<Place | null>(null);
+  const [nearbyOpen, setNearbyOpen] = useState(false);
+  /** La fiche ouverte depuis « Autour de ta destination » y ramène à sa fermeture. */
+  const [fromNearby, setFromNearby] = useState(false);
+  const [carOpen, setCarOpen] = useState(false);
+  const parked = useParkedCar();
 
   const data = useMapData(view);
   const live = useLive(data.addReport, data.reload);
@@ -54,9 +66,31 @@ export function MapScreen() {
     if (p) camera.current?.flyTo({ center: [p.lon, p.lat], zoom: 15, duration: 800 });
   };
 
-  const reportPosition = location.position
+  const here = location.position
     ? { ...location.position, source: 'gps' as const }
     : { lat: center[1], lon: center[0], source: 'carte' as const };
+
+  const goTo = (place: Place) => {
+    setDestination(place);
+    setNearbyOpen(true);
+    camera.current?.flyTo({ center: [place.lon, place.lat], zoom: 15.5, duration: 900 });
+  };
+
+  const clearDestination = () => {
+    setDestination(null);
+    setNearbyOpen(false);
+  };
+
+  // Les données « autour » ne valent que si la zone chargée contient la destination.
+  const nearbyLoading =
+    destination !== null &&
+    (data.area === null ||
+      destination.lon < data.area[0] ||
+      destination.lat < data.area[1] ||
+      destination.lon > data.area[2] ||
+      destination.lat > data.area[3]);
+
+  const searchTop = insets.top + espace[2];
 
   return (
     <View style={styles.fill}>
@@ -76,9 +110,25 @@ export function MapScreen() {
         <ChargeLayer stations={data.charge} c={c} onPress={select('charge')} />
         <ReportLayer reports={data.reports} />
         {location.granted && <UserLocation accuracy />}
+        {destination && <DestinationMarker at={destination} c={c} />}
+        {parked.car && <CarMarker at={parked.car} c={c} onPress={() => setCarOpen(true)} />}
       </Map>
 
-      <StatusPill status={data.status} live={live} c={c} top={insets.top + espace[2]} onRetry={data.reload} />
+      <StatusPill
+        status={data.status}
+        live={live}
+        c={c}
+        top={searchTop + SEARCH_BAR_HEIGHT + espace[2]}
+        onRetry={data.reload}
+      />
+      <SearchBar
+        c={c}
+        top={searchTop}
+        near={{ lat: center[1], lon: center[0] }}
+        destination={destination}
+        onSelect={goTo}
+        onClear={clearDestination}
+      />
 
       <View style={[styles.bottomBar, { bottom: insets.bottom + espace[4] }]} pointerEvents="box-none">
         <Pressable
@@ -90,23 +140,66 @@ export function MapScreen() {
           <SymbolView name={{ ios: 'exclamationmark.bubble.fill', android: 'campaign' }} tintColor="#FFFFFF" size={20} />
           <Text style={[texte.corpsFort, { color: '#FFFFFF' }]}>Signaler</Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Centrer sur ma position"
-          onPress={locate}
-          style={({ pressed }) => [styles.roundButton, { backgroundColor: c.fond.surface, opacity: pressed ? 0.85 : 1 }]}
-        >
-          <SymbolView name={{ ios: 'location.fill', android: 'my_location' }} tintColor={c.action} size={22} />
-        </Pressable>
+        <View style={styles.roundGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={parked.car ? 'Ma voiture' : 'Enregistrer où je me suis garé'}
+            onPress={() => setCarOpen(true)}
+            style={({ pressed }) => [styles.roundButton, { backgroundColor: c.fond.surface, opacity: pressed ? 0.85 : 1 }]}
+          >
+            <SymbolView
+              name={{ ios: parked.car ? 'car.fill' : 'car', android: 'directions_car' }}
+              tintColor={parked.car ? c.action : c.texte.secondaire}
+              size={22}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Centrer sur ma position"
+            onPress={locate}
+            style={({ pressed }) => [styles.roundButton, { backgroundColor: c.fond.surface, opacity: pressed ? 0.85 : 1 }]}
+          >
+            <SymbolView name={{ ios: 'location.fill', android: 'my_location' }} tintColor={c.action} size={22} />
+          </Pressable>
+        </View>
       </View>
 
-      <PlaceSheet selection={selection} onDismiss={() => setSelection(null)} />
-      <ReportSheet
-        isPresented={reporting}
-        onDismiss={() => setReporting(false)}
-        position={reportPosition}
-        onCreated={data.addReport}
+      <PlaceSheet
+        selection={selection}
+        onDismiss={() => {
+          setSelection(null);
+          if (fromNearby) setNearbyOpen(true);
+          setFromNearby(false);
+        }}
       />
+      <NearbySheet
+        destination={destination}
+        isPresented={nearbyOpen && selection === null}
+        onDismiss={() => setNearbyOpen(false)}
+        parkings={data.parkings}
+        charge={data.charge}
+        fuel={data.fuel}
+        loading={nearbyLoading}
+        onPick={(s) => {
+          setFromNearby(true);
+          setNearbyOpen(false);
+          setSelection(s);
+        }}
+      />
+      <CarSheet
+        isPresented={carOpen}
+        onDismiss={() => setCarOpen(false)}
+        car={parked.car}
+        me={location.position}
+        here={here}
+        onPark={parked.park}
+        onForget={parked.forget}
+        onShow={(car) => {
+          setCarOpen(false);
+          camera.current?.flyTo({ center: [car.lon, car.lat], zoom: 17, duration: 800 });
+        }}
+      />
+      <ReportSheet isPresented={reporting} onDismiss={() => setReporting(false)} position={here} onCreated={data.addReport} />
     </View>
   );
 }
@@ -165,6 +258,7 @@ const styles = StyleSheet.create({
     gap: espace[2],
     ...shadow,
   },
+  roundGroup: { flexDirection: 'row', gap: espace[3] },
   roundButton: {
     width: rayon.hauteurBouton,
     height: rayon.hauteurBouton,

@@ -29,6 +29,8 @@ export function useMapData(view: BBox | null) {
   const [reports, setReports] = useState<Report[]>([]);
   const [status, setStatus] = useState<DataStatus>('idle');
   const [reloadToken, setReloadToken] = useState(0);
+  /** Zone dont les données affichées proviennent. */
+  const [area, setArea] = useState<BBox | null>(null);
   const loaded = useRef<BBox | null>(null);
 
   useEffect(() => {
@@ -46,6 +48,7 @@ export function useMapData(view: BBox | null) {
           getReports(area, ctl.signal),
         ]);
         loaded.current = area;
+        setArea(area);
         setFuel(f);
         setCharge(c);
         setParkings(p);
@@ -82,5 +85,5 @@ export function useMapData(view: BBox | null) {
   }, []);
 
   const tooWide = view !== null && fetchArea(view) === null;
-  return { fuel, charge, parkings, reports, status: tooWide ? ('zoom-out' as const) : status, addReport, reload };
+  return { area, fuel, charge, parkings, reports, status: tooWide ? ('zoom-out' as const) : status, addReport, reload };
 }
