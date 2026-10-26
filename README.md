@@ -13,7 +13,25 @@ Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
 
 ## Démarrer
 
-Prérequis : Docker.
+Prérequis : Node 20.19+ (22 LTS conseillé) et Docker Desktop. Téléphone Android sur le même Wi-Fi que le PC.
+
+```sh
+npm run dev     # API + base, dépendances, compte Expo, build Android si besoin, puis QR code à scanner
+npm run stop    # arrête l'API et la base (les données restent)
+```
+
+Le script `scripts/dev.mjs` fait tout dans l'ordre :
+
+1. Il vérifie Node et Docker, puis trouve l'IP du PC sur le Wi-Fi.
+2. Il lance l'API et attend la première collecte de chaque source.
+3. Il installe les dépendances de l'app.
+4. Il te connecte à Expo.
+5. Il refait le development build Android seulement si la partie native a changé : il compare l'empreinte Expo du projet.
+6. Il démarre Metro, avec l'adresse de l'API déjà réglée.
+
+Options : `npm run dev -- --rebuild` force un nouveau build, `npm run dev -- --ip 192.168.1.20` impose l'IP du PC.
+
+API seule :
 
 ```sh
 docker compose -f infra/compose.yaml up --build

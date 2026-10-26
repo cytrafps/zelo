@@ -21,12 +21,14 @@ var schema string
 
 type Store struct{ db *pgxpool.Pool }
 
+// Open attend la base jusqu'à 30 s : au démarrage d'un conteneur ou d'un pod,
+// PostgreSQL peut encore être en train de s'initialiser.
 func Open(ctx context.Context, url string) (*Store, error) {
 	db, err := pgxpool.New(ctx, url)
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Ping(ctx); err != nil {
+	if err := pingRetry(ctx, db, 30*time.Second); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -35,6 +37,22 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		return nil, fmt.Errorf("schéma: %w", err)
 	}
 	return &Store{db: db}, nil
+}
+
+func pingRetry(ctx context.Context, db *pgxpool.Pool, max time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, max)
+	defer cancel()
+	for wait := 250 * time.Millisecond; ; wait = min(2*wait, 4*time.Second) {
+		err := db.Ping(ctx)
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(wait):
+		}
+	}
 }
 
 func (s *Store) Close()                         { s.db.Close() }

@@ -1,0 +1,12 @@
+{
+  "name": "zelo",
+  "private": true,
+  "description": "Raccourcis du dépôt : npm run dev pour tout lancer, npm run stop pour arrêter l'API.",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "stop": "node scripts/dev.mjs stop"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}
