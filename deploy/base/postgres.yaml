@@ -1,0 +1,78 @@
+# PostgreSQL + PostGIS, une instance avec volume persistant (local-path sur K3s).
+# Le mot de passe vient du Secret « zelo-db », créé hors Git (voir deploy/README.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app.kubernetes.io/name: db
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: db
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    app.kubernetes.io/name: db
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db
+    spec:
+      securityContext:
+        fsGroup: 70 # utilisateur postgres de l'image Alpine
+      containers:
+        - name: postgres
+          image: postgis/postgis:17-3.5-alpine
+          env:
+            - name: POSTGRES_USER
+              value: zelo
+            - name: POSTGRES_DB
+              value: zelo
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: zelo-db
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          # En TCP : pendant l'initialisation, le serveur temporaire n'écoute que sur le socket local.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "zelo", "-d", "zelo", "-h", "127.0.0.1"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "zelo", "-d", "zelo", "-h", "127.0.0.1"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi

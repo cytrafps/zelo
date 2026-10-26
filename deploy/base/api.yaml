@@ -1,0 +1,78 @@
+# API Zelo. Une seule réplique tant que la diffusion temps réel est en mémoire (live.Hub) et que
+# les collectes tournent dans le processus : deux répliques doubleraient les imports et
+# un signalement n'atteindrait que les clients connectés à la même réplique.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  selector:
+    app.kubernetes.io/name: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/cytrafps/zelo-api
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: zelo-db
+                  key: password
+            - name: DATABASE_URL
+              value: postgres://zelo:$(DB_PASSWORD)@db:5432/zelo?sslmode=disable
+            - name: TRUST_PROXY
+              value: "false"
+          envFrom:
+            - configMapRef:
+                name: api-config
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          # /livez ne dépend pas de la base : une panne PostgreSQL ne doit pas faire redémarrer l'API en boucle.
+          livenessProbe:
+            httpGet: { path: /livez, port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          startupProbe:
+            httpGet: { path: /livez, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 512Mi } # l'import IRVE dynamique lit ~90 000 lignes
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

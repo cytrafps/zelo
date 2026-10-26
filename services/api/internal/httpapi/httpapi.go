@@ -67,6 +67,7 @@ type API struct {
 func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	a := &API{store: s, hub: hub, log: log, cfg: cfg, limiter: newIPLimiter(rate.Every(12*time.Second), 5)}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /healthz", a.health)
 	mux.HandleFunc("GET /v1/fuel-stations", a.fuelStations)
 	mux.HandleFunc("GET /v1/charge-stations", a.chargeStations)
