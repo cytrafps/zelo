@@ -1,7 +1,47 @@
+<p align="center">
+  <img src="docs/banner.png" alt="Zelo, l'app de la fin du trajet : se garer, recharger, faire le plein" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/cytrafps/zelo/actions/workflows/ci.yml"><img src="https://github.com/cytrafps/zelo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/Expo-SDK%2058-000020?logo=expo&logoColor=white" alt="Expo SDK 58">
+  <img src="https://img.shields.io/badge/PostGIS-17-336791?logo=postgresql&logoColor=white" alt="PostGIS 17">
+  <img src="https://img.shields.io/badge/donn%C3%A9es-ouvertes-16A34A" alt="Données ouvertes">
+</p>
+
 # Zelo
 
 L'app de la fin du trajet : se garer, recharger, faire le plein, retrouver sa voiture.
 Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Sources["Données ouvertes"]
+    F["Prix des carburants<br/>toutes les 10 min"]
+    B["Bornes IRVE<br/>statique 24 h · dynamique 5 min"]
+    O["OpenStreetMap<br/>parkings, 24 h"]
+  end
+  subgraph Serveur["services/api (Go)"]
+    J["Collecte planifiée"]
+    A["API REST"]
+    W["WebSocket /v1/live"]
+  end
+  DB[("PostgreSQL + PostGIS")]
+  App["App mobile<br/>Expo + MapLibre"]
+
+  F --> J
+  B --> J
+  O --> J
+  J --> DB
+  A <--> DB
+  App -- "GET stations, bornes, parkings" --> A
+  App -- "POST signalement" --> A
+  A -- "diffusion" --> W
+  W -- "temps réel" --> App
+```
 
 ## Contenu du dépôt
 
@@ -13,7 +53,25 @@ Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
 
 ## Démarrer
 
-Prérequis : Docker.
+Prérequis : Node 20.19+ (22 LTS conseillé) et Docker Desktop. Téléphone Android sur le même Wi-Fi que le PC.
+
+```sh
+npm run dev     # API + base, dépendances, compte Expo, build Android si besoin, puis QR code à scanner
+npm run stop    # arrête l'API et la base (les données restent)
+```
+
+Le script `scripts/dev.mjs` fait tout dans l'ordre :
+
+1. Il vérifie Node et Docker, puis trouve l'IP du PC sur le Wi-Fi.
+2. Il lance l'API et attend la première collecte de chaque source.
+3. Il installe les dépendances de l'app.
+4. Il te connecte à Expo.
+5. Il refait le development build Android seulement si la partie native a changé : il compare l'empreinte Expo du projet.
+6. Il démarre Metro, avec l'adresse de l'API déjà réglée.
+
+Options : `npm run dev -- --rebuild` force un nouveau build, `npm run dev -- --ip 192.168.1.20` impose l'IP du PC.
+
+API seule :
 
 ```sh
 docker compose -f infra/compose.yaml up --build

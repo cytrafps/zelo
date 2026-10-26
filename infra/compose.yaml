@@ -10,7 +10,8 @@ services:
     ports: ["5432:5432"]
     volumes: [db:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zelo"]
+      # En TCP : pendant l'initialisation, le serveur temporaire n'écoute que sur le socket local.
+      test: ["CMD-SHELL", "pg_isready -U zelo -d zelo -h 127.0.0.1"]
       interval: 3s
       retries: 20
 
@@ -21,6 +22,7 @@ services:
       # Bornes limitées à la zone de Reims pour le développement ; vide = toute la France.
       IMPORT_BBOX: "3.85,49.15,4.25,49.35"
     ports: ["8080:8080"]
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy

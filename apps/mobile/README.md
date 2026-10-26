@@ -13,26 +13,19 @@ Le bouton « Signaler » publie un événement à ta position.
 
 ## Lancer sur ton téléphone Android
 
-MapLibre contient du code natif : l'app tourne dans un **development build**, pas dans Expo Go. On le construit une fois dans le cloud EAS, sans Android Studio ; ensuite, tout changement de code JS arrive en direct.
-
-Une seule fois :
+Depuis la racine du dépôt :
 
 ```sh
-npx eas-cli@latest login                                   # compte Expo gratuit
-npx eas-cli@latest init                                    # lie le projet au compte (ajoute projectId dans app.json)
-npx eas-cli@latest build -p android --profile development  # ~15 min, donne un lien et un QR code vers l'APK
+npm run dev
 ```
 
-Scanne le QR code avec le téléphone et installe l'APK. Ensuite, à chaque session :
+MapLibre contient du code natif : l'app tourne dans un **development build**, pas dans Expo Go. Au premier lancement, le script te connecte à ton compte Expo (gratuit), lie le projet (`app.json` reçoit un `projectId`, à committer), puis construit l'APK dans le cloud EAS en 15 minutes environ. Scanne le QR code du build pour installer l'app Zelo, puis celui de Metro pour la charger. Ensuite, chaque changement de code arrive en direct ; un nouveau build n'est lancé que si une dépendance native change.
 
-```sh
-docker compose -f ../../infra/compose.yaml up --build      # API + PostGIS
-EXPO_PUBLIC_API_URL=http://<ip-de-ton-pc>:8080 npm start   # puis scanne le QR code depuis l'app Zelo
-```
+Si le téléphone n'atteint pas l'API :
+- vérifie qu'il est sur le même Wi-Fi que le PC (pas un réseau invité) ;
+- sous Windows, autorise Docker Desktop et Node.js dans le pare-feu, pour les réseaux privés.
 
-Le téléphone et le PC doivent être sur le même Wi-Fi ; `localhost` désigne le téléphone, d'où l'IP du PC. Un nouveau build n'est nécessaire que si on ajoute une dépendance native.
-
-iPhone : un development build demande un compte Apple Developer payant (99 €/an) ; à défaut, on teste sur Android.
+iPhone : un development build demande un compte Apple Developer payant (99 €/an).
 
 ## Organisation
 
