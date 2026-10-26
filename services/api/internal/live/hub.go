@@ -1,7 +1,7 @@
 // Package live diffuse les événements (nouveaux signalements) aux clients WebSocket.
 //
-// Le hub est en mémoire : suffisant pour une seule instance de l'API.
-// Avec plusieurs instances, on publiera via Redis (pub/sub) avant d'appeler Broadcast.
+// Le hub sert les clients de cette instance ; les événements lui arrivent de PostgreSQL
+// (LISTEN/NOTIFY, voir store.Listen), ce qui les partage entre toutes les instances de l'API.
 package live
 
 import (

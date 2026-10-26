@@ -1,4 +1,5 @@
 // Client de l'API Zelo (services/api). Les formes suivent services/api/internal/store.
+import { deviceId } from '@/utils/device';
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
 export const LIVE_URL = API_URL.replace(/^http/, 'ws') + '/v1/live';
@@ -65,9 +66,13 @@ export type Report = {
   lon: number;
   createdAt: string;
   expiresAt: string;
+  /** Votes « toujours là » (le signalement initial n'en fait pas partie). */
+  confirmations: number;
+  denials: number;
 };
 
-export type LiveEvent = { type: 'report'; report: Report };
+/** « report » : nouveau ou mis à jour (votes) ; « report_removed » : retiré après des « plus là ». */
+export type LiveEvent = { type: 'report'; report: Report } | { type: 'report_removed'; id: number };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -80,7 +85,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(API_URL + path, {
     ...init,
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Zelo-Device': deviceId() },
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
@@ -95,5 +100,10 @@ export const getChargeStations = (b: BBox, s?: AbortSignal) => list<ChargeStatio
 export const getParkings = (b: BBox, s?: AbortSignal) => list<Parking>('/v1/parkings', b, s);
 export const getReports = (b: BBox, s?: AbortSignal) => list<Report>('/v1/reports', b, s);
 
+/** Un signalement du même type à moins de 150 m n'est pas dupliqué : il est confirmé et renvoyé. */
 export const postReport = (kind: ReportKind, lat: number, lon: number) =>
   request<Report>('/v1/reports', { method: 'POST', body: JSON.stringify({ kind, lat, lon }) });
+
+/** « Toujours là » (up) ou « Plus là ». 409 : c'est ton propre signalement. */
+export const voteReport = (id: number, up: boolean) =>
+  request<{ report: Report; removed: boolean }>(`/v1/reports/${id}/votes`, { method: 'POST', body: JSON.stringify({ up }) });

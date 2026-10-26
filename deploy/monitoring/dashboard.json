@@ -350,6 +350,51 @@
         "uid": "${datasource}"
       },
       "id": 9
+    },
+    {
+      "id": 10,
+      "type": "state-timeline",
+      "title": "Réplique qui collecte (verrou PostgreSQL)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (pod) (zelo_collector_leader{namespace=\"zelo\"})",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "suiveuse",
+                  "color": "transparent"
+                },
+                "1": {
+                  "text": "meneuse",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        }
+      }
     }
   ]
 }

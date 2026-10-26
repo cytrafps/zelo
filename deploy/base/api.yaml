@@ -1,6 +1,7 @@
-# API Zelo. Une seule réplique tant que la diffusion temps réel est en mémoire (live.Hub) et que
-# les collectes tournent dans le processus : deux répliques doubleraient les imports et
-# un signalement n'atteindrait que les clients connectés à la même réplique.
+# API Zelo, deux répliques sans état partagé en mémoire :
+# - les signalements sont diffusés par PostgreSQL (LISTEN/NOTIFY) à toutes les répliques ;
+# - une seule réplique fait les collectes, élue par verrou consultatif PostgreSQL ; si elle tombe,
+#   le verrou se libère et une autre prend le relais (15 s au plus).
 apiVersion: v1
 kind: Service
 metadata:
@@ -22,8 +23,10 @@ metadata:
   labels:
     app.kubernetes.io/name: api
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 3
+  strategy:
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } # mise à jour sans coupure
   selector:
     matchLabels:
       app.kubernetes.io/name: api
@@ -33,6 +36,14 @@ spec:
         app.kubernetes.io/name: api
     spec:
       automountServiceAccountToken: false
+      # Répliques sur des nœuds différents quand le cluster en a plusieurs.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -76,3 +87,14 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+---
+# Une maintenance de nœud (drain) ne peut pas arrêter les deux répliques en même temps.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api

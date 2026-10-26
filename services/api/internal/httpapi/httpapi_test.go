@@ -15,7 +15,12 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
-type fakeStore struct{ added []store.Report }
+// fakeStore imite la base, y compris la diffusion NOTIFY vers le hub.
+type fakeStore struct {
+	added     []store.Report
+	reporters []string
+	hub       *live.Hub
+}
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
 func (f *fakeStore) FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error) {
@@ -30,14 +35,33 @@ func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking,
 func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, error) {
 	return f.added, nil
 }
-func (f *fakeStore) AddReport(_ context.Context, kind string, lat, lon float64, ttl time.Duration) (store.Report, error) {
+func (f *fakeStore) AddReport(_ context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error) {
 	r := store.Report{ID: int64(len(f.added) + 1), Kind: kind, Lat: lat, Lon: lon, ExpiresAt: time.Now().Add(ttl)}
 	f.added = append(f.added, r)
-	return r, nil
+	f.reporters = append(f.reporters, voter)
+	msg, _ := json.Marshal(store.LiveEvent{Type: "report", Report: &r})
+	f.hub.Broadcast(msg)
+	return r, true, nil
+}
+func (f *fakeStore) Vote(_ context.Context, id int64, voter string, up bool, _ func(string) time.Duration) (store.Report, bool, error) {
+	if id < 1 || int(id) > len(f.added) {
+		return store.Report{}, false, store.ErrReportNotFound
+	}
+	if f.reporters[id-1] == voter {
+		return store.Report{}, false, store.ErrOwnReport
+	}
+	r := f.added[id-1]
+	if up {
+		r.Confirmations++
+	} else {
+		r.Denials++
+	}
+	return r, false, nil
 }
 
 func newTestAPI() (http.Handler, *fakeStore, *live.Hub) {
-	s, hub := &fakeStore{}, live.NewHub()
+	hub := live.NewHub()
+	s := &fakeStore{hub: hub}
 	return New(s, hub, slog.New(slog.NewTextHandler(io.Discard, nil)), Config{}), s, hub
 }
 
@@ -124,5 +148,49 @@ func TestLivezIgnoresDatabase(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/livez", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d", rec.Code)
+	}
+}
+
+func post(h http.Handler, path, body string, device string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	if device != "" {
+		req.Header.Set("X-Zelo-Device", device)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestVote(t *testing.T) {
+	h, _, _ := newTestAPI()
+	const alice, bob = "alice-0123456789abcdef", "bob-0123456789abcdef"
+	if rec := post(h, "/v1/reports", `{"kind":"accident","lat":49.25,"lon":4.03}`, alice); rec.Code != http.StatusCreated {
+		t.Fatalf("création : %d", rec.Code)
+	}
+	cases := []struct {
+		name, path, body, device string
+		want                     int
+	}{
+		{"confirmation", "/v1/reports/1/votes", `{"up":true}`, bob, http.StatusOK},
+		{"son propre signalement", "/v1/reports/1/votes", `{"up":false}`, alice, http.StatusConflict},
+		{"inconnu", "/v1/reports/99/votes", `{"up":true}`, bob, http.StatusNotFound},
+		{"id invalide", "/v1/reports/abc/votes", `{"up":true}`, bob, http.StatusNotFound},
+		{"vote absent", "/v1/reports/1/votes", `{}`, bob, http.StatusBadRequest},
+		{"champ inconnu", "/v1/reports/1/votes", `{"up":true,"x":1}`, bob, http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		if rec := post(h, c.path, c.body, c.device); rec.Code != c.want {
+			t.Errorf("%s : code %d, want %d (%s)", c.name, rec.Code, c.want, rec.Body)
+		}
+	}
+}
+
+// Sans identifiant d'appareil valide, le votant est identifié par son IP : on ne contourne pas
+// la règle « pas de vote sur son propre signalement » en omettant l'en-tête.
+func TestVoterFallsBackToIP(t *testing.T) {
+	h, _, _ := newTestAPI()
+	post(h, "/v1/reports", `{"kind":"travaux","lat":49.25,"lon":4.03}`, "")
+	if rec := post(h, "/v1/reports/1/votes", `{"up":false}`, "court"); rec.Code != http.StatusConflict {
+		t.Fatalf("code %d, want 409", rec.Code)
 	}
 }

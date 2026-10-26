@@ -9,11 +9,30 @@ spec:
     - name: zelo-api
       rules:
         - alert: ZeloApiDown
-          expr: up{namespace="zelo", service="api"} == 0
+          expr: sum(up{namespace="zelo", service="api"}) == 0 or absent(up{namespace="zelo", service="api"})
           for: 2m
           labels: { severity: critical }
           annotations:
-            summary: L'API Zelo ne répond plus à Prometheus.
+            summary: Plus aucune réplique de l'API Zelo ne répond.
+        - alert: ZeloRepliqueDown
+          expr: up{namespace="zelo", service="api"} == 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "La réplique {{ $labels.pod }} ne répond plus ; le service continue sur l'autre."
+        # Le meneur se perd 15 s au plus lors d'une bascule ; au-delà de 5 min, plus rien n'est collecté.
+        - alert: ZeloAucunCollecteur
+          expr: sum(zelo_collector_leader{namespace="zelo"}) == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: Aucune réplique ne détient le verrou des collectes.
+        - alert: ZeloPlusieursCollecteurs
+          expr: sum(zelo_collector_leader{namespace="zelo"}) > 1
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{ $value }} répliques collectent en même temps : le verrou PostgreSQL ne joue plus son rôle."
         # Seuil = 3 cycles manqués : une panne passagère de la source n'alerte pas.
         - alert: ZeloDonneesPerimees
           expr: |

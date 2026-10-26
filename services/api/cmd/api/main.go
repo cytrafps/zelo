@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -108,11 +109,24 @@ func run(log *slog.Logger, once bool) error {
 		return nil
 	}
 
-	for _, j := range jobs {
-		go j.loop(ctx, log)
-	}
+	// Plusieurs instances peuvent tourner : une seule, élue par verrou PostgreSQL, fait les collectes.
+	go db.RunAsLeader(ctx, store.CollectorLock, func(ctx context.Context) {
+		var wg sync.WaitGroup
+		for _, j := range jobs {
+			wg.Go(func() { j.loop(ctx, log) })
+		}
+		wg.Wait()
+	}, func(leader bool) {
+		v := 0.0
+		if leader {
+			v = 1
+		}
+		metrics.Leader.Set(v)
+		log.Info("collectes", "meneur", leader)
+	})
 
 	hub := live.NewHub()
+	go db.Listen(ctx, log, hub.Broadcast)
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "zelo_live_clients", Help: "Clients connectés au flux temps réel.",
 	}, func() float64 { return float64(hub.Len()) }))
