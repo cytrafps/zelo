@@ -1,0 +1,25 @@
+# Go
+/services/api/api
+*.test
+*.out
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+/apps/mobile/ios/
+/apps/mobile/android/
+
+# Environnement
+.env
+.env.*
+!.env.example
+
+# Système
+.DS_Store

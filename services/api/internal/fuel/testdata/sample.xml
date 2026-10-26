@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="ISO-8859-1" standalone="yes"?>
+<pdv_liste>
+  <pdv id="51100004" latitude="4925590" longitude="403420" cp="51100" pop="R">
+    <adresse>Avenue de Laon</adresse>
+    <ville>Reims</ville>
+    <prix nom="Gazole" id="1" maj="2026-10-26 08:12:00" valeur="1.789"/>
+    <prix nom="E10" id="5" maj="2026-10-26 08:12:00" valeur="1.849"/>
+    <prix nom="SP98" id="6" maj="2026-10-26 08:12:00" valeur="abc"/>
+  </pdv>
+  <pdv id="51200001" latitude="4904000" longitude="395000" cp="51200" pop="R">
+    <adresse>Rue de Reims</adresse>
+    <ville>Épernay</ville>
+    <prix nom="E85" id="3" maj="2026-10-25 18:00:00" valeur="0.899"/>
+  </pdv>
+  <pdv id="99999999" latitude="" longitude="" cp="00000" pop="R">
+    <ville>Nulle part</ville>
+  </pdv>
+</pdv_liste>

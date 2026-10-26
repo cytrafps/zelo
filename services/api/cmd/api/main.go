@@ -1,0 +1,209 @@
+// Commande api : collecte les données ouvertes et sert l'API Zelo.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/Skade64/zelo/services/api/internal/fuel"
+	"github.com/Skade64/zelo/services/api/internal/httpapi"
+	"github.com/Skade64/zelo/services/api/internal/irve"
+	"github.com/Skade64/zelo/services/api/internal/live"
+	"github.com/Skade64/zelo/services/api/internal/metrics"
+	"github.com/Skade64/zelo/services/api/internal/store"
+)
+
+func main() {
+	once := flag.Bool("once", false, "collecter une fois toutes les sources puis quitter")
+	flag.Parse()
+
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log, *once); err != nil {
+		log.Error("arrêt", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger, once bool) error {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return errors.New("DATABASE_URL manquant")
+	}
+	bbox, err := parseBBox(os.Getenv("IMPORT_BBOX"))
+	if err != nil {
+		return fmt.Errorf("IMPORT_BBOX: %w", err)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	db, err := store.Open(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("base de données: %w", err)
+	}
+	defer db.Close()
+
+	client := &http.Client{Timeout: 3 * time.Minute}
+	jobs := []job{
+		{"carburant", 10 * time.Minute, func(ctx context.Context) (int, error) {
+			s, err := fuel.Fetch(ctx, client, fuel.FeedURL)
+			if err != nil {
+				return 0, err
+			}
+			return len(s), db.SaveFuel(ctx, s)
+		}},
+		{"bornes_statique", 24 * time.Hour, func(ctx context.Context) (int, error) {
+			p, err := irve.FetchStatic(ctx, client, irve.StaticURL, bbox)
+			if err != nil {
+				return 0, err
+			}
+			return len(p), db.SaveChargePoints(ctx, p)
+		}},
+		{"bornes_dynamique", 5 * time.Minute, func(ctx context.Context) (int, error) {
+			s, err := irve.FetchDynamic(ctx, client, irve.DynamicURL)
+			if err != nil {
+				return 0, err
+			}
+			return len(s), db.SaveChargeStatus(ctx, s)
+		}},
+		{"purge_signalements", time.Hour, func(ctx context.Context) (int, error) {
+			n, err := db.PurgeReports(ctx)
+			return int(n), err
+		}},
+	}
+
+	if once {
+		for _, j := range jobs {
+			if err := j.runOnce(ctx, log); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, j := range jobs {
+		go j.loop(ctx, log)
+	}
+
+	hub := live.NewHub()
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "zelo_live_clients", Help: "Clients connectés au flux temps réel.",
+	}, func() float64 { return float64(hub.Len()) }))
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", httpapi.New(db, hub, log, httpapi.Config{
+		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
+		OriginPatterns: splitList(os.Getenv("WS_ORIGINS")),
+	}))
+
+	srv := &http.Server{
+		Addr:              envOr("ADDR", ":8080"),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		// Pas de WriteTimeout : il couperait les connexions WebSocket.
+	}
+	errc := make(chan error, 1)
+	go func() {
+		log.Info("écoute", "addr", srv.Addr)
+		errc <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdownCtx)
+}
+
+type job struct {
+	name  string
+	every time.Duration
+	fn    func(context.Context) (int, error)
+}
+
+func (j job) runOnce(ctx context.Context, log *slog.Logger) error {
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	n, err := j.fn(ctx)
+	metrics.IngestDuration.WithLabelValues(j.name).Observe(time.Since(start).Seconds())
+	if err != nil {
+		metrics.IngestRuns.WithLabelValues(j.name, "erreur").Inc()
+		log.Error("collecte", "source", j.name, "err", err)
+		return fmt.Errorf("%s: %w", j.name, err)
+	}
+	metrics.IngestRuns.WithLabelValues(j.name, "ok").Inc()
+	metrics.IngestRows.WithLabelValues(j.name).Set(float64(n))
+	metrics.IngestLastSuccess.WithLabelValues(j.name).SetToCurrentTime()
+	log.Info("collecte", "source", j.name, "elements", n, "duree", time.Since(start).Round(time.Millisecond).String())
+	return nil
+}
+
+// loop lance la collecte tout de suite puis à intervalle régulier ; une erreur n'arrête pas la boucle.
+func (j job) loop(ctx context.Context, log *slog.Logger) {
+	t := time.NewTicker(j.every)
+	defer t.Stop()
+	for {
+		_ = j.runOnce(ctx, log)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func parseBBox(s string) (irve.BBox, error) {
+	if s == "" {
+		return irve.BBox{}, nil
+	}
+	p := strings.Split(s, ",")
+	if len(p) != 4 {
+		return irve.BBox{}, errors.New("format attendu : minLon,minLat,maxLon,maxLat")
+	}
+	var v [4]float64
+	for i := range p {
+		f, err := strconv.ParseFloat(strings.TrimSpace(p[i]), 64)
+		if err != nil {
+			return irve.BBox{}, err
+		}
+		v[i] = f
+	}
+	return irve.BBox{MinLon: v[0], MinLat: v[1], MaxLon: v[2], MaxLat: v[3]}, nil
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, x := range strings.Split(s, ",") {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}

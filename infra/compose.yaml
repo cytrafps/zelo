@@ -1,0 +1,29 @@
+# Environnement de développement : `docker compose -f infra/compose.yaml up --build`
+# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics
+services:
+  db:
+    image: postgis/postgis:17-3.5-alpine
+    environment:
+      POSTGRES_USER: zelo
+      POSTGRES_PASSWORD: zelo
+      POSTGRES_DB: zelo
+    ports: ["5432:5432"]
+    volumes: [db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zelo"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ../services/api
+    environment:
+      DATABASE_URL: postgres://zelo:zelo@db:5432/zelo?sslmode=disable
+      # Bornes limitées à la zone de Reims pour le développement ; vide = toute la France.
+      IMPORT_BBOX: "3.85,49.15,4.25,49.35"
+    ports: ["8080:8080"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db:
