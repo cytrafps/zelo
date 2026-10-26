@@ -117,3 +117,12 @@ func TestRateLimit(t *testing.T) {
 		t.Fatalf("codes = %v, want 5 × 201 puis 429", codes)
 	}
 }
+
+func TestLivezIgnoresDatabase(t *testing.T) {
+	h, _, _ := newTestAPI()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/livez", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d", rec.Code)
+	}
+}

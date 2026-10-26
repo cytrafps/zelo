@@ -1,0 +1,29 @@
+# Test des alertes : `promtool test rules deploy/monitoring/alerts_test.yml` (rules.yml est extrait
+# de alerts.yaml par la CI). Le carburant (seuil 30 min) alerte à 40 min ; les parkings (72 h), non.
+rule_files: [../../rules.yml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'zelo_ingest_last_success_timestamp_seconds{source="carburant"}'
+        values: '0x60'
+      - series: 'zelo_ingest_last_success_timestamp_seconds{source="parkings"}'
+        values: '0x60'
+      - series: 'zelo_ingest_runs_total{source="bornes_dynamique", result="erreur"}'
+        values: '0 1 2 3 4 5'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ZeloDonneesPerimees
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: ZeloDonneesPerimees
+        exp_alerts:
+          - exp_labels: { severity: warning, source: carburant }
+            exp_annotations:
+              summary: "Données « carburant » non rafraîchies depuis 40m 0s."
+      - eval_time: 5m
+        alertname: ZeloCollecteEnEchec
+        exp_alerts:
+          - exp_labels: { severity: warning, source: bornes_dynamique, result: erreur }
+            exp_annotations:
+              summary: "La collecte « bornes_dynamique » a échoué 5 fois en une heure."

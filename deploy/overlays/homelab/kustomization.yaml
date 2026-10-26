@@ -1,0 +1,21 @@
+# Environnement « homelab » : K3s + Traefik, déployé par Argo CD (deploy/argocd/zelo.yaml).
+# La CI met à jour le tag de l'image à chaque fusion sur main (commit « deploy: »).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../monitoring
+configMapGenerator:
+  - name: api-config
+    namespace: zelo
+    literals:
+      - IMPORT_BBOX=3.85,49.15,4.25,49.35 # Grand Reims
+patches:
+  - target: { kind: Ingress, name: api }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.zelo.lan
+images:
+  - name: ghcr.io/cytrafps/zelo-api
+    newTag: latest

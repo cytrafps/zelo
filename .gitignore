@@ -23,3 +23,7 @@ web-build/
 
 # Système
 .DS_Store
+
+# Rendu des règles Prometheus (CI)
+/rules.yml
+/rendered.yaml

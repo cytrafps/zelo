@@ -1,0 +1,16 @@
+# Supervision de l'API, pour kube-prometheus-stack (deploy/argocd/monitoring.yaml) :
+# collecte des métriques, alertes et tableau de bord Grafana chargé automatiquement.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: zelo
+resources:
+  - servicemonitor.yaml
+  - alerts.yaml
+configMapGenerator:
+  - name: grafana-dashboard-zelo
+    files:
+      - zelo-api.json=dashboard.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"

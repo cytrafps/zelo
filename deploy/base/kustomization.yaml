@@ -1,0 +1,17 @@
+# Socle commun : API + PostGIS. Les environnements (overlays/) fixent l'image, le domaine et la zone d'import.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: zelo
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: zelo
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - api.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+images:
+  - name: ghcr.io/cytrafps/zelo-api
+    newTag: latest

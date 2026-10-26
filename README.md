@@ -49,7 +49,8 @@ flowchart LR
 |---|---|
 | `services/api` | API en Go : collecte des données ouvertes, API REST, signalements en temps réel (WebSocket), métriques Prometheus |
 | `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, parkings, signalements en temps réel |
-| `infra` | Environnement de développement (Docker Compose) ; manifestes K3s et Argo CD à venir |
+| `infra` | Environnement de développement (Docker Compose) |
+| `deploy` | Production sur K3s en GitOps : Kustomize, Argo CD, Prometheus et Grafana ([guide](deploy/README.md)) |
 
 ## Démarrer
 
