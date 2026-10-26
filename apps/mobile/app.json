@@ -36,7 +36,8 @@
         {
           "locationWhenInUsePermission": "Zelo utilise ta position pour centrer la carte et placer tes signalements."
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
