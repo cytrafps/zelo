@@ -15,7 +15,11 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
-type fakeStore struct{ added []store.Report }
+// fakeStore imite la base, y compris la diffusion NOTIFY vers le hub.
+type fakeStore struct {
+	added []store.Report
+	hub   *live.Hub
+}
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
 func (f *fakeStore) FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error) {
@@ -33,11 +37,14 @@ func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, e
 func (f *fakeStore) AddReport(_ context.Context, kind string, lat, lon float64, ttl time.Duration) (store.Report, error) {
 	r := store.Report{ID: int64(len(f.added) + 1), Kind: kind, Lat: lat, Lon: lon, ExpiresAt: time.Now().Add(ttl)}
 	f.added = append(f.added, r)
+	msg, _ := json.Marshal(store.LiveEvent{Type: "report", Report: &r})
+	f.hub.Broadcast(msg)
 	return r, nil
 }
 
 func newTestAPI() (http.Handler, *fakeStore, *live.Hub) {
-	s, hub := &fakeStore{}, live.NewHub()
+	hub := live.NewHub()
+	s := &fakeStore{hub: hub}
 	return New(s, hub, slog.New(slog.NewTextHandler(io.Discard, nil)), Config{}), s, hub
 }
 

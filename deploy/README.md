@@ -28,7 +28,11 @@ flowchart LR
 
 ## Choix
 
-- **Une réplique d'API.** La diffusion temps réel (`live.Hub`) et les collectes tournent dans le processus. Avec deux répliques, chaque import serait fait deux fois, et un signalement n'atteindrait que les clients connectés à la même réplique. Pour passer à plusieurs répliques, il faudra diffuser par PostgreSQL `LISTEN/NOTIFY` et n'élire qu'un collecteur.
+- **Deux répliques d'API, sans coordination en mémoire.**
+  - Les signalements passent par PostgreSQL `LISTEN/NOTIFY`. Celui reçu par une réplique atteint les clients WebSocket de toutes les répliques, environ 50 ms mesurés.
+  - Les collectes ne tournent que sur la réplique qui détient un verrou consultatif PostgreSQL (`pg_try_advisory_lock`). Si elle tombe, sa session se ferme et une autre reprend en 15 s au plus. La métrique `zelo_collector_leader` indique quelle réplique est meneuse.
+  - Un PodDisruptionBudget, une mise à jour progressive sans indisponibilité et une répartition sur les nœuds évitent de couper le service lors d'une maintenance.
+  - Limite connue : le quota de signalements par IP est compté par réplique, donc jusqu'à 2 fois plus permissif. Un compteur dans PostgreSQL ou Redis le rendra global si besoin.
 - **Sondes séparées.** `livez` ne dépend pas de la base : une panne de PostgreSQL rend l'API « non prête », sans la faire redémarrer en boucle. `healthz` vérifie la base et sert de readiness.
 - **Durcissement.**
   - Conteneur non root, système de fichiers en lecture seule, aucune capacité, seccomp `RuntimeDefault`, pas de jeton de service monté.

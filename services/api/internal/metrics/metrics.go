@@ -32,4 +32,9 @@ var (
 		Name: "zelo_reports_total",
 		Help: "Signalements reçus, par type.",
 	}, []string{"kind"})
+
+	Leader = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "zelo_collector_leader",
+		Help: "1 si cette instance fait les collectes (verrou PostgreSQL), 0 sinon.",
+	})
 )

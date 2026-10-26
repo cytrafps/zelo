@@ -19,7 +19,10 @@ import (
 //go:embed schema.sql
 var schema string
 
-type Store struct{ db *pgxpool.Pool }
+type Store struct {
+	db  *pgxpool.Pool
+	url string // pour les connexions dédiées (LISTEN, verrou de collecte)
+}
 
 // Open attend la base jusqu'à 30 s : au démarrage d'un conteneur ou d'un pod,
 // PostgreSQL peut encore être en train de s'initialiser.
@@ -36,7 +39,7 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("schéma: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, url: url}, nil
 }
 
 func pingRetry(ctx context.Context, db *pgxpool.Pool, max time.Duration) error {
@@ -320,12 +323,19 @@ type Report struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+// AddReport enregistre le signalement et le publie à toutes les instances de l'API (NOTIFY),
+// dans la même transaction : il n'est diffusé que s'il est bien enregistré.
 func (s *Store) AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration) (Report, error) {
 	r := Report{Kind: kind, Lat: lat, Lon: lon}
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO report (kind, geom, expires_at)
-		VALUES ($1, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, now() + make_interval(secs => $4))
-		RETURNING id, created_at, expires_at`, kind, lat, lon, ttl.Seconds()).Scan(&r.ID, &r.CreatedAt, &r.ExpiresAt)
+	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO report (kind, geom, expires_at)
+			VALUES ($1, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, now() + make_interval(secs => $4))
+			RETURNING id, created_at, expires_at`, kind, lat, lon, ttl.Seconds()).Scan(&r.ID, &r.CreatedAt, &r.ExpiresAt); err != nil {
+			return err
+		}
+		return notify(ctx, tx, LiveEvent{Type: "report", Report: &r})
+	})
 	return r, err
 }
 

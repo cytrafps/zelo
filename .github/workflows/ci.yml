@@ -14,6 +14,20 @@ jobs:
     defaults:
       run:
         working-directory: services/api
+    # Base réelle pour les tests d'intégration (diffusion NOTIFY entre instances, élection du collecteur).
+    services:
+      db:
+        image: postgis/postgis:17-3.5-alpine
+        env:
+          POSTGRES_USER: zelo
+          POSTGRES_PASSWORD: zelo
+          POSTGRES_DB: zelo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zelo -d zelo -h 127.0.0.1"
+          --health-interval 3s --health-retries 20
+    env:
+      ZELO_TEST_DATABASE_URL: postgres://zelo:zelo@localhost:5432/zelo?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

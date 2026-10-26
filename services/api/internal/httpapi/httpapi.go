@@ -157,10 +157,8 @@ func (a *API) addReport(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, r, err)
 		return
 	}
+	// La diffusion passe par PostgreSQL (NOTIFY) pour atteindre les clients de toutes les instances.
 	metrics.Reports.WithLabelValues(in.Kind).Inc()
-	if msg, err := json.Marshal(map[string]any{"type": "report", "report": rep}); err == nil {
-		a.hub.Broadcast(msg)
-	}
 	writeJSON(w, http.StatusCreated, rep)
 }
 

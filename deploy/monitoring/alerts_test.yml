@@ -9,6 +9,10 @@ tests:
         values: '0x60'
       - series: 'zelo_ingest_last_success_timestamp_seconds{source="parkings"}'
         values: '0x60'
+      - series: 'zelo_collector_leader{namespace="zelo", pod="api-a"}'
+        values: '1x5 0x20'
+      - series: 'zelo_collector_leader{namespace="zelo", pod="api-b"}'
+        values: '0x5 0x3 1x15'
       - series: 'zelo_ingest_runs_total{source="bornes_dynamique", result="erreur"}'
         values: '0 1 2 3 4 5'
     alert_rule_test:
@@ -27,3 +31,27 @@ tests:
           - exp_labels: { severity: warning, source: bornes_dynamique, result: erreur }
             exp_annotations:
               summary: "La collecte « bornes_dynamique » a échoué 5 fois en une heure."
+      # Bascule de 3 min entre les deux répliques : pas d'alerte (seuil 5 min).
+      - eval_time: 12m
+        alertname: ZeloAucunCollecteur
+        exp_alerts: []
+  # Plus aucun meneur pendant 8 min : alerte (seuil 5 min) ; deux meneurs : alerte aussi.
+  - interval: 1m
+    input_series:
+      - series: 'zelo_collector_leader{namespace="zelo", pod="api-a"}'
+        values: '0x10 1x10'
+      - series: 'zelo_collector_leader{namespace="zelo", pod="api-b"}'
+        values: '0x10 1x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ZeloAucunCollecteur
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: Aucune réplique ne détient le verrou des collectes.
+      - eval_time: 14m
+        alertname: ZeloPlusieursCollecteurs
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "2 répliques collectent en même temps : le verrou PostgreSQL ne joue plus son rôle."
