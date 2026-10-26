@@ -1,7 +1,47 @@
+<p align="center">
+  <img src="docs/banner.png" alt="Zelo, l'app de la fin du trajet : se garer, recharger, faire le plein" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/cytrafps/zelo/actions/workflows/ci.yml"><img src="https://github.com/cytrafps/zelo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/Expo-SDK%2058-000020?logo=expo&logoColor=white" alt="Expo SDK 58">
+  <img src="https://img.shields.io/badge/PostGIS-17-336791?logo=postgresql&logoColor=white" alt="PostGIS 17">
+  <img src="https://img.shields.io/badge/donn%C3%A9es-ouvertes-16A34A" alt="Données ouvertes">
+</p>
+
 # Zelo
 
 L'app de la fin du trajet : se garer, recharger, faire le plein, retrouver sa voiture.
 Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Sources["Données ouvertes"]
+    F["Prix des carburants<br/>toutes les 10 min"]
+    B["Bornes IRVE<br/>statique 24 h · dynamique 5 min"]
+    O["OpenStreetMap<br/>parkings, 24 h"]
+  end
+  subgraph Serveur["services/api (Go)"]
+    J["Collecte planifiée"]
+    A["API REST"]
+    W["WebSocket /v1/live"]
+  end
+  DB[("PostgreSQL + PostGIS")]
+  App["App mobile<br/>Expo + MapLibre"]
+
+  F --> J
+  B --> J
+  O --> J
+  J --> DB
+  A <--> DB
+  App -- "GET stations, bornes, parkings" --> A
+  App -- "POST signalement" --> A
+  A -- "diffusion" --> W
+  W -- "temps réel" --> App
+```
 
 ## Contenu du dépôt
 

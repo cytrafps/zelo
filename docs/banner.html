@@ -1,0 +1,110 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;box-sizing:border-box}
+html,body{width:1280px;height:640px;overflow:hidden}
+body{font-family:Inter,sans-serif;background:#1C1B19;color:#F2F0EC;position:relative;-webkit-font-smoothing:antialiased}
+.glow{position:absolute;inset:0;background:
+ radial-gradient(620px 420px at 82% 70%,rgba(22,163,74,.22),transparent 70%),
+ radial-gradient(500px 360px at 10% 0%,rgba(242,240,236,.06),transparent 70%)}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(242,240,236,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(242,240,236,.035) 1px,transparent 1px);background-size:40px 40px;mask-image:linear-gradient(90deg,#000 0%,transparent 70%)}
+.left{position:absolute;left:88px;top:72px;width:640px}
+.logo{display:block;margin-bottom:34px}
+h1{font-family:"Inter Display",Inter;font-weight:700;font-size:52px;line-height:1.05;letter-spacing:-.025em}
+h1 em{font-style:normal;color:#2BD46A}
+p.sub{margin-top:20px;font-size:19px;line-height:1.45;color:#BDB8AE;max-width:520px}
+.chips{display:flex;gap:10px;margin-top:30px}
+.chip{display:flex;align-items:center;gap:9px;padding:8px 14px 8px 11px;border-radius:999px;background:rgba(242,240,236,.07);border:1px solid rgba(242,240,236,.1);font-size:14px;font-weight:500;color:#E8E5DF;white-space:nowrap}
+.dot{width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,.9)}
+.foot{position:absolute;left:88px;bottom:40px;font-size:14px;color:#8A857D;letter-spacing:.01em}
+.foot b{color:#BDB8AE;font-weight:500}
+.phone{position:absolute;right:120px;top:70px;width:318px;height:660px;border-radius:52px;background:#0E0D0C;padding:11px;box-shadow:0 40px 90px rgba(0,0,0,.55),0 0 0 1.5px rgba(242,240,236,.14) inset;transform:rotate(-4deg);transform-origin:50% 0}
+.screen{position:relative;width:100%;height:100%;border-radius:42px;overflow:hidden;background:#F4F1EB}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:96px;height:28px;border-radius:20px;background:#000;z-index:5}
+.status{position:absolute;top:15px;left:28px;right:24px;display:flex;justify-content:space-between;font-size:14px;font-weight:600;color:#1C1B19;z-index:4}
+.sheet{position:absolute;left:0;right:0;bottom:0;height:236px;background:#fff;border-radius:30px 30px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.12);padding:12px 22px 0;color:#1C1B19}
+.grab{width:38px;height:5px;border-radius:3px;background:#D9D5CE;margin:0 auto 14px}
+.sheet h3{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.sheet .meta{font-size:13px;color:#5F5B54;margin:3px 0 12px}
+.row{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #EEEAE3;font-size:15px}
+.row b{color:#9A4508;font-weight:600}
+.bar{position:absolute;left:16px;right:16px;bottom:252px;display:flex;justify-content:space-between;align-items:center}
+.btn{height:46px;padding:0 18px;border-radius:23px;background:#007AFF;color:#fff;font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;box-shadow:0 6px 16px rgba(0,122,255,.35)}
+.round{width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,.14)}
+</style></head><body>
+<div class="glow"></div><div class="grid"></div>
+<div class="left">
+<svg class="logo" width="193" height="81" viewBox="0 0 386 162" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Logo/Logotype">
+<path id="z" d="M75 44C78.4303 44 82.4566 44.315 86.2852 45.6602C90.2167 47.0415 95.6898 50.2087 98.25 56.8652C100.674 63.1674 99.0328 68.9336 97.5625 72.3066C96.0719 75.726 93.8587 78.8153 91.6396 81.4629L51.874 132H79C87.2843 132 94 138.716 94 147C94 155.284 87.2843 162 79 162H37C33.4997 162 29.34 161.653 25.3789 160.154C21.1666 158.56 15.9708 155.116 13.624 148.545C11.4617 142.49 12.8929 136.932 14.2832 133.497C15.7322 129.917 17.9375 126.618 20.2051 123.732L20.2119 123.725L59.3398 74H15C6.71573 74 0 67.2843 0 59C0 50.7157 6.71573 44 15 44H75Z" fill="#FFFFFF"/>
+<path id="e" d="M136.86 53.965C148.548 47.933 161.963 46.1286 174.829 48.8576C187.695 51.5866 199.221 58.6816 207.454 68.9387C215.687 79.1959 220.12 91.9849 220 105.137C219.925 113.367 213.231 120 205 120H140.814C142.63 122.619 144.907 124.917 147.56 126.767C152.671 130.33 158.857 132.015 165.069 131.538C171.281 131.061 177.136 128.45 181.643 124.149C187.636 118.429 197.132 118.651 202.851 124.644C208.571 130.637 208.349 140.131 202.356 145.851C192.842 154.932 180.48 160.443 167.366 161.45C154.252 162.457 141.193 158.898 130.404 151.376C119.615 143.854 111.759 132.833 108.168 120.18C104.577 107.527 105.472 94.0223 110.701 81.9543C115.93 69.8862 125.172 59.997 136.86 53.965ZM168.604 78.2053C162.51 76.9126 156.155 77.7669 150.619 80.6242C146.396 82.8038 142.848 86.0472 140.302 90.0002H185.702C185.196 89.2142 184.648 88.4516 184.058 87.717C180.159 82.8584 174.699 79.498 168.604 78.2053Z" fill="#FFFFFF"/>
+<path id="l" d="M230 147V15C230 6.71573 236.716 0 245 0C253.284 0 260 6.71573 260 15V147C260 155.284 253.284 162 245 162C236.716 162 230 155.284 230 147Z" fill="#FFFFFF"/>
+<path id="o" d="M356 104C356 88.536 343.464 76 328 76C312.536 76 300 88.536 300 104C300 119.464 312.536 132 328 132C343.464 132 356 119.464 356 104ZM386 104C386 136.033 360.033 162 328 162C295.967 162 270 136.033 270 104C270 71.9675 295.967 46 328 46C360.033 46 386 71.9675 386 104Z" fill="#FFFFFF"/>
+</g>
+</svg>
+
+<h1>L’app de la fin du&nbsp;trajet.<br><em>Se garer, recharger,<br>faire le plein.</em></h1>
+<p class="sub">Les prix des carburants, les bornes libres, les parkings et les signalements en direct, sur une seule carte. Reims d’abord, puis toute la France.</p>
+<div class="chips">
+<span class="chip"><i class="dot" style="background:#C2570C"></i>Carburant</span>
+<span class="chip"><i class="dot" style="background:#0B7A61"></i>Recharge</span>
+<span class="chip"><i class="dot" style="background:#1D5FD1"></i>Stationnement</span>
+<span class="chip"><i class="dot" style="background:#C8361F"></i>Signalements en direct</span>
+</div>
+</div>
+<div class="foot"><b>Projet annuel B3</b> · ESGI Reims · Systèmes, Réseaux et Cloud</div>
+
+<div class="phone"><div class="screen">
+<div class="island"></div>
+<div class="status"><span>9:41</span><span>●●● ▮</span></div>
+<svg width="296" height="638" viewBox="0 0 296 638" style="position:absolute;inset:0">
+ <rect width="296" height="638" fill="#F4F1EB"/>
+ <path d="M-20 300 C 60 270, 110 330, 170 300 S 260 250, 330 280" stroke="#C9DCE6" stroke-width="16" fill="none"/>
+ <rect x="18" y="110" width="70" height="52" rx="6" fill="#DCEBD3"/>
+ <rect x="190" y="360" width="80" height="60" rx="8" fill="#DCEBD3"/>
+ <g stroke="#FFFFFF" stroke-linecap="round" fill="none">
+  <path d="M-10 190 L 320 150" stroke-width="12"/>
+  <path d="M120 -10 L 150 660" stroke-width="12"/>
+  <path d="M-10 420 L 320 380" stroke-width="9"/>
+  <path d="M40 -10 L 70 660" stroke-width="6"/><path d="M230 -10 L 250 660" stroke-width="6"/>
+  <path d="M-10 90 L 320 70" stroke-width="5"/><path d="M-10 520 L 320 500" stroke-width="5"/>
+  <path d="M-10 250 L 320 225" stroke-width="4"/><path d="M185 -10 L 205 660" stroke-width="4"/>
+  <path d="M-10 340 L 120 325" stroke-width="4"/>
+ </g>
+ <g stroke="#E6E1D8" stroke-width="1" fill="none"><path d="M120 -10 L 150 660"/><path d="M-10 190 L 320 150"/></g>
+ <!-- signalement -->
+ <circle cx="138" cy="222" r="17" fill="#C8361F" opacity=".2"/><circle cx="138" cy="222" r="7.5" fill="#C8361F" stroke="#fff" stroke-width="2.5"/>
+ <!-- parkings -->
+ <g font-family="Inter" font-weight="700" font-size="11" text-anchor="middle" fill="#fff">
+  <circle cx="92" cy="200" r="11" fill="#1D5FD1" stroke="#fff" stroke-width="2"/><text x="92" y="204">P</text>
+  <circle cx="214" cy="120" r="11" fill="#1D5FD1" stroke="#fff" stroke-width="2"/><text x="214" y="124">P</text>
+  <circle cx="44" cy="232" r="11" fill="#1D5FD1" stroke="#fff" stroke-width="2"/><text x="44" y="236">P</text>
+ </g>
+ <g font-family="Inter" font-weight="700" font-size="11" text-anchor="middle" stroke="#fff" stroke-width="3" paint-order="stroke">
+  <text x="92" y="228" fill="#1A4FAF">450 pl.</text><text x="214" y="148" fill="#1A4FAF">320 pl.</text>
+ </g>
+ <!-- bornes -->
+ <circle cx="170" cy="168" r="8" fill="#0B7A61" stroke="#fff" stroke-width="2"/>
+ <circle cx="252" cy="300" r="8" fill="#0B7A61" stroke="#fff" stroke-width="2"/>
+ <circle cx="70" cy="300" r="8" fill="#C8361F" stroke="#fff" stroke-width="2"/>
+ <g font-family="Inter" font-weight="700" font-size="11" text-anchor="middle" stroke="#fff" stroke-width="3" paint-order="stroke" fill="#0A6650">
+  <text x="170" y="191">3/4</text><text x="252" y="323">2/2</text>
+ </g>
+ <!-- carburant (sélectionnée) -->
+ <circle cx="196" cy="262" r="16" fill="#C2570C" opacity=".2"/>
+ <circle cx="196" cy="262" r="9" fill="#C2570C" stroke="#fff" stroke-width="2.5"/>
+ <circle cx="76" cy="132" r="8" fill="#C2570C" stroke="#fff" stroke-width="2"/>
+ <g font-family="Inter" font-weight="700" font-size="11" text-anchor="middle" stroke="#fff" stroke-width="3" paint-order="stroke" fill="#9A4508">
+  <text x="76" y="155">Gazole 1,789</text>
+ </g>
+ <!-- position -->
+ <circle cx="128" cy="330" r="22" fill="#1D7CF2" opacity=".15"/><circle cx="128" cy="330" r="8" fill="#1D7CF2" stroke="#fff" stroke-width="3"/>
+</svg>
+<div class="bar"><div class="btn"><svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm7 3v5h2V7h-2zm0 7v2h2v-2h-2z"/></svg>Signaler</div>
+<div class="round"><svg width="20" height="20" viewBox="0 0 24 24" fill="#007AFF"><path d="M21 3 3 10.5l7.5 2.9L13.4 21 21 3z"/></svg></div></div>
+<div class="sheet"><div class="grab"></div>
+<h3>Station-service</h3><div class="meta">Reims · prix mis à jour il y a 12 min</div>
+<div class="row"><span>Gazole</span><b>1,789 €</b></div>
+<div class="row"><span>E10</span><b>1,749 €</b></div>
+<div class="row"><span>SP98</span><b>1,859 €</b></div>
+</div>
+</div></div>
+</body></html>
