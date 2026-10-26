@@ -130,17 +130,27 @@ export function ParkingLayer({ parkings, c, onPress }: { parkings: Parking[]; c:
   );
 }
 
-export function ReportLayer({ reports }: { reports: Report[] }) {
+export function ReportLayer({ reports, onPress }: { reports: Report[]; onPress: Press }) {
   const data = useMemo(
-    () => collection(reports.map((r) => point(r.lon, r.lat, { id: r.id, color: REPORT_META[r.kind]?.couleur ?? '#5F5B54' }))),
+    () =>
+      collection(
+        reports.map((r) =>
+          point(r.lon, r.lat, {
+            id: r.id,
+            color: REPORT_META[r.kind]?.couleur ?? '#5F5B54',
+            // Plus un signalement est confirmé, plus son halo est large (plafonné).
+            halo: 16 + 2 * Math.min(r.confirmations, 5),
+          }),
+        ),
+      ),
     [reports],
   );
   return (
-    <GeoJSONSource id="reports" data={data}>
+    <GeoJSONSource id="reports" data={data} onPress={onPress}>
       <Layer
         id="report-halo"
         type="circle"
-        paint={{ 'circle-radius': 16, 'circle-color': ['get', 'color'], 'circle-opacity': 0.2 }}
+        paint={{ 'circle-radius': ['get', 'halo'], 'circle-color': ['get', 'color'], 'circle-opacity': 0.2 }}
       />
       <Layer
         id="report-dot"

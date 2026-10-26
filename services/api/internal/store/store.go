@@ -314,43 +314,6 @@ func (s *Store) Parkings(ctx context.Context, b BBox, limit int) ([]Parking, err
 
 // --- Signalements
 
-type Report struct {
-	ID        int64     `json:"id"`
-	Kind      string    `json:"kind"`
-	Lat       float64   `json:"lat"`
-	Lon       float64   `json:"lon"`
-	CreatedAt time.Time `json:"createdAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-// AddReport enregistre le signalement et le publie à toutes les instances de l'API (NOTIFY),
-// dans la même transaction : il n'est diffusé que s'il est bien enregistré.
-func (s *Store) AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration) (Report, error) {
-	r := Report{Kind: kind, Lat: lat, Lon: lon}
-	err := pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO report (kind, geom, expires_at)
-			VALUES ($1, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, now() + make_interval(secs => $4))
-			RETURNING id, created_at, expires_at`, kind, lat, lon, ttl.Seconds()).Scan(&r.ID, &r.CreatedAt, &r.ExpiresAt); err != nil {
-			return err
-		}
-		return notify(ctx, tx, LiveEvent{Type: "report", Report: &r})
-	})
-	return r, err
-}
-
-func (s *Store) Reports(ctx context.Context, b BBox, limit int) ([]Report, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, kind, ST_Y(geom::geometry), ST_X(geom::geometry), created_at, expires_at
-		FROM report
-		WHERE expires_at > now() AND ST_Intersects(geom, `+envelope+`)
-		ORDER BY created_at DESC LIMIT $5`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, limit)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Report])
-}
-
 func (s *Store) PurgeReports(ctx context.Context) (int64, error) {
 	tag, err := s.db.Exec(ctx, `DELETE FROM report WHERE expires_at < now() - interval '1 day'`)
 	return tag.RowsAffected(), err

@@ -14,9 +14,11 @@ import (
 const LiveChannel = "zelo_live"
 
 // LiveEvent est le message envoyé aux clients WebSocket.
+// Type « report » : signalement nouveau ou mis à jour (votes) ; « report_removed » : retiré.
 type LiveEvent struct {
 	Type   string  `json:"type"`
 	Report *Report `json:"report,omitempty"`
+	ID     int64   `json:"id,omitempty"`
 }
 
 func notify(ctx context.Context, tx pgx.Tx, ev LiveEvent) error {
