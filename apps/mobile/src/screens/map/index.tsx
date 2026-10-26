@@ -10,9 +10,9 @@ import { useMapData, type DataStatus } from '@/hooks/use-map-data';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
 
-import { ChargeLayer, FuelLayer, ReportLayer } from './layers';
+import { ChargeLayer, FuelLayer, ParkingLayer, ReportLayer } from './layers';
 import { ReportSheet } from './report-sheet';
-import { StationSheet, type Selection } from './station-sheet';
+import { PlaceSheet, type Selection } from './place-sheet';
 
 // Fond de carte OpenStreetMap gratuit et sans clé (OpenFreeMap) pour le prototype ;
 // à remplacer par nos tuiles PMTiles auto-hébergées.
@@ -40,13 +40,13 @@ export function MapScreen() {
     (e) => {
       e.stopPropagation();
       const id = e.nativeEvent.features[0]?.properties?.id;
-      if (kind === 'fuel') {
-        const station = data.fuel.find((s) => s.id === id);
-        if (station) setSelection({ kind, station });
-      } else {
-        const station = data.charge.find((s) => s.id === id);
-        if (station) setSelection({ kind, station });
-      }
+      const next =
+        kind === 'fuel'
+          ? pick(kind, data.fuel, id)
+          : kind === 'charge'
+            ? pick(kind, data.charge, id)
+            : pick(kind, data.parkings, id);
+      if (next) setSelection(next);
     };
 
   const locate = async () => {
@@ -71,6 +71,7 @@ export function MapScreen() {
         }}
       >
         <Camera ref={camera} initialViewState={{ center: REIMS, zoom: 13.5 }} minZoom={5} maxZoom={19} />
+        <ParkingLayer parkings={data.parkings} c={c} onPress={select('parking')} />
         <FuelLayer stations={data.fuel} c={c} onPress={select('fuel')} />
         <ChargeLayer stations={data.charge} c={c} onPress={select('charge')} />
         <ReportLayer reports={data.reports} />
@@ -99,7 +100,7 @@ export function MapScreen() {
         </Pressable>
       </View>
 
-      <StationSheet selection={selection} onDismiss={() => setSelection(null)} />
+      <PlaceSheet selection={selection} onDismiss={() => setSelection(null)} />
       <ReportSheet
         isPresented={reporting}
         onDismiss={() => setReporting(false)}
@@ -108,6 +109,11 @@ export function MapScreen() {
       />
     </View>
   );
+}
+
+function pick<K extends Selection['kind']>(kind: K, list: { id: string }[], id: unknown) {
+  const item = list.find((x) => x.id === id);
+  return item ? ({ kind, item } as Extract<Selection, { kind: K }>) : null;
 }
 
 const MESSAGES: Partial<Record<DataStatus, string>> = {

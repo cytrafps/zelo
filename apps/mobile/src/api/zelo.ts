@@ -29,6 +29,24 @@ export type ChargeStation = {
   observedAt: string | null;
 };
 
+export type Parking = {
+  id: string;
+  name: string;
+  operator: string;
+  kind: 'surface' | 'multi-storey' | 'underground' | 'street';
+  lat: number;
+  lon: number;
+  capacity: number | null;
+  disabled: number | null;
+  charging: number | null;
+  /** null : non renseigné dans OpenStreetMap. */
+  fee: boolean | null;
+  /** Hauteur maximale en mètres. */
+  maxHeight: number | null;
+  openingHours: string;
+  parkRide: boolean;
+};
+
 export const REPORT_KINDS = [
   'accident',
   'bouchon',
@@ -74,6 +92,7 @@ const list = <T>(path: string, bbox: BBox, signal?: AbortSignal) =>
 
 export const getFuelStations = (b: BBox, s?: AbortSignal) => list<FuelStation>('/v1/fuel-stations', b, s);
 export const getChargeStations = (b: BBox, s?: AbortSignal) => list<ChargeStation>('/v1/charge-stations', b, s);
+export const getParkings = (b: BBox, s?: AbortSignal) => list<Parking>('/v1/parkings', b, s);
 export const getReports = (b: BBox, s?: AbortSignal) => list<Report>('/v1/reports', b, s);
 
 export const postReport = (kind: ReportKind, lat: number, lon: number) =>

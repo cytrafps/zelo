@@ -44,6 +44,7 @@ type Store interface {
 	Ping(context.Context) error
 	FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error)
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
+	Parkings(context.Context, store.BBox, int) ([]store.Parking, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
 	AddReport(context.Context, string, float64, float64, time.Duration) (store.Report, error)
 }
@@ -69,6 +70,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /healthz", a.health)
 	mux.HandleFunc("GET /v1/fuel-stations", a.fuelStations)
 	mux.HandleFunc("GET /v1/charge-stations", a.chargeStations)
+	mux.HandleFunc("GET /v1/parkings", a.parkings)
 	mux.HandleFunc("GET /v1/reports", a.reports)
 	mux.HandleFunc("POST /v1/reports", a.addReport)
 	mux.HandleFunc("GET /v1/live", a.liveFeed)
@@ -91,6 +93,10 @@ func (a *API) fuelStations(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) chargeStations(w http.ResponseWriter, r *http.Request) {
 	list(a, w, r, a.store.ChargeStations, 60)
+}
+
+func (a *API) parkings(w http.ResponseWriter, r *http.Request) {
+	list(a, w, r, a.store.Parkings, 300) // données OSM rafraîchies une fois par jour
 }
 
 func (a *API) reports(w http.ResponseWriter, r *http.Request) {

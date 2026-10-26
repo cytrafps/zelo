@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getChargeStations,
   getFuelStations,
+  getParkings,
   getReports,
   type BBox,
   type ChargeStation,
   type FuelStation,
+  type Parking,
   type Report,
 } from '@/api/zelo';
 import { contains, fetchArea } from '@/utils/bbox';
@@ -16,13 +18,14 @@ export type DataStatus = 'idle' | 'loading' | 'error' | 'zoom-out';
 const notExpired = (now: number) => (r: Report) => new Date(r.expiresAt).getTime() > now;
 
 /**
- * Stations, bornes et signalements autour de la vue visible.
+ * Stations, bornes, parkings et signalements autour de la vue visible.
  * Une seule requête par source tant que la vue reste dans la zone déjà chargée ;
  * la requête précédente est annulée si la carte bouge encore.
  */
 export function useMapData(view: BBox | null) {
   const [fuel, setFuel] = useState<FuelStation[]>([]);
   const [charge, setCharge] = useState<ChargeStation[]>([]);
+  const [parkings, setParkings] = useState<Parking[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [status, setStatus] = useState<DataStatus>('idle');
   const [reloadToken, setReloadToken] = useState(0);
@@ -36,14 +39,16 @@ export function useMapData(view: BBox | null) {
     const t = setTimeout(async () => {
       setStatus('loading');
       try {
-        const [f, c, r] = await Promise.all([
+        const [f, c, p, r] = await Promise.all([
           getFuelStations(area, ctl.signal),
           getChargeStations(area, ctl.signal),
+          getParkings(area, ctl.signal),
           getReports(area, ctl.signal),
         ]);
         loaded.current = area;
         setFuel(f);
         setCharge(c);
+        setParkings(p);
         setReports(r);
         setStatus('idle');
       } catch {
@@ -77,5 +82,5 @@ export function useMapData(view: BBox | null) {
   }, []);
 
   const tooWide = view !== null && fetchArea(view) === null;
-  return { fuel, charge, reports, status: tooWide ? ('zoom-out' as const) : status, addReport, reload };
+  return { fuel, charge, parkings, reports, status: tooWide ? ('zoom-out' as const) : status, addReport, reload };
 }
