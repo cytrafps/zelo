@@ -18,9 +18,9 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/time/rate"
 
-	"github.com/Skade64/zelo/services/api/internal/live"
-	"github.com/Skade64/zelo/services/api/internal/metrics"
-	"github.com/Skade64/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/live"
+	"github.com/cytrafps/zelo/services/api/internal/metrics"
+	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
 const (

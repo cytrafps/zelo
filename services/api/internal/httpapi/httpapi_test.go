@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Skade64/zelo/services/api/internal/live"
-	"github.com/Skade64/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/live"
+	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
 type fakeStore struct{ added []store.Report }

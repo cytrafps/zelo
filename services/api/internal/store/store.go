@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Skade64/zelo/services/api/internal/fuel"
-	"github.com/Skade64/zelo/services/api/internal/irve"
+	"github.com/cytrafps/zelo/services/api/internal/fuel"
+	"github.com/cytrafps/zelo/services/api/internal/irve"
 )
 
 //go:embed schema.sql

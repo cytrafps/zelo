@@ -18,12 +18,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/Skade64/zelo/services/api/internal/fuel"
-	"github.com/Skade64/zelo/services/api/internal/httpapi"
-	"github.com/Skade64/zelo/services/api/internal/irve"
-	"github.com/Skade64/zelo/services/api/internal/live"
-	"github.com/Skade64/zelo/services/api/internal/metrics"
-	"github.com/Skade64/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/fuel"
+	"github.com/cytrafps/zelo/services/api/internal/httpapi"
+	"github.com/cytrafps/zelo/services/api/internal/irve"
+	"github.com/cytrafps/zelo/services/api/internal/live"
+	"github.com/cytrafps/zelo/services/api/internal/metrics"
+	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
 func main() {

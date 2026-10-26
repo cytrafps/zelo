@@ -1,4 +1,4 @@
-module github.com/Skade64/zelo/services/api
+module github.com/cytrafps/zelo/services/api
 
 go 1.26.0
 
