@@ -53,3 +53,20 @@ CREATE TABLE IF NOT EXISTS report (
 );
 CREATE INDEX IF NOT EXISTS report_geom ON report USING gist (geom);
 CREATE INDEX IF NOT EXISTS report_expires ON report (expires_at);
+
+CREATE TABLE IF NOT EXISTS parking (
+    id             text PRIMARY KEY,
+    name           text NOT NULL DEFAULT '',
+    operator       text NOT NULL DEFAULT '',
+    kind           text NOT NULL,
+    geom           geography(Point, 4326) NOT NULL,
+    capacity       integer,
+    disabled       integer,
+    charging       integer,
+    fee            boolean,
+    max_height     real,
+    opening_hours  text NOT NULL DEFAULT '',
+    park_ride      boolean NOT NULL DEFAULT false,
+    seen_at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS parking_geom ON parking USING gist (geom);

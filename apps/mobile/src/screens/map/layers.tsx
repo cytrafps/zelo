@@ -1,7 +1,7 @@
 import { GeoJSONSource, Layer, type GeoJSONSourceProps } from '@maplibre/maplibre-react-native';
 import { useMemo } from 'react';
 
-import type { ChargeStation, FuelStation, Report } from '@/api/zelo';
+import type { ChargeStation, FuelStation, Parking, Report } from '@/api/zelo';
 import { REPORT_META, type Couleurs } from '@/theme';
 import { FUEL_ORDER } from '@/utils/format';
 
@@ -87,6 +87,44 @@ export function ChargeLayer({ stations, c, onPress }: { stations: ChargeStation[
         minzoom={13.5}
         layout={{ 'text-field': ['get', 'label'], 'text-font': font, 'text-size': 12, 'text-offset': [0, 1.3], 'text-anchor': 'top' }}
         paint={{ 'text-color': c.recharge.texte, 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5 }}
+      />
+    </GeoJSONSource>
+  );
+}
+
+export function ParkingLayer({ parkings, c, onPress }: { parkings: Parking[]; c: Couleurs; onPress: Press }) {
+  const data = useMemo(
+    () =>
+      collection(
+        parkings.map((p) => point(p.lon, p.lat, { id: p.id, label: p.capacity === null ? '' : `${p.capacity} pl.` })),
+      ),
+    [parkings],
+  );
+  return (
+    <GeoJSONSource id="parkings" data={data} onPress={onPress}>
+      <Layer
+        id="parking-dot"
+        type="circle"
+        paint={{
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 15, 10] as never,
+          'circle-color': c.stationnement.base,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 2,
+        }}
+      />
+      <Layer
+        id="parking-letter"
+        type="symbol"
+        minzoom={12.5}
+        layout={{ 'text-field': 'P', 'text-font': font, 'text-size': 11, 'text-allow-overlap': true }}
+        paint={{ 'text-color': '#FFFFFF' }}
+      />
+      <Layer
+        id="parking-capacity"
+        type="symbol"
+        minzoom={14.5}
+        layout={{ 'text-field': ['get', 'label'], 'text-font': font, 'text-size': 12, 'text-offset': [0, 1.4], 'text-anchor': 'top' }}
+        paint={{ 'text-color': c.stationnement.texte, 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5 }}
       />
     </GeoJSONSource>
   );

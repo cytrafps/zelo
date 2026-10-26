@@ -23,6 +23,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/irve"
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
+	"github.com/cytrafps/zelo/services/api/internal/parking"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
@@ -83,6 +84,19 @@ func run(log *slog.Logger, once bool) error {
 			n, err := db.PurgeReports(ctx)
 			return int(n), err
 		}},
+	}
+
+	// Overpass ne sert qu'une zone limitée : sans IMPORT_BBOX, pas d'import de parkings.
+	if bbox != (irve.BBox{}) {
+		jobs = append(jobs, job{"parkings", 24 * time.Hour, func(ctx context.Context) (int, error) {
+			p, err := parking.Fetch(ctx, client, envOr("OVERPASS_URL", parking.OverpassURL), parking.BBox(bbox))
+			if err != nil {
+				return 0, err
+			}
+			return len(p), db.SaveParkings(ctx, p)
+		}})
+	} else {
+		log.Warn("IMPORT_BBOX vide : import des parkings désactivé")
 	}
 
 	if once {

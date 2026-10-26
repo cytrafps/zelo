@@ -6,23 +6,33 @@ Ce prototype affiche autour de Reims :
 
 - les stations-service et leurs prix ;
 - les bornes de recharge et le nombre de points libres ;
+- les parkings publics, avec leurs places, leur tarif (payant ou gratuit) et leur hauteur maximale ;
 - les signalements, reçus en temps réel par WebSocket.
 
 Le bouton « Signaler » publie un événement à ta position.
 
-## Lancer
+## Lancer sur ton téléphone Android
 
-MapLibre contient du code natif : l'app tourne dans un **development build**, pas dans Expo Go.
+MapLibre contient du code natif : l'app tourne dans un **development build**, pas dans Expo Go. On le construit une fois dans le cloud EAS, sans Android Studio ; ensuite, tout changement de code JS arrive en direct.
+
+Une seule fois :
 
 ```sh
-docker compose -f ../../infra/compose.yaml up --build   # API + PostGIS, depuis apps/mobile
-npm install
-EXPO_PUBLIC_API_URL=http://<ip-de-ton-pc>:8080 npm run android   # ou npm run ios (Mac)
+npx eas-cli@latest login                                   # compte Expo gratuit
+npx eas-cli@latest init                                    # lie le projet au compte (ajoute projectId dans app.json)
+npx eas-cli@latest build -p android --profile development  # ~15 min, donne un lien et un QR code vers l'APK
 ```
 
-Sur un téléphone physique, `localhost` désigne le téléphone : mets l'IP de ton ordinateur sur le même Wi-Fi. Sur l'émulateur Android, mets `http://10.0.2.2:8080`.
+Scanne le QR code avec le téléphone et installe l'APK. Ensuite, à chaque session :
 
-Avec EAS (sans Android Studio ni Xcode) : `npx eas-cli@latest build --profile development`.
+```sh
+docker compose -f ../../infra/compose.yaml up --build      # API + PostGIS
+EXPO_PUBLIC_API_URL=http://<ip-de-ton-pc>:8080 npm start   # puis scanne le QR code depuis l'app Zelo
+```
+
+Le téléphone et le PC doivent être sur le même Wi-Fi ; `localhost` désigne le téléphone, d'où l'IP du PC. Un nouveau build n'est nécessaire que si on ajoute une dépendance native.
+
+iPhone : un development build demande un compte Apple Developer payant (99 €/an) ; à défaut, on teste sur Android.
 
 ## Organisation
 

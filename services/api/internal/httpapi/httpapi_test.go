@@ -24,6 +24,9 @@ func (f *fakeStore) FuelStations(context.Context, store.BBox, int) ([]store.Fuel
 func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error) {
 	return nil, nil
 }
+func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking, error) {
+	return nil, nil
+}
 func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, error) {
 	return f.added, nil
 }

@@ -1,15 +1,18 @@
 import { BottomSheet, Column, Host, List, ListItem, Text } from '@expo/ui';
 import { useState } from 'react';
 
-import type { ChargeStation, FuelStation } from '@/api/zelo';
+import type { ChargeStation, FuelStation, Parking } from '@/api/zelo';
 import { texte, useTheme, type Couleurs } from '@/theme';
 import { formatAgo, formatPrice, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
 
-export type Selection = { kind: 'fuel'; station: FuelStation } | { kind: 'charge'; station: ChargeStation };
+export type Selection =
+  | { kind: 'fuel'; item: FuelStation }
+  | { kind: 'charge'; item: ChargeStation }
+  | { kind: 'parking'; item: Parking };
 
 type Props = { selection: Selection | null; onDismiss: () => void };
 
-export function StationSheet({ selection, onDismiss }: Props) {
+export function PlaceSheet({ selection, onDismiss }: Props) {
   const { c, dark } = useTheme();
   // On garde le dernier contenu affiché pendant l'animation de fermeture.
   const [shown, setShown] = useState(selection);
@@ -17,8 +20,9 @@ export function StationSheet({ selection, onDismiss }: Props) {
   return (
     <Host matchContents colorScheme={dark ? 'dark' : 'light'} seedColor={c.action}>
       <BottomSheet isPresented={selection !== null} onDismiss={onDismiss} snapPoints={['half', 'full']}>
-        {shown?.kind === 'fuel' && <FuelDetails s={shown.station} c={c} />}
-        {shown?.kind === 'charge' && <ChargeDetails s={shown.station} c={c} />}
+        {shown?.kind === 'fuel' && <FuelDetails s={shown.item} c={c} />}
+        {shown?.kind === 'charge' && <ChargeDetails s={shown.item} c={c} />}
+        {shown?.kind === 'parking' && <ParkingDetails p={shown.item} c={c} />}
       </BottomSheet>
     </Host>
   );
@@ -91,6 +95,45 @@ function ChargeDetails({ s, c }: { s: ChargeStation; c: Couleurs }) {
           <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>Prises</Text>
         </ListItem>
       </List>
+    </>
+  );
+}
+
+const PARKING_KIND = {
+  surface: 'Parking en surface',
+  'multi-storey': 'Parking à étages',
+  underground: 'Parking souterrain',
+  street: 'Stationnement le long de la voie',
+} as const;
+
+const meters = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function ParkingDetails({ p, c }: { p: Parking; c: Couleurs }) {
+  const rows: [label: string, value: string][] = [
+    ['Places', p.capacity === null ? 'Non renseigné' : String(p.capacity)],
+    ['Tarif', p.fee === null ? 'Non renseigné' : p.fee ? 'Payant' : 'Gratuit'],
+  ];
+  if (p.maxHeight !== null) rows.push(['Hauteur max.', `${meters.format(p.maxHeight)} m`]);
+  if (p.disabled !== null) rows.push(['Places PMR', String(p.disabled)]);
+  if (p.charging !== null) rows.push(['Places avec recharge', String(p.charging)]);
+  if (p.openingHours) rows.push(['Horaires', p.openingHours === '24/7' ? '24 h/24, 7 j/7' : p.openingHours]);
+
+  const subtitle = [p.operator || null, p.parkRide ? 'Parc relais' : null, p.name ? PARKING_KIND[p.kind] : null]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <>
+      <Header title={p.name || PARKING_KIND[p.kind]} subtitle={subtitle || 'Parking public'} c={c} />
+      <List>
+        {rows.map(([label, value]) => (
+          <ListItem key={label} trailing={<Text textStyle={{ ...texte.corps, color: c.texte.secondaire }}>{value}</Text>}>
+            <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>{label}</Text>
+          </ListItem>
+        ))}
+      </List>
+      <Column style={{ paddingHorizontal: 20, paddingVertical: 12 }}>
+        <Text textStyle={{ ...texte.petit, color: c.texte.tertiaire }}>Données © contributeurs OpenStreetMap</Text>
+      </Column>
     </>
   );
 }

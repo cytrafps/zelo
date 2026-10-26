@@ -8,7 +8,7 @@ Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
 | Dossier | Rôle |
 |---|---|
 | `services/api` | API en Go : collecte des données ouvertes, API REST, signalements en temps réel (WebSocket), métriques Prometheus |
-| `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, signalements en temps réel |
+| `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, parkings, signalements en temps réel |
 | `infra` | Environnement de développement (Docker Compose) ; manifestes K3s et Argo CD à venir |
 
 ## Démarrer
@@ -42,6 +42,7 @@ go run ./cmd/api -once   # collecte une fois toutes les sources puis quitte
 |---|---|
 | `GET /v1/fuel-stations?bbox=minLon,minLat,maxLon,maxLat` | Stations et prix par carburant (zone de 1° de côté maximum, 500 résultats) |
 | `GET /v1/charge-stations?bbox=…` | Stations de recharge : puissance max, prises, points de charge, nombre de points libres (`null` si aucun état publié depuis 24 h) |
+| `GET /v1/parkings?bbox=…` | Parkings publics : places, payant ou gratuit, hauteur max, places PMR et recharge, horaires (plus grands d'abord) |
 | `GET /v1/reports?bbox=…` | Signalements encore actifs |
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
 | `GET /v1/live` | WebSocket : chaque nouveau signalement est poussé aux clients |
@@ -55,8 +56,9 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 |---|---|---|
 | `DATABASE_URL` | (obligatoire) | Connexion PostgreSQL + PostGIS |
 | `ADDR` | `:8080` | Adresse d'écoute |
-| `IMPORT_BBOX` | vide (France entière) | Limite l'import des bornes à une zone |
+| `IMPORT_BBOX` | vide (France entière) | Zone d'import des bornes et des parkings (obligatoire pour les parkings) |
 | `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
+| `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Instance Overpass pour l'import des parkings (exige `IMPORT_BBOX`) |
 | `WS_ORIGINS` | vide | Origines web autorisées pour le WebSocket (ex. `dashboard.zelo.app`) |
 
 ## Sources de données
@@ -65,4 +67,5 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 |---|---|---|
 | [Prix des carburants](https://www.prix-carburants.gouv.fr/rubrique/opendata/) | 10 min | Licence Ouverte 2.0 |
 | [Bornes IRVE statiques](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) | 24 h | Licence Ouverte 2.0 |
+| [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |
