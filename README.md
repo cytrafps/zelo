@@ -154,7 +154,7 @@ npx eas-cli@latest build -p android --profile preview
 | `GET /v1/reports?bbox=…` | Signalements encore actifs |
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
 | `POST /v1/reports/{id}/votes` | `{"up": true}` (toujours là) ou `false` (plus là) ; un vote par appareil (`X-Zelo-Device`), modifiable ; jamais sur son propre signalement (409) |
-| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk` | Itinéraire Valhalla : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
+| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk&alternates=0..2` | `{"routes": […]}`, du plus rapide au plus lent : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
 | `GET /v1/live` | WebSocket : `report` (nouveau ou mis à jour) et `report_removed` sont poussés à tous les clients, quelle que soit l'instance |
 | `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus |
 

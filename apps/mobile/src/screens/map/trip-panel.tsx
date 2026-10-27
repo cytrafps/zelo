@@ -1,0 +1,246 @@
+import { SymbolView } from 'expo-symbols';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+
+import type { Report } from '@/api/zelo';
+import { useNow } from '@/hooks/use-now';
+import type { Trip, TripTarget } from '@/hooks/use-trip';
+import { espace, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
+import { walkingMinutes } from '@/utils/geo';
+import { along, cumulative, formatClock, formatDuration, type Route } from '@/utils/route';
+import { sameTarget } from '@/utils/targets';
+
+const ios = Platform.OS === 'ios';
+
+/** Signalements qui comptent pour choisir un itinéraire. */
+const BLOCKING = new Set<Report['kind']>(['accident', 'bouchon', 'travaux', 'obstacle', 'route_fermee']);
+
+type Props = {
+  trip: Trip;
+  reports: Report[];
+  c: Couleurs;
+  bottomInset: number;
+  onSelect: (i: number) => void;
+  onGo: (i: number) => void;
+  onTarget: (t: TripTarget) => void;
+  onClose: () => void;
+};
+
+/** Aperçu du trajet (maquettes 03 et 03b) : où se garer, puis les itinéraires et « Y aller ». */
+export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, onTarget, onClose }: Props) {
+  const [choosing, setChoosing] = useState(false);
+  const now = useNow();
+  const walkTime = trip.walk?.duration ?? 0;
+
+  const share = () => {
+    const route = trip.routes[trip.selected];
+    if (!route) return;
+    const eta = formatClock(new Date(Date.now() + (route.duration + walkTime) * 1000));
+    void Share.share({ message: `J'arrive à ${trip.destination.name} vers ${eta}.` });
+  };
+
+  return (
+    <View
+      style={[
+        ios ? styles.cardIos : styles.cardAndroid,
+        { backgroundColor: c.fond.surface, paddingBottom: espace[4] + (ios ? 0 : bottomInset) },
+        ios && { marginBottom: Math.max(espace[2], bottomInset - espace[3]) },
+      ]}
+    >
+      <View style={[styles.handle, { backgroundColor: c.fond.separateur }]} />
+      <View style={styles.header}>
+        <Text numberOfLines={1} style={[texte.titre, styles.title, { color: c.texte.principal }]}>
+          {trip.destination.name}
+        </Text>
+        <RoundButton c={c} label="Partager mon heure d'arrivée" icon={{ ios: 'square.and.arrow.up', android: 'share' }} onPress={share} />
+        <RoundButton c={c} label="Fermer" icon={{ ios: 'xmark', android: 'close' }} onPress={onClose} />
+      </View>
+
+      <Pressable
+        onPress={() => setChoosing((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel="Choisir où se garer"
+        style={[styles.chip, { borderColor: c.fond.separateur }]}
+      >
+        <TargetIcon t={trip.target} c={c} size={16} />
+        <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
+          {short(trip.target)}
+        </Text>
+        <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />
+      </Pressable>
+
+      {choosing ? (
+        <View style={styles.list}>
+          <Text style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}>À l’arrivée</Text>
+          {trip.options.map((t) => {
+            const on = sameTarget(t, trip.target);
+            return (
+              <Pressable
+                key={t.kind === 'dropoff' ? 'dropoff' : `${t.kind}-${t.item.id}`}
+                onPress={() => {
+                  setChoosing(false);
+                  if (!on) onTarget(t);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                style={({ pressed }) => [styles.option, (on || pressed) && { backgroundColor: c.fond.attenue }]}
+              >
+                <TargetIcon t={t} c={c} size={20} />
+                <View style={styles.flex}>
+                  <Text numberOfLines={1} style={[texte.corps, { color: c.texte.principal }]}>
+                    {title(t)}
+                  </Text>
+                  <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
+                    {detail(t)}
+                  </Text>
+                </View>
+                {on && <SymbolView name={{ ios: 'checkmark', android: 'check' }} tintColor={c.texte.principal} size={18} />}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : trip.error ? (
+        <Text style={[texte.corps, styles.message, { color: c.alerte.base }]}>{trip.error}</Text>
+      ) : trip.loading && trip.routes.length === 0 ? (
+        <ActivityIndicator style={styles.message} color={c.texte.tertiaire} />
+      ) : (
+        <ScrollView style={styles.routes} bounces={false}>
+          {trip.routes.map((r, i) => (
+            <RouteRow
+              key={i}
+              route={r}
+              walk={walkTime}
+              now={now}
+              reports={reports}
+              selected={i === trip.selected}
+              first={i === 0}
+              c={c}
+              onPress={() => onSelect(i)}
+              onGo={() => onGo(i)}
+            />
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+function RouteRow(props: {
+  route: Route;
+  walk: number;
+  now: number;
+  reports: Report[];
+  selected: boolean;
+  first: boolean;
+  c: Couleurs;
+  onPress: () => void;
+  onGo: () => void;
+}) {
+  const { route, walk, now, reports, selected, first, c, onPress, onGo } = props;
+  // Le premier signalement gênant rencontré sur ce trajet.
+  const hit = useMemo(() => {
+    const cum = cumulative(route.coordinates);
+    return along(route, cum, reports.filter((r) => BLOCKING.has(r.kind))).sort((a, b) => a.along - b.along)[0];
+  }, [route, reports]);
+  const eta = formatClock(new Date(now + (route.duration + walk) * 1000));
+  const km = (route.distance / 1000).toFixed(1).replace('.', ',');
+
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }} style={[styles.route, !first && { borderTopColor: c.fond.separateur, borderTopWidth: StyleSheet.hairlineWidth }]}>
+      <View style={styles.flex}>
+        <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + walk)}</Text>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Arrivée ${eta} · ${km} km`}</Text>
+        {hit && (
+          <View style={styles.report}>
+            <View style={[styles.dot, { backgroundColor: REPORT_META[hit.item.kind].couleur }]} />
+            <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
+              {REPORT_META[hit.item.kind].label + (hit.street ? ` · ${hit.street}` : '')}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Pressable
+        onPress={onGo}
+        accessibilityRole="button"
+        accessibilityLabel={`Y aller, ${formatDuration(route.duration + walk)}`}
+        style={({ pressed }) => [
+          styles.go,
+          { backgroundColor: selected ? c.texte.principal : c.fond.attenue, opacity: pressed ? 0.85 : 1 },
+        ]}
+      >
+        <Text style={[texte.corpsFort, { color: selected ? c.texte.inverse : c.texte.principal }]}>Y aller</Text>
+      </Pressable>
+    </Pressable>
+  );
+}
+
+function RoundButton(props: { c: Couleurs; label: string; icon: { ios: 'xmark' | 'square.and.arrow.up'; android: 'close' | 'share' }; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      hitSlop={6}
+      style={({ pressed }) => [styles.round, { backgroundColor: props.c.fond.attenue, opacity: pressed ? 0.7 : 1 }]}
+    >
+      <SymbolView name={props.icon} tintColor={props.c.texte.principal} size={16} />
+    </Pressable>
+  );
+}
+
+function TargetIcon({ t, c, size }: { t: TripTarget; c: Couleurs; size: number }) {
+  if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontSize: size, fontWeight: '700' }}>P</Text>;
+  if (t.kind === 'charge') return <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.recharge.base} size={size} />;
+  return <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.secondaire} size={size} />;
+}
+
+const short = (t: TripTarget) => (t.kind === 'dropoff' ? 'Dépose' : t.item.name || (t.kind === 'parking' ? 'Parking' : 'Borne'));
+
+const title = (t: TripTarget) =>
+  t.kind === 'dropoff'
+    ? 'Me déposer à l’entrée'
+    : t.kind === 'parking'
+      ? t.item.name || 'Parking'
+      : `${t.item.name || 'Borne'} · ${Math.round(t.item.maxPowerKw)} kW`;
+
+function detail(t: TripTarget) {
+  if (t.kind === 'dropoff') return 'Pas de stationnement';
+  const walk = `${walkingMinutes(t.walk)} min à pied`;
+  if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
+  return t.item.fee === false ? `Gratuit · ${walk}` : walk;
+}
+
+const shadow = { shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -2 }, elevation: 8 };
+
+const styles = StyleSheet.create({
+  cardIos: { marginHorizontal: espace[2], borderRadius: 34, paddingHorizontal: espace[4], ...shadow },
+  cardAndroid: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: espace[4], ...shadow },
+  handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginTop: espace[2], marginBottom: espace[3] },
+  header: { flexDirection: 'row', alignItems: 'center', gap: espace[2] },
+  title: { flex: 1 },
+  round: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  chip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espace[2],
+    height: 36,
+    paddingHorizontal: espace[3],
+    borderRadius: rayon.s,
+    borderWidth: 1,
+    marginTop: espace[3],
+    maxWidth: '100%',
+  },
+  chipText: { flexShrink: 1 },
+  list: { marginTop: espace[3] },
+  caption: { marginBottom: espace[1] },
+  option: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingHorizontal: espace[3], paddingVertical: espace[2], borderRadius: rayon.s },
+  message: { paddingVertical: espace[5] },
+  routes: { maxHeight: 300, marginTop: espace[2] },
+  route: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingVertical: espace[3] },
+  flex: { flex: 1 },
+  duration: { fontSize: 22, lineHeight: 28, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  report: { flexDirection: 'row', alignItems: 'center', gap: espace[2], marginTop: 2 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  go: { height: 44, paddingHorizontal: espace[5], borderRadius: rayon.pilule, alignItems: 'center', justifyContent: 'center' },
+});

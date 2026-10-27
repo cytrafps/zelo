@@ -1,7 +1,8 @@
 import { ViewAnnotation } from '@maplibre/maplibre-react-native';
 import { SymbolView } from 'expo-symbols';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import type { TripTarget } from '@/hooks/use-trip';
 import type { Couleurs } from '@/theme';
 import type { LatLon } from '@/utils/geo';
 
@@ -34,6 +35,22 @@ export function CarMarker({ at, c, onPress }: { at: LatLon; c: Couleurs; onPress
   );
 }
 
+/** Point d'arrêt du trajet (parking ou borne choisi), comme le repère sélectionné des maquettes. */
+export function StopMarker({ target, c }: { target: Exclude<TripTarget, { kind: 'dropoff' }>; c: Couleurs }) {
+  const parking = target.kind === 'parking';
+  return (
+    <ViewAnnotation id="arret" lngLat={[target.item.lon, target.item.lat]}>
+      <View style={[styles.stop, { backgroundColor: parking ? c.stationnement.base : c.recharge.base }]}>
+        {parking ? (
+          <Text style={styles.stopLetter}>P</Text>
+        ) : (
+          <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor="#FFFFFF" size={18} />
+        )}
+      </View>
+    </ViewAnnotation>
+  );
+}
+
 const shadow = {
   shadowColor: '#000',
   shadowOpacity: 0.2,
@@ -43,6 +60,17 @@ const shadow = {
 };
 
 const styles = StyleSheet.create({
+  stop: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow,
+  },
+  stopLetter: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
   pinWrap: { alignItems: 'center' },
   pin: {
     width: 36,

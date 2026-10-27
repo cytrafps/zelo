@@ -1,30 +1,36 @@
 import { Camera, Map, UserLocation, type CameraRef, type GeoJSONSourceProps } from '@maplibre/maplibre-react-native';
 import { SymbolView } from 'expo-symbols';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
-import type { BBox } from '@/api/zelo';
+import { getChargeStations, getParkings, type BBox } from '@/api/zelo';
 import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus } from '@/hooks/use-map-data';
 import { useParkedCar } from '@/hooks/use-parked-car';
 import { useStored } from '@/hooks/use-stored';
+import { useTrip } from '@/hooks/use-trip';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
+import type { LatLon } from '@/utils/geo';
 import { pushRecent } from '@/utils/recents';
+import { bounds } from '@/utils/route';
+import { targets } from '@/utils/targets';
 
 import { CarSheet } from './car-sheet';
 import { Filters } from './filters';
+import { Guidance } from './guidance';
 import { HomePanel } from './home-panel';
 import { ChargeLayer, FuelLayer, ParkingLayer, ReportLayer } from './layers';
 import { mapStyle } from './map-style';
-import { CarMarker, DestinationMarker } from './markers';
-import { NearbySheet } from './nearby-sheet';
+import { CarMarker, DestinationMarker, StopMarker } from './markers';
 import { PIN_MIN_ZOOM, Pins, type Category } from './pins';
 import { PlaceSheet, type Selection } from './place-sheet';
 import { ReportDetailSheet } from './report-detail-sheet';
 import { ReportSheet } from './report-sheet';
+import { RouteLayer } from './route-layer';
+import { TripPanel } from './trip-panel';
 
 const REIMS: [number, number] = [4.0317, 49.2583];
 
@@ -41,12 +47,14 @@ export function MapScreen() {
   const style = useMemo(() => mapStyle(dark), [dark]);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [reporting, setReporting] = useState(false);
-  const [destination, setDestination] = useState<Place | null>(null);
-  const [nearbyOpen, setNearbyOpen] = useState(false);
-  /** La fiche ouverte depuis « Autour de ta destination » y ramène à sa fermeture. */
-  const [fromNearby, setFromNearby] = useState(false);
   const [carOpen, setCarOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** En guidage, la carte suit la voiture tant qu'on ne la déplace pas à la main. */
+  const [following, setFollowing] = useState(true);
   const parked = useParkedCar();
+  const trips = useTrip();
+  const trip = trips.trip;
+  const guiding = trip !== null && trip.phase !== 'preview';
 
   const data = useMapData(view);
   const live = useLive(data.upsertReport, data.removeReport, data.reload);
@@ -69,6 +77,7 @@ export function MapScreen() {
     };
 
   const locate = async () => {
+    if (guiding) return setFollowing(true);
     const p = await location.locate().catch(() => null);
     if (p) camera.current?.flyTo({ center: [p.lon, p.lat], zoom: 15, duration: 800 });
   };
@@ -77,28 +86,54 @@ export function MapScreen() {
     ? { ...location.position, source: 'gps' as const }
     : { lat: center[1], lon: center[0], source: 'carte' as const };
 
-  const goTo = (place: Place) => {
+  const flash = (message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice((n) => (n === message ? null : n)), 4000);
+  };
+
+  /** Destination choisie : aperçu du trajet, avec les parkings et bornes autour d'elle. */
+  const goTo = async (place: Place) => {
     setRecents((list) => pushRecent(list, place));
-    setDestination(place);
-    setNearbyOpen(true);
-    camera.current?.flyTo({ center: [place.lon, place.lat], zoom: 15.5, duration: 900 });
+    const from = await location.locate().catch(() => null);
+    if (!from) return flash('Active la localisation pour calculer un itinéraire');
+    const box = around(place, 0.012);
+    const [parkings, charge] = await Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]);
+    trips.start(from, place, targets(place, parkings, charge));
   };
 
-  const clearDestination = () => {
-    setDestination(null);
-    setNearbyOpen(false);
-  };
+  // Aperçu : la carte cadre tous les itinéraires au-dessus de la feuille.
+  const routesKey = trip?.phase === 'preview' ? trip.routes.length + ':' + (trip.routes[0]?.distance ?? 0) : '';
+  useEffect(() => {
+    if (!trip || trip.phase !== 'preview' || trip.routes.length === 0) return;
+    const lines = [...trip.routes.map((r) => r.coordinates), ...(trip.walk ? [trip.walk.coordinates] : [])];
+    camera.current?.fitBounds(bounds(...lines), {
+      padding: { top: insets.top + 80, bottom: panelHeight + 40, left: 48, right: 48 },
+      pitch: 0,
+      duration: 700,
+    });
+    // Recadrage quand les itinéraires changent, pas à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routesKey]);
 
-  // Les données « autour » ne valent que si la zone chargée contient la destination.
-  const nearbyLoading =
-    destination !== null &&
-    (data.area === null ||
-      destination.lon < data.area[0] ||
-      destination.lat < data.area[1] ||
-      destination.lon > data.area[2] ||
-      destination.lat > data.area[3]);
+  // Guidage : vue inclinée qui suit la voiture.
+  useEffect(() => {
+    if (guiding) void camera.current?.setStop({ zoom: 17, pitch: 55, duration: 600 });
+  }, [guiding, trip?.phase]);
+
+  const arrive = (at: LatLon) => {
+    if (!trip) return;
+    if (trip.phase === 'drive' && trip.target.kind !== 'dropoff') {
+      parked.park(at);
+      trips.parked();
+      if (!trip.walk) flash('Tu es arrivé. Ta voiture est enregistrée.');
+      return;
+    }
+    trips.end();
+    flash('Tu es arrivé');
+  };
 
   const top = insets.top + espace[2];
+  const route = trip?.routes[trip.selected];
 
   return (
     <View style={styles.fill}>
@@ -114,10 +149,27 @@ export function MapScreen() {
           setZoom(e.nativeEvent.zoom);
         }}
       >
-        <Camera ref={camera} initialViewState={{ center: REIMS, zoom: 15, pitch: 50 }} minZoom={5} maxZoom={19} />
-        {category === 'stationnement' && <ParkingLayer parkings={data.parkings} c={c} onPress={select('parking')} />}
-        {category === 'carburant' && <FuelLayer stations={data.fuel} c={c} onPress={select('fuel')} />}
-        {category === 'recharge' && <ChargeLayer stations={data.charge} c={c} onPress={select('charge')} />}
+        <Camera
+          ref={camera}
+          initialViewState={{ center: REIMS, zoom: 15, pitch: 50 }}
+          minZoom={5}
+          maxZoom={19}
+          trackUserLocation={guiding && following ? 'course' : undefined}
+          onTrackUserLocationChange={(e) => guiding && e.nativeEvent.trackUserLocation === null && setFollowing(false)}
+        />
+        {!trip && category === 'stationnement' && <ParkingLayer parkings={data.parkings} c={c} onPress={select('parking')} />}
+        {!trip && category === 'carburant' && <FuelLayer stations={data.fuel} c={c} onPress={select('fuel')} />}
+        {!trip && category === 'recharge' && <ChargeLayer stations={data.charge} c={c} onPress={select('charge')} />}
+        {trip && route && (
+          <RouteLayer
+            routes={trip.phase === 'preview' ? trip.routes : [route]}
+            selected={trip.phase === 'preview' ? trip.selected : 0}
+            walk={trip.phase === 'drive' || trip.phase === 'preview' ? trip.walk : null}
+            c={c}
+            badges={trip.phase === 'preview' && trip.routes.length > 1}
+            onSelect={trip.phase === 'preview' ? trips.select : undefined}
+          />
+        )}
         <ReportLayer
           reports={data.reports}
           onPress={(e) => {
@@ -126,60 +178,76 @@ export function MapScreen() {
             if (typeof id === 'number') setReportId(id);
           }}
         />
-        {location.granted && <UserLocation accuracy />}
-        {view && zoom >= PIN_MIN_ZOOM && <Pins category={category} data={data} view={view} c={c} onSelect={setSelection} />}
-        {destination && <DestinationMarker at={destination} c={c} />}
+        {location.granted && <UserLocation accuracy heading={guiding} />}
+        {!trip && view && zoom >= PIN_MIN_ZOOM && <Pins category={category} data={data} view={view} c={c} onSelect={setSelection} />}
+        {trip && trip.target.kind !== 'dropoff' && trip.phase !== 'walk' && <StopMarker target={trip.target} c={c} />}
+        {trip && <DestinationMarker at={trip.destination} c={c} />}
         {parked.car && <CarMarker at={parked.car} c={c} onPress={() => setCarOpen(true)} />}
       </Map>
 
-      <StatusPill status={data.status} live={live} c={c} top={top} onRetry={data.reload} />
-      <Filters value={category} onChange={setCategory} c={c} top={top} />
+      {!guiding && <StatusPill status={data.status} live={live} notice={notice} c={c} top={top} onRetry={data.reload} />}
+      {!trip && <Filters value={category} onChange={setCategory} c={c} top={top} />}
 
-      <View style={[styles.mapButtons, { bottom: panelHeight + espace[3] }]} pointerEvents="box-none">
-        <MapButton c={c} label="Signaler un événement" onPress={() => setReporting(true)}>
-          <SymbolView name={{ ios: 'exclamationmark.triangle.fill', android: 'warning' }} tintColor="#E8A10C" size={22} />
-        </MapButton>
-        <MapButton c={c} label="Centrer sur ma position" onPress={locate}>
-          <SymbolView name={{ ios: 'location.fill', android: 'navigation' }} tintColor={c.action} size={22} />
-        </MapButton>
+      <View style={[styles.mapButtons, { bottom: (guiding ? 96 + insets.bottom : panelHeight) + espace[3] }]} pointerEvents="box-none">
+        {trip?.phase !== 'preview' && (
+          <MapButton c={c} label="Signaler un événement" onPress={() => setReporting(true)}>
+            <SymbolView name={{ ios: 'exclamationmark.triangle.fill', android: 'warning' }} tintColor="#E8A10C" size={22} />
+          </MapButton>
+        )}
+        {(!guiding || !following) && (
+          <MapButton c={c} label={guiding ? 'Reprendre le suivi' : 'Centrer sur ma position'} onPress={locate}>
+            <SymbolView name={{ ios: 'location.fill', android: 'navigation' }} tintColor={c.action} size={22} />
+          </MapButton>
+        )}
       </View>
 
-      <View onLayout={(e) => setPanelHeight(e.nativeEvent.layout.height)} style={styles.panelMeasure} pointerEvents="box-none">
-        <HomePanel
+      {guiding && route && trip ? (
+        <Guidance
+          route={route}
+          phase={trip.phase === 'walk' ? 'walk' : 'drive'}
+          target={trip.target}
           c={c}
+          top={top}
           bottomInset={insets.bottom}
-          near={{ lat: center[1], lon: center[0] }}
-          destination={destination}
-          recents={recents}
-          carParked={parked.car !== null}
-          onSelect={goTo}
-          onClear={clearDestination}
-          onCar={() => setCarOpen(true)}
+          rerouting={trip.loading}
+          onReroute={trips.reroute}
+          onArrive={arrive}
+          onClose={trips.end}
         />
-      </View>
+      ) : (
+        <View onLayout={(e) => setPanelHeight(e.nativeEvent.layout.height)} style={styles.panelMeasure} pointerEvents="box-none">
+          {trip ? (
+            <TripPanel
+              trip={trip}
+              reports={data.reports}
+              c={c}
+              bottomInset={insets.bottom}
+              onSelect={trips.select}
+              onGo={(i) => {
+                setFollowing(true);
+                trips.go(i);
+              }}
+              onTarget={async (t) => {
+                const from = await location.locate().catch(() => null);
+                if (from) trips.setTarget(from, t);
+              }}
+              onClose={trips.end}
+            />
+          ) : (
+            <HomePanel
+              c={c}
+              bottomInset={insets.bottom}
+              near={{ lat: center[1], lon: center[0] }}
+              recents={recents}
+              carParked={parked.car !== null}
+              onSelect={goTo}
+              onCar={() => setCarOpen(true)}
+            />
+          )}
+        </View>
+      )}
 
-      <PlaceSheet
-        selection={selection}
-        onDismiss={() => {
-          setSelection(null);
-          if (fromNearby) setNearbyOpen(true);
-          setFromNearby(false);
-        }}
-      />
-      <NearbySheet
-        destination={destination}
-        isPresented={nearbyOpen && selection === null}
-        onDismiss={() => setNearbyOpen(false)}
-        parkings={data.parkings}
-        charge={data.charge}
-        fuel={data.fuel}
-        loading={nearbyLoading}
-        onPick={(s) => {
-          setFromNearby(true);
-          setNearbyOpen(false);
-          setSelection(s);
-        }}
-      />
+      <PlaceSheet selection={selection} onDismiss={() => setSelection(null)} />
       <CarSheet
         isPresented={carOpen}
         onDismiss={() => setCarOpen(false)}
@@ -203,6 +271,9 @@ export function MapScreen() {
   );
 }
 
+/** Zone carrée de ±`d` degrés autour d'un point. */
+const around = (p: LatLon, d: number): BBox => [p.lon - d, p.lat - d * 0.66, p.lon + d, p.lat + d * 0.66];
+
 function pick<K extends Selection['kind']>(kind: K, list: { id: string }[], id: unknown) {
   const item = list.find((x) => x.id === id);
   return item ? ({ kind, item } as Extract<Selection, { kind: K }>) : null;
@@ -214,9 +285,9 @@ const MESSAGES: Partial<Record<DataStatus, string>> = {
   'zoom-out': 'Zoome pour voir les stations',
 };
 
-function StatusPill(props: { status: DataStatus; live: boolean; c: Couleurs; top: number; onRetry: () => void }) {
-  const { status, live, c, top, onRetry } = props;
-  const message = MESSAGES[status] ?? (live ? null : 'Signalements en direct indisponibles');
+function StatusPill(props: { status: DataStatus; live: boolean; notice: string | null; c: Couleurs; top: number; onRetry: () => void }) {
+  const { status, live, notice, c, top, onRetry } = props;
+  const message = notice ?? MESSAGES[status] ?? (live ? null : 'Signalements en direct indisponibles');
   if (!message) return null;
   return (
     <Pressable

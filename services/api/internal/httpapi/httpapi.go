@@ -63,7 +63,7 @@ type Config struct {
 }
 
 type Router interface {
-	Route(ctx context.Context, from, to route.Point, mode route.Mode) (route.Route, error)
+	Routes(ctx context.Context, from, to route.Point, mode route.Mode, alternates int) ([]route.Route, error)
 }
 
 type API struct {
@@ -268,7 +268,7 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 
 var routeModes = map[string]route.Mode{"car": route.Car, "walk": route.Walk}
 
-// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|walk
+// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|walk[&alternates=0..2]
 func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.Router == nil {
 		httpError(w, http.StatusServiceUnavailable, "itinéraires indisponibles")
@@ -286,9 +286,10 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, `attendu : from=lat,lon&to=lat,lon&mode=car|walk`)
 		return
 	}
+	alternates, _ := strconv.Atoi(q.Get("alternates")) // borné par le client Valhalla
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	res, err := a.cfg.Router.Route(ctx, from, to, mode)
+	res, err := a.cfg.Router.Routes(ctx, from, to, mode, alternates)
 	switch {
 	case errors.Is(err, route.ErrOutOfArea):
 		httpError(w, http.StatusUnprocessableEntity, "cette adresse est hors de la zone couverte par Zelo")
@@ -299,7 +300,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, "calcul d'itinéraire indisponible")
 	default:
 		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, res)
+		writeJSON(w, http.StatusOK, map[string]any{"routes": res})
 	}
 }
 
