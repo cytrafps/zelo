@@ -39,13 +39,24 @@ function fail(msg, hint) {
 }
 
 /** Lance une commande ; `inherit` la rend interactive (connexion EAS, QR code…). */
+/**
+ * Sous Windows, npx et npm sont des .cmd qui exigent un shell. Node (DEP0190) refuse qu'on lui
+ * passe alors des arguments séparés, non échappés : on construit une ligne de commande citée.
+ */
+function command(cmd, args) {
+  if (!WIN) return [cmd, args, false];
+  const quote = (a) => (/^[\w@./:=\\-]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`);
+  return [[cmd, ...args].map(quote).join(' '), [], true];
+}
+
 function run(cmd, args, { cwd = ROOT, env, inherit = false } = {}) {
-  const r = spawnSync(cmd, args, {
+  const [file, argv, shell] = command(cmd, args);
+  const r = spawnSync(file, argv, {
     cwd,
     env: { ...process.env, ...env },
     stdio: inherit ? 'inherit' : 'pipe',
     encoding: 'utf8',
-    shell: WIN, // npx et npm sont des .cmd sous Windows
+    shell,
   });
   return { code: r.status ?? 1, out: (r.stdout ?? '').trim(), err: (r.stderr ?? '').trim() };
 }
@@ -235,10 +246,11 @@ function startMetro(ip, apiUrl) {
   step('Serveur de développement (Metro)');
   console.log(`  Dans l’app Zelo sur le téléphone (même Wi-Fi que le PC), scanne le QR code ci-dessous.`);
   console.log(dim(`  API utilisée par l’app : ${apiUrl} · Ctrl+C pour quitter\n`));
-  const child = spawn('npx', ['expo', 'start', '--dev-client'], {
+  const [file, argv, shell] = command('npx', ['expo', 'start', '--dev-client']);
+  const child = spawn(file, argv, {
     cwd: MOBILE,
     stdio: 'inherit',
-    shell: WIN,
+    shell,
     env: {
       ...process.env,
       EXPO_PUBLIC_API_URL: apiUrl,
