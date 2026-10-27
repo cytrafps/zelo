@@ -25,8 +25,8 @@ docker run --rm ${DOCKER_ARGS:-} -v "$OUT:/custom_files" \
   "$IMAGE" build_tiles
 
 # Seuls ces fichiers servent au service ; le reste (pbf, tuiles éclatées) reste ici.
+# Créés par root dans le conteneur mais lisibles par tous (644) : pas de chmod, interdit en CI.
 for f in valhalla.json valhalla_tiles.tar admins.sqlite timezones.sqlite default_speeds.json; do
   test -s "$f" || { echo "manquant : $f" >&2; exit 1; }
 done
-chmod -R a+rX "$OUT"
 ls -l "$OUT"
