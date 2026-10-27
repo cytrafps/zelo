@@ -1,4 +1,4 @@
-import { Camera, Map, UserLocation, type CameraRef, type GeoJSONSourceProps } from '@maplibre/maplibre-react-native';
+import { Camera, Map, UserLocation, type CameraRef, type GeoJSONSourceProps, type TrackUserLocation } from '@maplibre/maplibre-react-native';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -51,10 +51,22 @@ export function MapScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   /** En guidage, la carte suit la voiture tant qu'on ne la déplace pas à la main. */
   const [following, setFollowing] = useState(true);
+  /** Hors guidage, le bouton de position fait comme Plans : centrer et suivre, puis orienter selon la boussole. */
+  const [homeTracking, setHomeTracking] = useState<TrackUserLocation | null>(null);
   const parked = useParkedCar();
   const trips = useTrip();
   const trip = trips.trip;
   const guiding = trip !== null && trip.phase !== 'preview';
+  // En voiture, le cap GPS (le téléphone est fixé n'importe comment) ; à pied, la boussole (le cap GPS est trop bruité à 5 km/h).
+  const tracking: TrackUserLocation | undefined = guiding
+    ? following
+      ? trip.phase === 'walk'
+        ? 'heading'
+        : 'course'
+      : undefined
+    : trip
+      ? undefined
+      : (homeTracking ?? undefined);
 
   const data = useMapData(view);
   const live = useLive(data.upsertReport, data.removeReport, data.reload);
@@ -78,8 +90,12 @@ export function MapScreen() {
 
   const locate = async () => {
     if (guiding) return setFollowing(true);
-    const p = await location.locate().catch(() => null);
-    if (p) camera.current?.flyTo({ center: [p.lon, p.lat], zoom: 15, duration: 800 });
+    if (homeTracking === 'heading') {
+      setHomeTracking('default');
+      return void camera.current?.setStop({ bearing: 0, duration: 400 });
+    }
+    if (homeTracking) return setHomeTracking('heading');
+    if (await location.locate().catch(() => null)) setHomeTracking('default');
   };
 
   const here = location.position
@@ -94,6 +110,7 @@ export function MapScreen() {
   /** Destination choisie : aperçu du trajet, avec les parkings et bornes autour d'elle. */
   const goTo = async (place: Place) => {
     setRecents((list) => pushRecent(list, place));
+    setHomeTracking(null);
     const from = await location.locate().catch(() => null);
     if (!from) return flash('Active la localisation pour calculer un itinéraire');
     const box = around(place, 0.012);
@@ -154,8 +171,13 @@ export function MapScreen() {
           initialViewState={{ center: REIMS, zoom: 15, pitch: 50 }}
           minZoom={5}
           maxZoom={19}
-          trackUserLocation={guiding && following ? 'course' : undefined}
-          onTrackUserLocationChange={(e) => guiding && e.nativeEvent.trackUserLocation === null && setFollowing(false)}
+          trackUserLocation={tracking}
+          onTrackUserLocationChange={(e) => {
+            // La carte déplacée à la main : on arrête de suivre.
+            if (e.nativeEvent.trackUserLocation !== null) return;
+            if (guiding) setFollowing(false);
+            else setHomeTracking(null);
+          }}
         />
         {!trip && category === 'stationnement' && <ParkingLayer parkings={data.parkings} c={c} onPress={select('parking')} />}
         {!trip && category === 'carburant' && <FuelLayer stations={data.fuel} c={c} onPress={select('fuel')} />}
@@ -178,7 +200,7 @@ export function MapScreen() {
             if (typeof id === 'number') setReportId(id);
           }}
         />
-        {location.granted && <UserLocation accuracy heading={guiding} />}
+        {location.granted && <UserLocation accuracy heading={trip?.phase !== 'drive'} />}
         {!trip && view && zoom >= PIN_MIN_ZOOM && <Pins category={category} data={data} view={view} c={c} onSelect={setSelection} />}
         {trip && trip.target.kind !== 'dropoff' && trip.phase !== 'walk' && <StopMarker target={trip.target} c={c} />}
         {trip && <DestinationMarker at={trip.destination} c={c} />}
@@ -195,8 +217,8 @@ export function MapScreen() {
           </MapButton>
         )}
         {(!guiding || !following) && (
-          <MapButton c={c} label={guiding ? 'Reprendre le suivi' : 'Centrer sur ma position'} onPress={locate}>
-            <SymbolView name={{ ios: 'location.fill', android: 'navigation' }} tintColor={c.action} size={22} />
+          <MapButton c={c} label={guiding ? 'Reprendre le suivi' : LOCATE[homeTracking ?? 'none'].label} onPress={locate}>
+            <SymbolView name={guiding ? LOCATE.none.icon : LOCATE[homeTracking ?? 'none'].icon} tintColor={c.action} size={22} />
           </MapButton>
         )}
       </View>
@@ -300,6 +322,14 @@ function StatusPill(props: { status: DataStatus; live: boolean; notice: string |
     </Pressable>
   );
 }
+
+/** Bouton de position : état actuel → icône et action proposée. */
+const LOCATE = {
+  none: { icon: { ios: 'location', android: 'location_searching' }, label: 'Centrer sur ma position' },
+  default: { icon: { ios: 'location.fill', android: 'my_location' }, label: 'Orienter selon la boussole' },
+  heading: { icon: { ios: 'location.north.line.fill', android: 'explore' }, label: 'Garder le nord en haut' },
+  course: { icon: { ios: 'location.fill', android: 'my_location' }, label: 'Centrer sur ma position' },
+} as const;
 
 function MapButton(props: { c: Couleurs; label: string; onPress: () => void; children: React.ReactNode }) {
   return (
