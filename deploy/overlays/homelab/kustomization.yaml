@@ -18,4 +18,4 @@ patches:
         value: api.zelo.lan
 images:
   - name: ghcr.io/cytrafps/zelo-api
-    newTag: sha-b61ccdc
+    newTag: sha-161910d
