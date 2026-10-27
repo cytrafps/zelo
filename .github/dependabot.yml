@@ -1,0 +1,20 @@
+# Mises à jour groupées, une PR par écosystème et par mois.
+# L'app Expo n'y est pas : ses versions suivent le SDK et se mettent à jour avec `npx expo install --fix`.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /services/api
+    schedule: { interval: monthly }
+    groups:
+      go: { patterns: ["*"] }
+    commit-message: { prefix: "chore(api)" }
+  - package-ecosystem: docker
+    directory: /services/api
+    schedule: { interval: monthly }
+    commit-message: { prefix: "chore(api)" }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions: { patterns: ["*"] }
+    commit-message: { prefix: "ci" }

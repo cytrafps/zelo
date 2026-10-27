@@ -1,0 +1,38 @@
+name: Bug
+description: Quelque chose ne marche pas comme prévu
+labels: [bug]
+body:
+  - type: dropdown
+    id: partie
+    attributes:
+      label: Partie concernée
+      options: [App mobile, API, Déploiement, Autre]
+    validations:
+      required: true
+  - type: textarea
+    id: constat
+    attributes:
+      label: Ce qui se passe
+      description: Ce que tu vois, et ce que tu attendais à la place.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduire
+    attributes:
+      label: Pour reproduire
+      placeholder: |
+        1. Ouvrir la carte sur Reims centre
+        2. Toucher une borne
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version ou commit
+      placeholder: "sha-2979c80, build EAS du 27/10, Android 15…"
+  - type: textarea
+    id: traces
+    attributes:
+      label: Captures, logs
+      description: Capture d'écran, log Metro ou de l'API.
