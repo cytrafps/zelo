@@ -7,6 +7,8 @@
 //   npm run dev -- --ip 192.168.1.20   imposer l'IP du PC
 //   npm run dev -- --api http://192.168.1.50:8080   utiliser une API déjà lancée ailleurs
 //                             (homelab, serveur) : Docker n'est alors pas nécessaire sur ce PC
+//   npm run dev -- --api https://….trycloudflare.com --tunnel   téléphone hors du Wi-Fi (4G) :
+//                             l'app passe aussi par un tunnel Expo pour charger son code
 //   npm run stop              arrêter l'API et la base (les données sont gardées)
 //
 // Aucune dépendance : Node 20+ et Docker (sauf avec --api) suffisent. Windows, macOS et Linux.
@@ -244,9 +246,11 @@ function saveMarker(fingerprint) {
 
 function startMetro(ip, apiUrl) {
   step('Serveur de développement (Metro)');
-  console.log(`  Dans l’app Zelo sur le téléphone (même Wi-Fi que le PC), scanne le QR code ci-dessous.`);
+  console.log(`  Dans l’app Zelo sur le téléphone${flag('--tunnel') ? '' : ' (même Wi-Fi que le PC)'}, scanne le QR code ci-dessous.`);
   console.log(dim(`  API utilisée par l’app : ${apiUrl} · Ctrl+C pour quitter\n`));
-  const [file, argv, shell] = command('npx', ['expo', 'start', '--dev-client']);
+  const tunnel = flag('--tunnel');
+  if (tunnel) console.log(dim('  Mode tunnel : le téléphone peut être en 4G ; Expo installe @expo/ngrok au premier usage.'));
+  const [file, argv, shell] = command('npx', ['expo', 'start', '--dev-client', ...(tunnel ? ['--tunnel'] : [])]);
   const child = spawn(file, argv, {
     cwd: MOBILE,
     stdio: 'inherit',
@@ -255,7 +259,7 @@ function startMetro(ip, apiUrl) {
       ...process.env,
       EXPO_PUBLIC_API_URL: apiUrl,
       // Sans ça, Expo peut mettre dans le QR code l'IP d'une carte virtuelle (WSL, Docker…).
-      REACT_NATIVE_PACKAGER_HOSTNAME: ip,
+      ...(tunnel ? {} : { REACT_NATIVE_PACKAGER_HOSTNAME: ip }),
     },
   });
   child.on('exit', (code) => process.exit(code ?? 0));
