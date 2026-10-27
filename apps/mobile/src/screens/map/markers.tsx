@@ -20,11 +20,15 @@ export function DestinationMarker({ at, c }: { at: LatLon; c: Couleurs }) {
   );
 }
 
+/** Repère « Ma voiture » des maquettes : pastille encre, voiture blanche, pointe vers le sol. */
 export function CarMarker({ at, c, onPress }: { at: LatLon; c: Couleurs; onPress: () => void }) {
   return (
-    <ViewAnnotation id="voiture" lngLat={[at.lon, at.lat]} onPress={onPress}>
-      <View style={[styles.car, { backgroundColor: c.fond.surface, borderColor: c.action }]}>
-        <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.action} size={18} />
+    <ViewAnnotation id="voiture" lngLat={[at.lon, at.lat]} anchor="bottom" onPress={onPress}>
+      <View style={styles.pinWrap}>
+        <View style={[styles.car, { backgroundColor: c.texte.principal }]}>
+          <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.inverse} size={18} />
+        </View>
+        <View style={[styles.tip, { borderTopColor: c.texte.principal }]} />
       </View>
     </ViewAnnotation>
   );
@@ -64,7 +68,8 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    borderWidth: 2.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow,
