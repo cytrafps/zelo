@@ -107,6 +107,38 @@ DATABASE_URL=postgres://zelo:zelo@localhost:5432/zelo?sslmode=disable go run ./c
 go run ./cmd/api -once   # collecte une fois toutes les sources puis quitte
 ```
 
+### API accessible depuis Internet (HTTPS, téléphone en 4G)
+
+Cloudflare Tunnel publie l'API en HTTPS sans ouvrir de port sur ta box : `cloudflared` se connecte vers Cloudflare, rien ne rentre. Les WebSocket passent aussi.
+
+**Pour tester tout de suite, sans compte.** Cloudflare donne une adresse aléatoire en `trycloudflare.com`, nouvelle à chaque redémarrage :
+
+```sh
+echo "TRUST_PROXY=true" > infra/.env        # quota de signalements par vraie IP client
+docker compose -f infra/compose.yaml --profile tunnel-rapide up -d
+docker compose -f infra/compose.yaml logs tunnel-rapide | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com'
+```
+
+Ensuite, sur le PC : `npm run dev -- --api https://….trycloudflare.com --tunnel`. Avec `--tunnel`, le code de l'app passe aussi par un tunnel Expo : le téléphone peut être en 4G.
+
+**Adresse fixe sur ton domaine**, pour la démo et l'APK à partager. Le domaine doit être géré par Cloudflare.
+
+1. Dans Cloudflare Zero Trust, va dans **Networks → Tunnels → Create a tunnel** et choisis Cloudflared. Copie le jeton.
+2. Dans l'onglet *Public Hostname*, crée `api.<ton-domaine>` vers le service `http://api:8080`.
+3. Lance le tunnel :
+   ```sh
+   printf 'TRUST_PROXY=true\nTUNNEL_TOKEN=<jeton>\n' > infra/.env   # .env est ignoré par Git
+   docker compose -f infra/compose.yaml --profile tunnel up -d
+   ```
+
+**APK autonome à partager** (équipe, jury) : elle embarque l'adresse de l'API et n'a besoin ni du PC ni de Metro.
+
+```sh
+cd apps/mobile
+npx eas-cli@latest env:create --environment preview --name EXPO_PUBLIC_API_URL --value https://api.<ton-domaine> --visibility plaintext
+npx eas-cli@latest build -p android --profile preview
+```
+
 ## API
 
 | Méthode et route | Description |

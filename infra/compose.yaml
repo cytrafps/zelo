@@ -1,5 +1,9 @@
 # Environnement de développement : `docker compose -f infra/compose.yaml up --build`
 # API sur http://localhost:8080, métriques sur http://localhost:8080/metrics
+#
+# Accès depuis Internet en HTTPS (téléphone en 4G…), sans ouvrir de port, par Cloudflare Tunnel :
+#   --profile tunnel-rapide   adresse https://….trycloudflare.com aléatoire, sans compte (tests)
+#   --profile tunnel          adresse fixe sur ton domaine, avec TUNNEL_TOKEN (voir README)
 services:
   db:
     image: postgis/postgis:17-3.5-alpine
@@ -21,11 +25,29 @@ services:
       DATABASE_URL: postgres://zelo:zelo@db:5432/zelo?sslmode=disable
       # Bornes limitées à la zone de Reims pour le développement ; vide = toute la France.
       IMPORT_BBOX: "3.85,49.15,4.25,49.35"
+      # true derrière Cloudflare : l'IP du client (quota de signalements) est lue dans CF-Connecting-IP.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
     ports: ["8080:8080"]
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+
+  tunnel-rapide:
+    image: cloudflare/cloudflared:2026.9.3
+    command: tunnel --no-autoupdate --url http://api:8080
+    profiles: [tunnel-rapide]
+    restart: unless-stopped
+    depends_on: [api]
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.9.3
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-} # à définir dans infra/.env (voir README)
+    profiles: [tunnel]
+    restart: unless-stopped
+    depends_on: [api]
 
 volumes:
   db:
