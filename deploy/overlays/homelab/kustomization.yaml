@@ -19,6 +19,6 @@ patches:
         value: api.zelo.lan
 images:
   - name: ghcr.io/cytrafps/zelo-api
-    newTag: sha-4d1b8a3
+    newTag: sha-0e8b89b
   - name: ghcr.io/cytrafps/zelo-valhalla
     newTag: osm-20261027-7106417
