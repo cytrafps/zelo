@@ -1,5 +1,6 @@
 # Environnement « homelab » : K3s + Traefik, déployé par Argo CD (deploy/argocd/zelo.yaml).
-# La CI met à jour le tag de l'image à chaque fusion sur main (commit « deploy: »).
+# La CI met à jour les tags des images (commits « deploy: ») : l'API à chaque fusion sur main,
+# Valhalla chaque semaine avec les données OpenStreetMap du jour.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -19,3 +20,5 @@ patches:
 images:
   - name: ghcr.io/cytrafps/zelo-api
     newTag: sha-22a5119
+  - name: ghcr.io/cytrafps/zelo-valhalla
+    newTag: latest # remplacé par la CI après la première construction

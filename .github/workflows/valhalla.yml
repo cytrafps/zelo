@@ -1,0 +1,70 @@
+name: Valhalla
+
+# Graphe routier de la Marne reconstruit chaque semaine avec les données OpenStreetMap du jour,
+# embarqué dans une image, puis déployé par Argo CD comme l'API (commit « deploy: »).
+on:
+  schedule:
+    - cron: "17 3 * * 1" # lundi 3 h 17 UTC ; l'extrait openstreetmap.fr est régénéré chaque nuit
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [services/valhalla/**, .github/workflows/valhalla.yml]
+  pull_request:
+    paths: [services/valhalla/**, .github/workflows/valhalla.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valhalla-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit du nouveau tag
+      packages: write # publication sur ghcr.io
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-valhalla
+    steps:
+      - uses: actions/checkout@v7
+      - name: Construire le graphe routier
+        working-directory: services/valhalla
+        run: ./build.sh data
+      - name: Vérifier un itinéraire (gare de Reims → cathédrale)
+        working-directory: services/valhalla
+        run: |
+          docker build -t valhalla-test .
+          docker run -d --name v --read-only -p 8002:8002 valhalla-test
+          for i in $(seq 1 30); do curl -fs localhost:8002/status >/dev/null && break; sleep 1; done
+          curl -fsS localhost:8002/route -d '{"locations":[{"lat":49.2593,"lon":4.0249},{"lat":49.2536,"lon":4.0340}],"costing":"auto","directions_options":{"language":"fr-FR"}}' \
+            | jq -e '.trip.summary.length > 1 and .trip.summary.length < 4 and (.trip.legs[0].maneuvers | length) > 3'
+      - id: tag
+        run: echo "tag=osm-$(date -u +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: github.event_name != 'pull_request'
+        name: Publier l'image
+        run: |
+          docker tag valhalla-test "$IMAGE:${{ steps.tag.outputs.tag }}"
+          docker push "$IMAGE:${{ steps.tag.outputs.tag }}"
+      - if: github.event_name != 'pull_request'
+        name: Déployer le nouveau tag (Argo CD)
+        working-directory: deploy/overlays/homelab
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            sed -i "/name: ghcr.io\/cytrafps\/zelo-valhalla$/{n;s|newTag: .*|newTag: ${{ steps.tag.outputs.tag }}|}" kustomization.yaml
+            git diff --quiet && exit 0
+            git commit -qam "deploy: valhalla ${{ steps.tag.outputs.tag }} [skip ci]"
+            git push -q origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1

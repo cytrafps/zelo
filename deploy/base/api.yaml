@@ -61,6 +61,8 @@ spec:
               value: postgres://zelo:$(DB_PASSWORD)@db:5432/zelo?sslmode=disable
             - name: TRUST_PROXY
               value: "false"
+            - name: VALHALLA_URL
+              value: http://valhalla:8002
           envFrom:
             - configMapRef:
                 name: api-config

@@ -84,7 +84,7 @@ jobs:
           # avec un autre commit de déploiement.
           for i in 1 2 3; do
             git fetch -q origin main && git reset -q --hard origin/main
-            sed -i "s|^    newTag: .*|    newTag: ${{ steps.tag.outputs.sha }}|" kustomization.yaml
+            sed -i "/name: ghcr.io\/cytrafps\/zelo-api$/{n;s|newTag: .*|newTag: ${{ steps.tag.outputs.sha }}|}" kustomization.yaml
             git diff --quiet && exit 0
             git commit -qam "deploy: api ${{ steps.tag.outputs.sha }} [skip ci]"
             git push -q origin HEAD:main && exit 0

@@ -48,6 +48,7 @@ flowchart LR
 | Dossier | Rôle |
 |---|---|
 | `services/api` | API en Go : collecte des données ouvertes, API REST, signalements en temps réel (WebSocket), métriques Prometheus |
+| `services/valhalla` | Image Valhalla (itinéraires) avec le graphe routier de la Marne, reconstruite chaque semaine par la CI |
 | `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, parkings, signalements en temps réel |
 | `infra` | Environnement de développement (Docker Compose) |
 | `deploy` | Production sur K3s en GitOps : Kustomize, Argo CD, Prometheus et Grafana ([guide](deploy/README.md)) |
@@ -153,6 +154,7 @@ npx eas-cli@latest build -p android --profile preview
 | `GET /v1/reports?bbox=…` | Signalements encore actifs |
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
 | `POST /v1/reports/{id}/votes` | `{"up": true}` (toujours là) ou `false` (plus là) ; un vote par appareil (`X-Zelo-Device`), modifiable ; jamais sur son propre signalement (409) |
+| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk` | Itinéraire Valhalla : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
 | `GET /v1/live` | WebSocket : `report` (nouveau ou mis à jour) et `report_removed` sont poussés à tous les clients, quelle que soit l'instance |
 | `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus |
 
@@ -174,12 +176,14 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
 | `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Instance Overpass pour l'import des parkings (exige `IMPORT_BBOX`) |
 | `WS_ORIGINS` | vide | Origines web autorisées pour le WebSocket (ex. `dashboard.zelo.app`) |
+| `VALHALLA_URL` | vide (itinéraires désactivés) | Service Valhalla, ex. `http://valhalla:8002` ; jamais exposé directement |
 
 ## Sources de données
 
 | Source | Fréquence | Licence |
 |---|---|---|
 | [Prix des carburants](https://www.prix-carburants.gouv.fr/rubrique/opendata/) | 10 min | Licence Ouverte 2.0 |
+| [OpenStreetMap, extrait de la Marne](https://download.openstreetmap.fr/extracts/europe/france/champagne_ardenne/) (itinéraires) | 7 j | ODbL |
 | [Bornes IRVE statiques](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) | 24 h | Licence Ouverte 2.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |

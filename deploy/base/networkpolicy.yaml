@@ -1,4 +1,4 @@
-# La base n'accepte que l'API ; l'API accepte le contrôleur d'entrée (Traefik) et Prometheus.
+# La base et Valhalla n'acceptent que l'API ; l'API accepte le contrôleur d'entrée (Traefik) et Prometheus.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -35,3 +35,20 @@ spec:
               kubernetes.io/metadata.name: monitoring
       ports:
         - port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valhalla-from-api-only
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: valhalla
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+      ports:
+        - port: 8002

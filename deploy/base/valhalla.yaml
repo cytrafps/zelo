@@ -1,0 +1,57 @@
+# Calcul d'itinéraires (Valhalla) avec le graphe routier embarqué dans l'image
+# (construit chaque semaine par la CI : .github/workflows/valhalla.yml). Sans état : se relance en 0,4 s.
+apiVersion: v1
+kind: Service
+metadata:
+  name: valhalla
+spec:
+  selector:
+    app.kubernetes.io/name: valhalla
+  ports:
+    - name: http
+      port: 8002
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valhalla
+  labels:
+    app.kubernetes.io/name: valhalla
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valhalla
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: valhalla
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valhalla
+          image: ghcr.io/cytrafps/zelo-valhalla
+          ports:
+            - name: http
+              containerPort: 8002
+          readinessProbe:
+            httpGet: { path: /status, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /status, port: http }
+            periodSeconds: 20
+          resources:
+            # Mesuré : 40 Mo au repos, ~200 Mo après une série de calculs (essai du 27/10/2026).
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
