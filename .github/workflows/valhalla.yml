@@ -36,7 +36,7 @@ jobs:
         working-directory: services/valhalla
         run: |
           docker build -t valhalla-test .
-          docker run -d --name v --read-only -p 8002:8002 valhalla-test
+          docker run -d --name valhalla-check --read-only -p 8002:8002 valhalla-test
           for i in $(seq 1 30); do curl -fs localhost:8002/status >/dev/null && break; sleep 1; done
           curl -fsS localhost:8002/route -d '{"locations":[{"lat":49.2593,"lon":4.0249},{"lat":49.2536,"lon":4.0340}],"costing":"auto","directions_options":{"language":"fr-FR"}}' \
             | jq -e '.trip.summary.length > 1 and .trip.summary.length < 4 and (.trip.legs[0].maneuvers | length) > 3'
