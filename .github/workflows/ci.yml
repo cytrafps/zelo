@@ -29,8 +29,8 @@ jobs:
     env:
       ZELO_TEST_DATABASE_URL: postgres://zelo:zelo@localhost:5432/zelo?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: services/api/go.mod
           cache-dependency-path: services/api/go.sum
@@ -54,17 +54,17 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-api
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - if: github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: tag
         run: echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: services/api
           push: ${{ github.event_name == 'push' }}
@@ -96,7 +96,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Outils
         run: |
           mkdir -p "$HOME/bin" && cd "$HOME/bin"
@@ -123,8 +123,8 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
