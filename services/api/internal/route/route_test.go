@@ -24,7 +24,7 @@ func fakeValhalla(t *testing.T, status int, body []byte) *Client {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatal(err)
 		}
-		if req.Directions.Language != "fr-FR" || len(req.Locations) != 2 || req.Locations[1].SearchCutoff != SearchCutoff {
+		if req.Directions.Language != "fr-FR" || len(req.Locations) != 2 || req.Locations[1].SearchCutoff != SearchCutoff || req.Alternates > MaxAlternates {
 			t.Errorf("options manquantes : %+v", req)
 		}
 		w.WriteHeader(status)
@@ -39,10 +39,11 @@ func TestRouteGareCathedrale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := fakeValhalla(t, http.StatusOK, body).Route(context.Background(), gare, cathedrale, Car)
-	if err != nil {
-		t.Fatal(err)
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, 0)
+	if err != nil || len(routes) != 1 {
+		t.Fatal(routes, err)
 	}
+	r := routes[0]
 	if r.Distance != 1875 || math.Round(r.Duration) != 449 {
 		t.Errorf("distance %v m, durée %v s", r.Distance, r.Duration)
 	}
@@ -63,6 +64,29 @@ func TestRouteGareCathedrale(t *testing.T) {
 	}
 }
 
+// Avec des alternatives : le meilleur d'abord, chacun avec son tracé et ses étapes.
+func TestRoutesAlternatives(t *testing.T) {
+	body, err := os.ReadFile("testdata/gare-murigny-alternatives.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, Point{49.2475, 4.042}, Car, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 3 {
+		t.Fatalf("%d itinéraires", len(routes))
+	}
+	for i, r := range routes {
+		if len(r.Coordinates) < 2 || len(r.Steps) < 2 || r.Steps[len(r.Steps)-1].Shape != len(r.Coordinates)-1 {
+			t.Errorf("itinéraire %d incomplet", i)
+		}
+		if i > 0 && r.Duration < routes[i-1].Duration {
+			t.Errorf("non trié : %v puis %v", routes[i-1].Duration, r.Duration)
+		}
+	}
+}
+
 func TestRouteErreurs(t *testing.T) {
 	cases := map[string]struct {
 		status int
@@ -75,7 +99,7 @@ func TestRouteErreurs(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := fakeValhalla(t, tc.status, []byte(tc.body)).Route(context.Background(), gare, cathedrale, Walk)
+			_, err := fakeValhalla(t, tc.status, []byte(tc.body)).Routes(context.Background(), gare, cathedrale, Walk, 0)
 			if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) {
 				t.Errorf("erreur %v, attendu %v", err, tc.want)
 			}

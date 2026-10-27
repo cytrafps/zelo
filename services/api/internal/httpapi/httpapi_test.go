@@ -198,14 +198,15 @@ func TestVoterFallsBackToIP(t *testing.T) {
 }
 
 type fakeRouter struct {
-	err  error
-	got  []route.Point
-	mode route.Mode
+	err        error
+	got        []route.Point
+	mode       route.Mode
+	alternates int
 }
 
-func (f *fakeRouter) Route(_ context.Context, from, to route.Point, mode route.Mode) (route.Route, error) {
-	f.got, f.mode = []route.Point{from, to}, mode
-	return route.Route{Distance: 1875, Duration: 449, Coordinates: [][2]float64{{4.0245, 49.2591}, {4.0341, 49.2535}}}, f.err
+func (f *fakeRouter) Routes(_ context.Context, from, to route.Point, mode route.Mode, alternates int) ([]route.Route, error) {
+	f.got, f.mode, f.alternates = []route.Point{from, to}, mode, alternates
+	return []route.Route{{Distance: 1875, Duration: 449, Coordinates: [][2]float64{{4.0245, 49.2591}, {4.0341, 49.2535}}}}, f.err
 }
 
 func TestRoute(t *testing.T) {
@@ -215,7 +216,7 @@ func TestRoute(t *testing.T) {
 		New(&fakeStore{}, live.NewHub(), quiet, cfg).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?"+query, nil))
 		return rec
 	}
-	ok := "from=49.2591,4.0245&to=49.2535,4.0341&mode=car"
+	ok := "from=49.2591,4.0245&to=49.2535,4.0341&mode=car&alternates=2"
 
 	if rec := call(Config{}, ok); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("sans Valhalla : %d", rec.Code)
@@ -223,10 +224,10 @@ func TestRoute(t *testing.T) {
 
 	r := &fakeRouter{}
 	rec := call(Config{Router: r}, ok)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"distance":1875`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"routes":[{"distance":1875`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	if r.mode != route.Car || r.got[0] != (route.Point{Lat: 49.2591, Lon: 4.0245}) {
+	if r.mode != route.Car || r.alternates != 2 || r.got[0] != (route.Point{Lat: 49.2591, Lon: 4.0245}) {
 		t.Errorf("relayé : %+v %v", r.got, r.mode)
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" {

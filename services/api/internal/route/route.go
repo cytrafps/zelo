@@ -6,12 +6,14 @@ package route
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 )
 
@@ -69,13 +71,14 @@ type location struct {
 type request struct {
 	Locations  []location `json:"locations"`
 	Costing    Mode       `json:"costing"`
+	Alternates int        `json:"alternates,omitempty"`
 	Directions struct {
 		Language string `json:"language"`
 		Units    string `json:"units"`
 	} `json:"directions_options"`
 }
 
-type response struct {
+type trip struct {
 	Trip struct {
 		Summary struct {
 			Length float64 `json:"length"` // km
@@ -93,46 +96,68 @@ type response struct {
 			} `json:"maneuvers"`
 		} `json:"legs"`
 	} `json:"trip"`
-	ErrorCode int    `json:"error_code"`
-	Error     string `json:"error"`
 }
 
-// Route calcule l'itinéraire de from à to.
-func (c *Client) Route(ctx context.Context, from, to Point, mode Mode) (Route, error) {
+type response struct {
+	trip
+	Alternates []trip `json:"alternates"`
+	ErrorCode  int    `json:"error_code"`
+	Error      string `json:"error"`
+}
+
+// MaxAlternates : Valhalla propose au plus deux itinéraires en plus du meilleur.
+const MaxAlternates = 2
+
+// Routes calcule l'itinéraire de from à to, puis jusqu'à `alternates` autres, du plus rapide au plus lent.
+func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, alternates int) ([]Route, error) {
 	var req request
 	req.Locations = []location{{from.Lat, from.Lon, SearchCutoff}, {to.Lat, to.Lon, SearchCutoff}}
 	req.Costing = mode
+	req.Alternates = min(max(alternates, 0), MaxAlternates)
 	req.Directions.Language = "fr-FR"
 	req.Directions.Units = "kilometers"
 	body, _ := json.Marshal(req)
 
 	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/route", bytes.NewReader(body))
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
 	res, err := c.http.Do(hreq)
 	if err != nil {
-		return Route{}, fmt.Errorf("valhalla: %w", err)
+		return nil, fmt.Errorf("valhalla: %w", err)
 	}
 	defer res.Body.Close()
 
 	var out response
 	if err := json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&out); err != nil {
-		return Route{}, fmt.Errorf("valhalla: réponse illisible (HTTP %d): %w", res.StatusCode, err)
+		return nil, fmt.Errorf("valhalla: réponse illisible (HTTP %d): %w", res.StatusCode, err)
 	}
 	if res.StatusCode != http.StatusOK {
 		switch out.ErrorCode {
 		case 170, 171: // aucune route à moins de search_cutoff
-			return Route{}, ErrOutOfArea
+			return nil, ErrOutOfArea
 		case 442: // points accrochés mais non reliés
-			return Route{}, ErrNoRoute
+			return nil, ErrNoRoute
 		}
-		return Route{}, fmt.Errorf("valhalla: HTTP %d, erreur %d: %s", res.StatusCode, out.ErrorCode, out.Error)
+		return nil, fmt.Errorf("valhalla: HTTP %d, erreur %d: %s", res.StatusCode, out.ErrorCode, out.Error)
 	}
 
-	r := Route{Distance: out.Trip.Summary.Length * 1000, Duration: out.Trip.Summary.Time}
-	for _, leg := range out.Trip.Legs {
+	routes := make([]Route, 0, 1+len(out.Alternates))
+	for _, t := range append([]trip{out.trip}, out.Alternates...) {
+		r, err := t.route()
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, r)
+	}
+	slices.SortStableFunc(routes, func(a, b Route) int { return cmp.Compare(a.Duration, b.Duration) })
+	return routes, nil
+}
+
+func (t trip) route() (Route, error) {
+	r := Route{Distance: t.Trip.Summary.Length * 1000, Duration: t.Trip.Summary.Time}
+	for _, leg := range t.Trip.Legs {
 		offset := len(r.Coordinates)
 		pts, err := decodePolyline6(leg.Shape)
 		if err != nil {
