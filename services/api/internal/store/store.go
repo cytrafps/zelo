@@ -35,11 +35,25 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err := db.Exec(ctx, schema); err != nil {
+	if err := migrate(ctx, db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schéma: %w", err)
 	}
 	return &Store{db: db, url: url}, nil
+}
+
+// schemaLock sérialise l'application du schéma : deux répliques qui démarrent ensemble
+// se bloqueraient sinon mutuellement (deadlock sur les CREATE … IF NOT EXISTS).
+const schemaLock int64 = 0x7a656c6f + 1
+
+func migrate(ctx context.Context, db *pgxpool.Pool) error {
+	return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaLock); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, schema)
+		return err
+	})
 }
 
 func pingRetry(ctx context.Context, db *pgxpool.Pool, max time.Duration) error {
