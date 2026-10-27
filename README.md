@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="Zelo, l'app de la fin du trajet : se garer, recharger, faire le plein" width="100%">
+  <img src="docs/assets/banner.png" alt="Zelo, l'app de la fin du trajet : se garer, recharger, faire le plein" width="100%">
 </p>
 
 <p align="center">
@@ -52,6 +52,9 @@ flowchart LR
 | `infra` | Environnement de développement (Docker Compose) |
 | `deploy` | Production sur K3s en GitOps : Kustomize, Argo CD, Prometheus et Grafana ([guide](deploy/README.md)) |
 | `tests/charge` | Test de charge k6 et résultats, bascule d'une réplique comprise ([résultats](tests/charge/README.md)) |
+| `docs` | [Décisions d'architecture](docs/adr/README.md) et visuels |
+
+Branches, commits et PR : voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Démarrer
 

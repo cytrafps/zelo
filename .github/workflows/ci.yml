@@ -124,3 +124,26 @@ jobs:
       - run: npm test
       - run: npx expo-doctor
       - run: npx expo export --platform android --platform ios --output-dir dist
+
+  # Conventions de CONTRIBUTING.md : le titre de la PR devient le commit sur main (squash).
+  conventions:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      TITRE: ${{ github.event.pull_request.title }}
+      BRANCHE: ${{ github.head_ref }}
+    steps:
+      - name: Titre de la PR
+        run: |
+          types='feat|fix|perf|refactor|test|docs|ci|deploy|chore'
+          if ! [[ "$TITRE" =~ ^($types)(\([a-z0-9-]+\))?!?:\ .+ ]]; then
+            echo "::error::Titre « $TITRE » : attendu « type(portée): description », ex. « fix(api): … » (voir CONTRIBUTING.md)"
+            exit 1
+          fi
+      - name: Nom de la branche
+        run: |
+          types='feat|fix|perf|refactor|test|docs|ci|deploy|chore'
+          if ! [[ "$BRANCHE" =~ ^($types)/[a-z0-9][a-z0-9-]*$ || "$BRANCHE" == dependabot/* ]]; then
+            echo "::error::Branche « $BRANCHE » : attendu « type/sujet-en-kebab-case », ex. « feat/itineraire-parking » (voir CONTRIBUTING.md)"
+            exit 1
+          fi

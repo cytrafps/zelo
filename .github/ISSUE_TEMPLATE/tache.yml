@@ -1,0 +1,20 @@
+name: Tâche
+description: Une fonctionnalité ou un travail à faire
+labels: [tâche]
+body:
+  - type: textarea
+    id: objectif
+    attributes:
+      label: Objectif
+      description: Ce que l'utilisateur ou l'équipe y gagne.
+    validations:
+      required: true
+  - type: textarea
+    id: termine
+    attributes:
+      label: C'est terminé quand
+      placeholder: |
+        - [ ] …
+        - [ ] …
+    validations:
+      required: true
