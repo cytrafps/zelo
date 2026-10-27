@@ -21,4 +21,4 @@ images:
   - name: ghcr.io/cytrafps/zelo-api
     newTag: sha-22a5119
   - name: ghcr.io/cytrafps/zelo-valhalla
-    newTag: latest # remplacé par la CI après la première construction
+    newTag: osm-20261027-7106417
