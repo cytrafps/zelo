@@ -6,6 +6,7 @@
 |---|---|
 | `apps/mobile` | App iOS et Android (Expo, React Native, MapLibre) |
 | `services/api` | API Go : collecte des données ouvertes, REST, temps réel, métriques |
+| `services/valhalla` | Image Valhalla (itinéraires) et construction du graphe routier |
 | `deploy` | Manifestes Kubernetes (Kustomize), Argo CD, supervision |
 | `infra` | Environnement de développement (Docker Compose, tunnel Cloudflare) |
 | `scripts` | `npm run dev` : tout lancer en une commande |

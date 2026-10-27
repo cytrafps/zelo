@@ -22,6 +22,7 @@ import (
 
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
+	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
@@ -57,6 +58,12 @@ type Config struct {
 	TrustProxy bool
 	// OriginPatterns autorisés pour le WebSocket depuis un navigateur (tableau de bord web).
 	OriginPatterns []string
+	// Router calcule les itinéraires (Valhalla) ; nil : /v1/route répond 503.
+	Router Router
+}
+
+type Router interface {
+	Route(ctx context.Context, from, to route.Point, mode route.Mode) (route.Route, error)
 }
 
 type API struct {
@@ -66,12 +73,14 @@ type API struct {
 	cfg     Config
 	limiter *ipLimiter // création de signalements
 	votes   *ipLimiter // votes, plus fréquents
+	routes  *ipLimiter // itinéraires (recalculés en roulant)
 }
 
 func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	a := &API{store: s, hub: hub, log: log, cfg: cfg,
 		limiter: newIPLimiter(rate.Every(12*time.Second), 5),
-		votes:   newIPLimiter(rate.Every(3*time.Second), 10)}
+		votes:   newIPLimiter(rate.Every(3*time.Second), 10),
+		routes:  newIPLimiter(rate.Every(time.Second), 20)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /healthz", a.health)
@@ -82,6 +91,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("POST /v1/reports", a.addReport)
 	mux.HandleFunc("POST /v1/reports/{id}/votes", a.vote)
 	mux.HandleFunc("GET /v1/live", a.liveFeed)
+	mux.HandleFunc("GET /v1/route", a.route)
 	return mux
 }
 
@@ -256,7 +266,60 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var routeModes = map[string]route.Mode{"car": route.Car, "walk": route.Walk}
+
+// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|walk
+func (a *API) route(w http.ResponseWriter, r *http.Request) {
+	if a.cfg.Router == nil {
+		httpError(w, http.StatusServiceUnavailable, "itinéraires indisponibles")
+		return
+	}
+	if !a.routes.allow(a.clientIP(r)) {
+		httpError(w, http.StatusTooManyRequests, "trop de calculs d'itinéraire, réessaie dans un instant")
+		return
+	}
+	q := r.URL.Query()
+	from, err1 := parsePoint(q.Get("from"))
+	to, err2 := parsePoint(q.Get("to"))
+	mode, ok := routeModes[q.Get("mode")]
+	if err := errors.Join(err1, err2); err != nil || !ok {
+		httpError(w, http.StatusBadRequest, `attendu : from=lat,lon&to=lat,lon&mode=car|walk`)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	res, err := a.cfg.Router.Route(ctx, from, to, mode)
+	switch {
+	case errors.Is(err, route.ErrOutOfArea):
+		httpError(w, http.StatusUnprocessableEntity, "cette adresse est hors de la zone couverte par Zelo")
+	case errors.Is(err, route.ErrNoRoute):
+		httpError(w, http.StatusUnprocessableEntity, "aucun itinéraire trouvé")
+	case err != nil:
+		a.log.Error("itinéraire", "err", err)
+		httpError(w, http.StatusBadGateway, "calcul d'itinéraire indisponible")
+	default:
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, res)
+	}
+}
+
 // --- utilitaires
+
+func parsePoint(s string) (route.Point, error) {
+	lat, lon, ok := strings.Cut(s, ",")
+	if !ok {
+		return route.Point{}, errors.New("point invalide")
+	}
+	p := route.Point{}
+	var err1, err2 error
+	p.Lat, err1 = strconv.ParseFloat(strings.TrimSpace(lat), 64)
+	p.Lon, err2 = strconv.ParseFloat(strings.TrimSpace(lon), 64)
+	// Écrit à l'envers pour rejeter aussi NaN.
+	if err := errors.Join(err1, err2); err != nil || !(p.Lat >= -90 && p.Lat <= 90 && p.Lon >= -180 && p.Lon <= 180) {
+		return route.Point{}, errors.New("point invalide")
+	}
+	return p, nil
+}
 
 func parseBBox(s string) (store.BBox, error) {
 	parts := strings.Split(s, ",")

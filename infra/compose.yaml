@@ -1,5 +1,5 @@
 # Environnement de développement : `docker compose -f infra/compose.yaml up --build`
-# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics
+# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics, Valhalla sur :8002
 #
 # Accès depuis Internet en HTTPS (téléphone en 4G…), sans ouvrir de port, par Cloudflare Tunnel :
 #   --profile tunnel-rapide   adresse https://….trycloudflare.com aléatoire, sans compte (tests)
@@ -27,11 +27,27 @@ services:
       IMPORT_BBOX: "3.85,49.15,4.25,49.35"
       # true derrière Cloudflare : l'IP du client (quota de signalements) est lue dans CF-Connecting-IP.
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      VALHALLA_URL: http://valhalla:8002
     ports: ["8080:8080"]
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      valhalla:
+        condition: service_started # l'API démarre sans attendre : seuls les itinéraires patientent
+
+  # Itinéraires. Au premier démarrage, télécharge l'extrait OpenStreetMap de la Marne et construit
+  # le graphe routier (~1 min, 600 Mo de mémoire au plus) ; ensuite il redémarre en moins d'une seconde.
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted@sha256:d5382587f4ca9171caade2d1ab1212f26377dc5f121b9c6783deda8f4428472f
+    environment:
+      tile_urls: https://download.openstreetmap.fr/extracts/europe/france/champagne_ardenne/marne.osm.pbf
+      build_elevation: "False"
+      server_threads: "1"
+    ports: ["8002:8002"]
+    volumes: [valhalla:/custom_files]
+    mem_limit: 1g
+    restart: unless-stopped
 
   tunnel-rapide:
     image: cloudflare/cloudflared:2026.9.3
@@ -51,3 +67,4 @@ services:
 
 volumes:
   db:
+  valhalla:

@@ -1,0 +1,7 @@
+*
+!data/valhalla.json
+!data/valhalla_tiles.tar
+!data/admins.sqlite
+!data/timezones.sqlite
+!data/default_speeds.json
+!data/marne.state.txt

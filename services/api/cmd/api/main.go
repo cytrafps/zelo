@@ -25,6 +25,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
+	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
@@ -133,10 +134,16 @@ func run(log *slog.Logger, once bool) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
-	mux.Handle("/", httpapi.New(db, hub, log, httpapi.Config{
+	cfg := httpapi.Config{
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
 		OriginPatterns: splitList(os.Getenv("WS_ORIGINS")),
-	}))
+	}
+	if u := os.Getenv("VALHALLA_URL"); u != "" {
+		cfg.Router = route.New(strings.TrimRight(u, "/"))
+	} else {
+		log.Warn("VALHALLA_URL vide : itinéraires désactivés")
+	}
+	mux.Handle("/", httpapi.New(db, hub, log, cfg))
 
 	srv := &http.Server{
 		Addr:              envOr("ADDR", ":8080"),

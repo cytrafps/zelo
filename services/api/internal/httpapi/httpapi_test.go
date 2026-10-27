@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cytrafps/zelo/services/api/internal/live"
+	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
@@ -192,5 +194,54 @@ func TestVoterFallsBackToIP(t *testing.T) {
 	post(h, "/v1/reports", `{"kind":"travaux","lat":49.25,"lon":4.03}`, "")
 	if rec := post(h, "/v1/reports/1/votes", `{"up":false}`, "court"); rec.Code != http.StatusConflict {
 		t.Fatalf("code %d, want 409", rec.Code)
+	}
+}
+
+type fakeRouter struct {
+	err  error
+	got  []route.Point
+	mode route.Mode
+}
+
+func (f *fakeRouter) Route(_ context.Context, from, to route.Point, mode route.Mode) (route.Route, error) {
+	f.got, f.mode = []route.Point{from, to}, mode
+	return route.Route{Distance: 1875, Duration: 449, Coordinates: [][2]float64{{4.0245, 49.2591}, {4.0341, 49.2535}}}, f.err
+}
+
+func TestRoute(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	call := func(cfg Config, query string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		New(&fakeStore{}, live.NewHub(), quiet, cfg).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?"+query, nil))
+		return rec
+	}
+	ok := "from=49.2591,4.0245&to=49.2535,4.0341&mode=car"
+
+	if rec := call(Config{}, ok); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("sans Valhalla : %d", rec.Code)
+	}
+
+	r := &fakeRouter{}
+	rec := call(Config{Router: r}, ok)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"distance":1875`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if r.mode != route.Car || r.got[0] != (route.Point{Lat: 49.2591, Lon: 4.0245}) {
+		t.Errorf("relayé : %+v %v", r.got, r.mode)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Error("un itinéraire ne doit pas être mis en cache")
+	}
+
+	for _, q := range []string{"", "from=49.2,4.0&to=49.3,4.1", "from=49.2,4.0&to=49.3,4.1&mode=velo", "from=NaN,4&to=49.3,4.1&mode=walk", "from=95,4&to=49.3,4.1&mode=walk"} {
+		if rec := call(Config{Router: r}, q); rec.Code != http.StatusBadRequest {
+			t.Errorf("%q : %d", q, rec.Code)
+		}
+	}
+
+	for err, code := range map[error]int{route.ErrOutOfArea: 422, route.ErrNoRoute: 422, errors.New("valhalla: timeout"): 502} {
+		if rec := call(Config{Router: &fakeRouter{err: err}}, ok); rec.Code != code {
+			t.Errorf("%v : %d, attendu %d", err, rec.Code, code)
+		}
 	}
 }
