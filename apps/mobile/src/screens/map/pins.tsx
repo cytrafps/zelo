@@ -44,12 +44,12 @@ function toPins(category: Category, data: { fuel: FuelStation[]; charge: ChargeS
         select: { kind: 'charge', item: s },
       }));
     case 'stationnement':
-      // Pas encore de tarifs (fichier des parkings payants à venir) : « Gratuit » quand OSM le dit.
+      // Icône seule, comme dans les maquettes : le tarif et la gratuité sont dans la fiche.
       return data.parkings.map((p) => ({
         id: p.id,
         lat: p.lat,
         lon: p.lon,
-        label: p.fee === false ? 'Gratuit' : '',
+        label: '',
         muted: false,
         select: { kind: 'parking', item: p },
       }));
