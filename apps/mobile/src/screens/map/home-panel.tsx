@@ -24,11 +24,9 @@ type Props = {
   c: Couleurs;
   bottomInset: number;
   near: { lat: number; lon: number };
-  destination: Place | null;
   recents: Place[];
   carParked: boolean;
   onSelect: (place: Place) => void;
-  onClear: () => void;
   onCar: () => void;
 };
 
@@ -36,7 +34,7 @@ type Props = {
  * Feuille d'accueil des maquettes (01 · Accueil, 02 · Recherche) : « Où vas-tu ? », bouton
  * Ma voiture et destinations récentes. La saisie fait monter la feuille au-dessus du clavier.
  */
-export function HomePanel({ c, bottomInset, near, destination, recents, carParked, onSelect, onClear, onCar }: Props) {
+export function HomePanel({ c, bottomInset, near, recents, carParked, onSelect, onCar }: Props) {
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const { places, loading, failed } = useGeocode(focused ? query : '', near);
@@ -49,7 +47,6 @@ export function HomePanel({ c, bottomInset, near, destination, recents, carParke
   };
 
   const searching = focused && query.trim().length >= 3;
-  const value = focused ? query : (destination?.name ?? '');
 
   return (
     <KeyboardAvoidingView behavior="padding" style={styles.avoid} pointerEvents="box-none">
@@ -78,7 +75,7 @@ export function HomePanel({ c, bottomInset, near, destination, recents, carParke
           <View style={[styles.field, { backgroundColor: c.fond.attenue }]}>
             <SymbolView name={{ ios: 'magnifyingglass', android: 'search' }} tintColor={c.texte.secondaire} size={20} />
             <TextInput
-              value={value}
+              value={query}
               onChangeText={setQuery}
               onFocus={() => {
                 setFocused(true);
@@ -94,16 +91,8 @@ export function HomePanel({ c, bottomInset, near, destination, recents, carParke
               accessibilityLabel="Rechercher une destination"
             />
             {loading && <ActivityIndicator size="small" color={c.texte.tertiaire} />}
-            {(destination || query) && !loading ? (
-              <Pressable
-                onPress={() => {
-                  setQuery('');
-                  onClear();
-                }}
-                hitSlop={12}
-                accessibilityRole="button"
-                accessibilityLabel="Effacer la destination"
-              >
+            {query && !loading ? (
+              <Pressable onPress={() => setQuery('')} hitSlop={12} accessibilityRole="button" accessibilityLabel="Effacer">
                 <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close' }} tintColor={c.texte.tertiaire} size={20} />
               </Pressable>
             ) : null}

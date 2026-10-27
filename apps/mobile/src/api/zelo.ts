@@ -1,5 +1,6 @@
 // Client de l'API Zelo (services/api). Les formes suivent services/api/internal/store.
 import { deviceId } from '@/utils/device';
+import type { Route } from '@/utils/route';
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
 export const LIVE_URL = API_URL.replace(/^http/, 'ws') + '/v1/live';
@@ -107,3 +108,16 @@ export const postReport = (kind: ReportKind, lat: number, lon: number) =>
 /** « Toujours là » (up) ou « Plus là ». 409 : c'est ton propre signalement. */
 export const voteReport = (id: number, up: boolean) =>
   request<{ report: Report; removed: boolean }>(`/v1/reports/${id}/votes`, { method: 'POST', body: JSON.stringify({ up }) });
+
+/** Itinéraires (Valhalla), du plus rapide au plus lent. 422 : point hors de la zone couverte. */
+export const getRoutes = (
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+  mode: 'car' | 'walk',
+  alternates = 0,
+  signal?: AbortSignal,
+) =>
+  request<{ routes: Route[] }>(
+    `/v1/route?from=${from.lat},${from.lon}&to=${to.lat},${to.lon}&mode=${mode}&alternates=${alternates}`,
+    { signal },
+  ).then((r) => r.routes);
