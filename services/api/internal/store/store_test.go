@@ -29,6 +29,29 @@ func testStore(t *testing.T) *Store {
 	return s
 }
 
+// Plusieurs répliques qui démarrent en même temps appliquent le schéma sans se bloquer.
+func TestConcurrentStartup(t *testing.T) {
+	url := os.Getenv("ZELO_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("ZELO_TEST_DATABASE_URL absent : test d'intégration ignoré")
+	}
+	errs := make(chan error, 4)
+	for range 4 {
+		go func() {
+			s, err := Open(context.Background(), url)
+			if err == nil {
+				s.Close()
+			}
+			errs <- err
+		}()
+	}
+	for range 4 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // Un signalement enregistré par une instance atteint les auditeurs de toutes les instances.

@@ -51,6 +51,7 @@ flowchart LR
 | `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, parkings, signalements en temps réel |
 | `infra` | Environnement de développement (Docker Compose) |
 | `deploy` | Production sur K3s en GitOps : Kustomize, Argo CD, Prometheus et Grafana ([guide](deploy/README.md)) |
+| `tests/charge` | Test de charge k6 et résultats, bascule d'une réplique comprise ([résultats](tests/charge/README.md)) |
 
 ## Démarrer
 
