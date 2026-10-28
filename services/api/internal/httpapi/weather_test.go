@@ -39,3 +39,21 @@ func TestWeather(t *testing.T) {
 		t.Errorf("point illisible : %d", code)
 	}
 }
+
+func TestEVModels(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(&fakeStore{}, live.NewHub(0), quiet, Config{})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/ev-models", nil))
+	etag := rec.Header().Get("ETag")
+	if rec.Code != 200 || etag == "" || !strings.Contains(rec.Body.String(), `"batteryKwh"`) {
+		t.Fatalf("%d %q", rec.Code, etag)
+	}
+	req := httptest.NewRequest("GET", "/v1/ev-models", nil)
+	req.Header.Set("If-None-Match", etag)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 304 || rec.Body.Len() != 0 {
+		t.Errorf("revalidation : %d", rec.Code)
+	}
+}

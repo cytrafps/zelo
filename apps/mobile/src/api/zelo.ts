@@ -3,6 +3,7 @@ import { deviceId } from '@/utils/device';
 import { fetchWithin } from '@/utils/net';
 import type { LatLon } from '@/utils/geo';
 import type { Route } from '@/utils/route';
+import type { EvModel } from '@/utils/ev';
 import type { Zone } from '@/utils/zfe';
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
@@ -146,6 +147,9 @@ export const getWeather = (at: LatLon, time: number, signal?: AbortSignal) =>
   request<{ outlook: Outlook | null }>(`/v1/weather?at=${at.lat},${at.lon}&time=${Math.round(time / 1000)}`, { signal }).then(
     (r) => r.outlook,
   );
+
+/** Voitures électriques (Open EV Data) : batterie et consommation, pour estimer l'autonomie. */
+export const getEvModels = () => request<{ updated: string; models: EvModel[] }>('/v1/ev-models').then((r) => r.models);
 
 /** Zones à faibles émissions qui touchent la zone, en vigueur ou à venir. */
 export const getZones = (b: BBox, s?: AbortSignal) => list<Zone>('/v1/zfe', b, s);

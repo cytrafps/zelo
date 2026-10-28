@@ -14,6 +14,7 @@ import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
 import { forVehicle, sameTarget, sheltered, targetPoint } from '@/utils/targets';
+import { arrivalPercent, LOW_PERCENT, type EvModel } from '@/utils/ev';
 import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
 
 const ios = Platform.OS === 'ios';
@@ -153,6 +154,15 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
         )}
       </ScrollView>
 
+      {!choosing && vehicle === 'car' && (
+        <BatteryNotice
+          distance={trip.routes[trip.selected]?.distance ?? null}
+          options={options}
+          target={trip.target}
+          c={c}
+          onCharge={(target) => onChange({ target })}
+        />
+      )}
       {!choosing && (
         <WeatherNotice
           trip={trip}
@@ -231,6 +241,51 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   );
 }
 
+const BATTERY_STEPS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+
+/**
+ * Voiture électrique renseignée (fiche voiture) : batterie estimée à l'arrivée avec l'itinéraire
+ * choisi, à partir du niveau au départ. Trop basse, on propose de s'arrêter à une borne.
+ */
+function BatteryNotice(props: {
+  distance: number | null;
+  options: TripTarget[];
+  target: TripTarget;
+  c: Couleurs;
+  onCharge: (t: TripTarget) => void;
+}) {
+  const { distance, options, target, c, onCharge } = props;
+  const [ev] = useStored<EvModel | null>('zelo.ve', null);
+  const [battery, setBattery] = useStored('zelo.batterie', 80);
+  if (!ev || distance === null) return null;
+  const left = Math.round(arrivalPercent(ev, battery, distance));
+  const low = left < LOW_PERCENT;
+  const charge = target.kind !== 'charge' ? options.find((t) => t.kind === 'charge') : undefined;
+  return (
+    <View style={[styles.notice, styles.noticeRow]}>
+      <MenuView
+        title="Batterie au départ"
+        actions={BATTERY_STEPS.map((p) => ({ id: String(p), title: `${p} %`, state: p === battery ? 'on' : 'off' }))}
+        onPressAction={(e) => setBattery(Number(e.nativeEvent.event))}
+      >
+        <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Batterie au départ">
+          <SymbolView name={{ ios: 'battery.75percent', android: 'battery_5_bar' }} tintColor={c.texte.principal} size={16} />
+          <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{`${battery} %`}</Text>
+          <Chevron c={c} />
+        </View>
+      </MenuView>
+      <Text style={[texte.secondaire, { color: low ? c.alerte.base : c.texte.secondaire }]}>
+        {left <= 0 ? "Batterie insuffisante pour l'arrivée" : `≈ ${left} % à l'arrivée`}
+      </Text>
+      {low && charge && (
+        <Pressable onPress={() => onCharge(charge)} accessibilityRole="button" style={[styles.chip, { borderColor: c.action }]}>
+          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`Recharger : ${short(charge)}`}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 /**
  * Pluie ou gel à l'arrivée (prévision Météo-France via Open-Meteo) : propose un parking à
  * l'abri si l'arrêt choisi ne l'est pas. Sans prévision, rien.
@@ -251,7 +306,7 @@ function WeatherNotice(props: { trip: Trip; options: TripTarget[]; arrive: numbe
   const shelter = options.find(sheltered);
   const label = outlook.rain ? "Pluie prévue à l'arrivée" : `Gel possible à l'arrivée (${Math.round(outlook.temperature)} °C)`;
   return (
-    <View style={[styles.zfe, styles.zfeActions]}>
+    <View style={[styles.notice, styles.noticeRow]}>
       <SymbolView
         name={outlook.rain ? { ios: 'cloud.rain.fill', android: 'rainy' } : { ios: 'snowflake', android: 'ac_unit' }}
         tintColor={c.texte.secondaire}
@@ -291,7 +346,7 @@ function ZfeNotice(props: {
 
   if (!vignette || editing)
     return (
-      <View style={styles.zfe}>
+      <View style={styles.notice}>
         <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Ton arrêt est dans la ${zone.name}. Ta vignette Crit'Air ?`}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
           {CRITAIR.map((v) => (
@@ -318,11 +373,11 @@ function ZfeNotice(props: {
   const outside = [...options.filter((t) => t.kind === 'parkride'), ...options].find((t) => t.kind !== 'dropoff' && !inZone(t));
   const hours = rule.hours && rule.hours !== '24/7' ? ` (${rule.hours})` : '';
   return (
-    <View style={[styles.zfe, { backgroundColor: c.fond.attenue }]}>
+    <View style={[styles.notice, { backgroundColor: c.fond.attenue }]}>
       <Text style={[texte.corps, { color: c.alerte.base }]}>
         {`${critairLabel(vignette)} : interdite dans la ${zone.name}${hours}.`}
       </Text>
-      <View style={styles.zfeActions}>
+      <View style={styles.noticeRow}>
         {outside && (
           <Pressable onPress={() => onPark(outside)} accessibilityRole="button" style={[styles.chip, { borderColor: c.action }]}>
             <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`Me garer hors zone : ${short(outside)}`}</Text>
@@ -521,8 +576,8 @@ function detail(t: TripTarget) {
 const shadow = { shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -2 }, elevation: 8 };
 
 const styles = StyleSheet.create({
-  zfe: { marginHorizontal: espace[4], marginBottom: espace[2], padding: espace[3], borderRadius: rayon.s, gap: espace[2] },
-  zfeActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: espace[3] },
+  notice: { marginHorizontal: espace[4], marginBottom: espace[2], padding: espace[3], borderRadius: rayon.s, gap: espace[2] },
+  noticeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: espace[3] },
   cardIos: { marginHorizontal: espace[2], borderRadius: 34, paddingHorizontal: espace[4], ...shadow },
   cardAndroid: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: espace[4], ...shadow },
   handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginTop: espace[2], marginBottom: espace[3] },
