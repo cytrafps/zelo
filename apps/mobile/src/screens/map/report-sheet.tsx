@@ -1,7 +1,7 @@
 import { BottomSheet, Column, Host, List, ListItem, Row, Text } from '@expo/ui';
 import { useState } from 'react';
 
-import { ApiError, postReport, REPORT_KINDS, type Report, type ReportKind } from '@/api/zelo';
+import { ApiError, REPORT_KINDS, type ReportKind } from '@/api/zelo';
 import { REPORT_META, texte, useTheme } from '@/theme';
 
 type Props = {
@@ -9,10 +9,11 @@ type Props = {
   onDismiss: () => void;
   /** Position du signalement : celle de l'utilisateur, sinon le centre de la carte. */
   position: { lat: number; lon: number; source: 'gps' | 'carte' };
-  onCreated: (r: Report) => void;
+  /** Envoie le signalement (ou le met en attente du réseau) ; rejette si l'API le refuse. */
+  send: (kind: ReportKind, lat: number, lon: number) => Promise<unknown>;
 };
 
-export function ReportSheet({ isPresented, onDismiss, position, onCreated }: Props) {
+export function ReportSheet({ isPresented, onDismiss, position, send: submit }: Props) {
   const { c, dark } = useTheme();
   const [sending, setSending] = useState<ReportKind | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export function ReportSheet({ isPresented, onDismiss, position, onCreated }: Pro
     setSending(kind);
     setError(null);
     try {
-      onCreated(await postReport(kind, position.lat, position.lon));
+      await submit(kind, position.lat, position.lon);
       onDismiss();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Pas de connexion. Réessaie dans un instant.');
