@@ -21,7 +21,7 @@ import { FREED_FOR_MS } from '@/utils/car-events';
 import type { Zone } from '@/utils/zfe';
 import { distance, type LatLon } from '@/utils/geo';
 import { pushRecent } from '@/utils/recents';
-import { bounds } from '@/utils/route';
+import { bounds, segmentBearing } from '@/utils/route';
 import { targets } from '@/utils/targets';
 
 import { CarSheet } from './car-sheet';
@@ -36,7 +36,7 @@ import { PlaceSheet, type Selection } from './place-sheet';
 import { ReportDetailSheet } from './report-detail-sheet';
 import { ReportSheet } from './report-sheet';
 import { TransitCard } from './transit-card';
-import { ControlLayer, RouteLayer } from './route-layer';
+import { ControlLayer, DrivingPuck, RouteLayer } from './route-layer';
 import { TripPanel } from './trip-panel';
 
 const REIMS: [number, number] = [4.0317, 49.2583];
@@ -300,7 +300,13 @@ export function MapScreen() {
           }}
         />
         <PinImages dark={dark} />
-        {location.granted && <UserLocation accuracy heading={trip?.phase !== 'drive'} />}
+        {/* En voiture, la flèche 3D au-dessus du tracé et des panneaux ; sinon le point bleu. */}
+        {location.granted &&
+          (trip?.phase === 'drive' && route ? (
+            <DrivingPuck initialCourse={segmentBearing(route.coordinates, 0) ?? 0} />
+          ) : (
+            <UserLocation accuracy heading />
+          ))}
         {trip && trip.target.kind !== 'dropoff' && (trip.phase === 'preview' || trip.phase === 'drive') && (
           <StopMarker target={trip.target} c={c} />
         )}

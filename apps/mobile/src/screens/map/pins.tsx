@@ -1,5 +1,6 @@
 import { Images } from '@maplibre/maplibre-react-native';
 import type { SymbolViewProps } from 'expo-symbols';
+import { Platform } from 'react-native';
 
 export type Category = 'carburant' | 'recharge' | 'stationnement';
 
@@ -39,11 +40,12 @@ const DARK: typeof LIGHT = {
   'pin-ev-l-off': require('../../../assets/map/pin-ev-l-off-dark.png'),
 };
 
-/** Feux, stops et cédez-le-passage sur le tracé : les mêmes en clair et en sombre (panneaux routiers). */
+/** Panneaux sur le tracé et flèche du guidage : les mêmes en clair et en sombre (bordés de blanc). */
 const CONTROLS = {
   'control-feu': require('../../../assets/map/control-feu.png'),
   'control-stop': require('../../../assets/map/control-stop.png'),
   'control-cédez': require('../../../assets/map/control-cedez.png'),
+  'puck-arrow': Platform.OS === 'ios' ? require('../../../assets/map/puck-arrow-ios.png') : require('../../../assets/map/puck-arrow-android.png'),
 };
 
 export type PinImage = keyof typeof LIGHT;
