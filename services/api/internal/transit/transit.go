@@ -35,9 +35,10 @@ func mustLoad(name string) *time.Location {
 
 // Stop : un arrêt (station mère GTFS, qui regroupe les quais des deux sens).
 type Stop struct {
-	ID       string
-	Name     string
-	Lat, Lon float64
+	ID   string  `json:"id"`
+	Name string  `json:"name"`
+	Lat  float64 `json:"lat"`
+	Lon  float64 `json:"lon"`
 }
 
 type call struct {
