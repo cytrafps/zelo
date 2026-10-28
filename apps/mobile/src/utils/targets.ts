@@ -3,13 +3,13 @@ import { distance, type LatLon } from './geo.ts';
 
 type Parking = LatLon & { id: string; name: string; fee: boolean | null };
 type Charge = LatLon & { id: string; name: string; maxPowerKw: number; available: number | null };
-/** Parking relais et son tram (voir l'API /v1/park-ride). */
-type Relay<P> = { parking: P; alight: LatLon & { walk: number } };
+/** Parking relais et ses trajets en tram ou bus (voir l'API /v1/park-ride). */
+type Relay<P> = { parking: P; journeys: readonly { finalWalk: number }[] };
 
 export type Target<P extends Parking = Parking, C extends Charge = Charge, R extends Relay<P> = Relay<P>> =
   | { kind: 'parking'; item: P; walk: number }
   | { kind: 'charge'; item: C; walk: number }
-  /** Se garer au parking relais (`item`), le tram, puis `walk` mètres depuis l'arrêt d'arrivée. */
+  /** Se garer au parking relais (`item`), le tram ou le bus, puis `walk` mètres depuis le dernier arrêt. */
   | { kind: 'parkride'; item: P; walk: number; relay: R }
   | { kind: 'dropoff' };
 
@@ -38,7 +38,7 @@ export function targets<P extends Parking, C extends Charge, R extends Relay<P>>
     .slice(0, 2)
     .map((x) => ({ kind: 'parking', ...x }));
   const relay = relays[0];
-  if (relay) out.push({ kind: 'parkride', item: relay.parking, walk: relay.alight.walk, relay });
+  if (relay?.journeys[0]) out.push({ kind: 'parkride', item: relay.parking, walk: relay.journeys[0].finalWalk, relay });
   const borne = byWalk(
     charge.filter((c) => (c.available ?? 0) > 0),
     MAX_WALK_CHARGE,

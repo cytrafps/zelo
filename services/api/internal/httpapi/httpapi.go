@@ -70,7 +70,7 @@ type Config struct {
 	OriginPatterns []string
 	// Router calcule les itinéraires (Valhalla) ; nil : /v1/route répond 503.
 	Router Router
-	// Transit : horaires du tram en vigueur (rechargés chaque jour) ; nil ou nil renvoyé : aucun parking relais proposé.
+	// Transit : horaires du tram et des bus en vigueur (rechargés chaque jour) ; nil ou nil renvoyé : aucun parking relais proposé.
 	Transit func() *transit.Timetable
 }
 

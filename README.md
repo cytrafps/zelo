@@ -160,7 +160,7 @@ npx eas-cli@latest build -p android --profile preview
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
 | `POST /v1/reports/{id}/votes` | `{"up": true}` (toujours là) ou `false` (plus là) ; un vote par appareil (`X-Zelo-Device`), modifiable ; jamais sur son propre signalement (409) |
 | `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|moto\|bike\|walk` | `{"routes": […]}`, du plus rapide au plus lent : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; en voiture, `areas` liste les aires d'autoroute desservies (distance, services, prix du carburant, bornes libres) et chaque étape peut porter `control` (`feu`, `stop` : « Au feu, tournez… ») et `lanes` (voies à l'approche, `take` sur celles à prendre). Options : `alternates=0..2`, `heading` (cap au départ, en °), `depart` (heure Unix, 7 jours au plus), `avoid=tolls,highways`. 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
-| `GET /v1/park-ride?to=lat,lon[&from=lat,lon][&at=…]` | Parkings relais d'où le tram mène à moins de 800 m de la destination (et sur le chemin depuis `from`) : arrêts de montée et de descente, ligne, trams des deux prochaines heures (horaires GTFS Citura) |
+| `GET /v1/park-ride?to=lat,lon[&from=lat,lon][&at=…]` | Parkings relais d'où le tram ou le bus (deux correspondances au plus) mène à moins de 800 m de la destination, sur le chemin depuis `from` : les trajets des deux prochaines heures, étape par étape (horaires GTFS Citura) |
 | `GET /v1/live` | WebSocket : `report` (nouveau ou mis à jour) et `report_removed` sont poussés à tous les clients, quelle que soit l'instance |
 | `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus (collectes, trafic par route, calculs d'itinéraire) |
 
@@ -180,7 +180,7 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | `ADDR` | `:8080` | Adresse d'écoute |
 | `IMPORT_BBOX` | vide (France entière) | Zone d'import des bornes, des parkings, des feux et des stops (obligatoire pour ces deux derniers) |
 | `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
-| `GTFS_URL` | GTFS Grand Reims Mobilités (transport.data.gouv.fr) | Horaires du tram, rechargés chaque jour par chaque réplique |
+| `GTFS_URL` | GTFS Grand Reims Mobilités (transport.data.gouv.fr) | Horaires du tram et des bus, rechargés chaque jour par chaque réplique |
 | `AREAS_BBOX` | `IMPORT_BBOX` | Zone d'import des aires d'autoroute (OSM), à caler sur celle du graphe routier |
 | `TRUSTED_PROXIES` | vide | Réseaux des proxys de confiance (ex. `10.42.0.0/16`, Traefik sur K3s) : l'IP cliente est lue dans `X-Forwarded-For` |
 | `LIVE_MAX_CLIENTS` | `5000` | Clients du flux temps réel par instance, au-delà refusés (le client réessaie) |
@@ -196,7 +196,7 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | [Prix des carburants](https://www.prix-carburants.gouv.fr/rubrique/opendata/) | 10 min | Licence Ouverte 2.0 |
 | [OpenStreetMap, extrait de la Marne](https://download.openstreetmap.fr/extracts/europe/france/champagne_ardenne/) (itinéraires) | 7 j | ODbL |
 | [Bornes IRVE statiques](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) | 24 h | Licence Ouverte 2.0 |
-| [Horaires du réseau Grand Reims Mobilités](https://transport.data.gouv.fr/datasets/offre-de-transport-du-reseau-grand-reims-mobilites-communaute-urbaine-du-grand-reims) (GTFS, tram) | 24 h | Licence Ouverte 2.0 |
+| [Horaires du réseau Grand Reims Mobilités](https://transport.data.gouv.fr/datasets/offre-de-transport-du-reseau-grand-reims-mobilites-communaute-urbaine-du-grand-reims) (GTFS, tram et bus) | 24 h | Licence Ouverte 2.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings, feux et stops, aires d'autoroute) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |
 | Tarifs des parkings du centre, relevés sur les sites de [Champagne Parc Auto](https://www.cpa-champagneparcauto.com/parkings/) et d'[Effia](https://www.effia.com/) | À la main, datés | Seul le tarif affiché sur place fait foi |

@@ -1,6 +1,6 @@
-// Package transit lit les horaires théoriques du tram (GTFS du réseau Citura) et répond à la
-// question du parking relais : depuis cet arrêt, quand part le prochain tram pour cet autre arrêt,
-// et à quelle heure arrive-t-il ?
+// Package transit lit les horaires théoriques du réseau Citura (GTFS : tram et bus) et calcule
+// les trajets en transport en commun d'un parking relais vers une destination, correspondances
+// comprises (voir Plan).
 package transit
 
 import (
@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -46,27 +47,35 @@ type call struct {
 }
 
 type trip struct {
+	id       string
 	service  string
 	line     string
 	headsign string
 	calls    []call
 }
 
-// Line : une ligne de tram et sa couleur.
+// Line : une ligne et sa couleur.
 type Line struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
+	Mode      string `json:"mode"`      // « tram » ou « bus »
 	Color     string `json:"color"`     // hexadécimal sans « # »
 	TextColor string `json:"textColor"` // idem
 }
 
-// Timetable : le tram seulement (route_type 0, ou 1 tel que Citura déclare son tram).
+// Timetable : tram (route_type 0, ou 1 tel que Citura déclare son tram) et bus (3).
 type Timetable struct {
 	Stops []Stop
 	Lines map[string]Line
 	trips []trip
 	// days[service] : jours de service (AAAAMMJJ) où il circule.
 	days map[string]map[string]bool
+
+	index map[string]int32 // station → indice dans Stops
+	foot  [][]footpath     // correspondances à pied entre stations proches
+
+	mu    sync.Mutex
+	conns map[string][]conn // connexions d'un jour de service, triées par départ
 }
 
 // Fetch télécharge et lit le GTFS.
@@ -145,9 +154,10 @@ func Parse(archive []byte) (*Timetable, error) {
 
 	t := &Timetable{Lines: map[string]Line{}, days: map[string]map[string]bool{}}
 	if err := read("routes.txt", true, func(get func(string) string) error {
-		if typ := get("route_type"); typ == "0" || typ == "1" {
+		mode := map[string]string{"0": "tram", "1": "tram", "3": "bus"}[get("route_type")]
+		if mode != "" {
 			id := get("route_id")
-			t.Lines[id] = Line{ID: id, Name: get("route_short_name"), Color: get("route_color"), TextColor: get("route_text_color")}
+			t.Lines[id] = Line{ID: id, Name: get("route_short_name"), Mode: mode, Color: get("route_color"), TextColor: get("route_text_color")}
 		}
 		return nil
 	}); err != nil {
@@ -179,7 +189,7 @@ func Parse(archive []byte) (*Timetable, error) {
 	if err := read("trips.txt", true, func(get func(string) string) error {
 		if _, ok := t.Lines[get("route_id")]; ok {
 			tripIndex[get("trip_id")] = len(t.trips)
-			t.trips = append(t.trips, trip{service: get("service_id"), line: get("route_id"), headsign: get("trip_headsign")})
+			t.trips = append(t.trips, trip{id: get("trip_id"), service: get("service_id"), line: get("route_id"), headsign: get("trip_headsign")})
 		}
 		return nil
 	}); err != nil {
@@ -249,8 +259,9 @@ func Parse(archive []byte) (*Timetable, error) {
 		return nil, err
 	}
 	if len(t.trips) == 0 {
-		return nil, errors.New("gtfs: aucune ligne de tram")
+		return nil, errors.New("gtfs: aucune ligne de tram ni de bus")
 	}
+	t.prepare()
 	return t, nil
 }
 
@@ -280,50 +291,4 @@ func clock(s string) (int, error) {
 		v[i] = n
 	}
 	return v[0]*3600 + v[1]*60 + v[2], nil
-}
-
-// Ride : un tram entre deux arrêts.
-type Ride struct {
-	LineID   string    `json:"-"`
-	Line     string    `json:"line"`
-	Headsign string    `json:"headsign"`
-	Depart   time.Time `json:"depart"`
-	Arrive   time.Time `json:"arrive"`
-	Stops    int       `json:"stops"` // arrêts parcourus
-}
-
-// Rides : les trams de from à to qui partent entre after et after+within, dans l'ordre.
-func (t *Timetable) Rides(from, to string, after time.Time, within time.Duration) []Ride {
-	var out []Ride
-	after = after.In(Paris)
-	// Jours de service à regarder : la veille (trajets après minuit) et le jour même, plus le
-	// lendemain si la fenêtre déborde.
-	for d := -1; d <= 1; d++ {
-		day := time.Date(after.Year(), after.Month(), after.Day()+d, 12, 0, 0, 0, Paris).Add(-12 * time.Hour)
-		key := day.Format("20060102")
-		for _, tr := range t.trips {
-			if !t.days[tr.service][key] {
-				continue
-			}
-			i := slices.IndexFunc(tr.calls, func(c call) bool { return c.stop == from })
-			if i < 0 {
-				continue
-			}
-			j := slices.IndexFunc(tr.calls[i+1:], func(c call) bool { return c.stop == to })
-			if j < 0 {
-				continue
-			}
-			j += i + 1
-			dep := day.Add(time.Duration(tr.calls[i].dep) * time.Second)
-			if dep.Before(after) || dep.After(after.Add(within)) {
-				continue
-			}
-			out = append(out, Ride{
-				LineID: tr.line, Line: t.Lines[tr.line].Name, Headsign: tr.headsign, Depart: dep,
-				Arrive: day.Add(time.Duration(tr.calls[j].arr) * time.Second), Stops: j - i,
-			})
-		}
-	}
-	slices.SortFunc(out, func(a, b Ride) int { return a.Depart.Compare(b.Depart) })
-	return out
 }

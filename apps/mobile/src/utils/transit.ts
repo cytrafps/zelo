@@ -1,20 +1,31 @@
-// Parking relais + tram : quel tram prendre, et à quelle heure on arrive (testé avec `npm test`).
-import type { Ride } from '../api/zelo.ts';
+// Parking relais + tram ou bus : quel trajet prendre, et à quelle heure on arrive (testé avec `npm test`).
+import type { Journey, TransitLeg } from '../api/zelo.ts';
 
 /** m/s à pied, détours compris (comme l'API). */
 export const WALK_SPEED = 1.2;
 
-/** Premier tram qu'on peut prendre en étant au quai à `ready` (ms). */
-export const nextRide = (rides: readonly Ride[], ready: number) => rides.find((r) => Date.parse(r.depart) >= ready);
+/** Premier trajet qu'on peut prendre en partant du parking relais à `parked` (ms). */
+export const nextJourney = (journeys: readonly Journey[], parked: number) =>
+  journeys.find((j) => Date.parse(j.legs[0].depart) >= parked + (j.boardWalk / WALK_SPEED) * 1000);
+
+/** Tronçons en véhicule (sans les correspondances à pied). */
+export const rides = (j: Journey) => j.legs.filter((l): l is TransitLeg & { line: NonNullable<TransitLeg['line']> } => !!l.line);
 
 /**
- * Durée (s) entre l'arrivée au parking relais (`parked`, ms) et l'arrivée à destination :
- * marche jusqu'au quai, attente, tram, puis marche finale. null : plus de tram dans la fenêtre.
+ * Durée (s) entre l'arrivée au parking relais (`parked`, ms) et l'arrivée à destination : marche
+ * jusqu'au quai, attente, trajets, puis `finalWalkSeconds` de marche. null : plus rien dans la fenêtre.
  */
-export function relayDuration(rides: readonly Ride[], parked: number, boardWalk: number, finalWalkSeconds: number) {
-  const ride = nextRide(rides, parked + (boardWalk / WALK_SPEED) * 1000);
-  if (!ride) return null;
-  return (Date.parse(ride.arrive) - parked) / 1000 + finalWalkSeconds;
+export function relayDuration(journeys: readonly Journey[], parked: number, finalWalkSeconds: number) {
+  const j = nextJourney(journeys, parked);
+  if (!j) return null;
+  return (Date.parse(j.legs.at(-1)!.arrive) - parked) / 1000 + finalWalkSeconds;
+}
+
+/** « Tram », « Bus 4 », « Tram puis bus O2 ». */
+export function linesLabel(j: Journey) {
+  const names = rides(j).map((l) => (l.line.mode === 'tram' ? 'tram' : `bus ${l.line.name}`));
+  const label = names.join(' puis ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 /** « OPERA-CATHEDRALE » (le GTFS Citura est en capitales) devient « Opera-Cathedrale ». */

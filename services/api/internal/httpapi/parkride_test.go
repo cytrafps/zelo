@@ -19,7 +19,7 @@ import (
 // Vers la cathédrale un mardi à 8 h : P+R Neufchâtel puis tram jusqu'à Opéra-Cathédrale. Un
 // parking ordinaire, et un P+R plus loin de l'origine que la destination, ne sont pas proposés.
 func TestParkRide(t *testing.T) {
-	b, err := os.ReadFile("../transit/testdata/citura-tram.zip")
+	b, err := os.ReadFile("../transit/testdata/citura-3-novembre.zip")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,28 +43,28 @@ func TestParkRide(t *testing.T) {
 	}
 	var body struct {
 		Options []struct {
-			Parking struct{ Name string }
-			Board   struct{ Name string }
-			Alight  struct {
-				Name string
-				Walk float64
+			Parking  struct{ Name string }
+			Journeys []struct {
+				Legs                 []transit.Leg
+				Arrive               time.Time
+				BoardWalk, FinalWalk float64
 			}
-			Line  struct{ Name, Color string }
-			Rides []transit.Ride
 		}
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Options) != 1 {
-		t.Fatalf("%d options : %+v", len(body.Options), body.Options)
+	if len(body.Options) != 1 || body.Options[0].Parking.Name != "P+R Neufchâtel" {
+		t.Fatalf("%+v", body.Options)
 	}
-	o := body.Options[0]
-	if o.Parking.Name != "P+R Neufchâtel" || o.Board.Name != "NEUFCHATEL" || o.Alight.Name != "OPERA-CATHEDRALE" || o.Line.Color != "E0001B" {
-		t.Fatalf("%+v", o)
+	js := body.Options[0].Journeys
+	if len(js) < 3 {
+		t.Fatalf("%d trajets", len(js))
 	}
-	if len(o.Rides) < 3 || o.Rides[0].Depart.Before(time.Unix(at, 0)) || o.Alight.Walk > 800 {
-		t.Fatalf("départs : %+v", o.Rides)
+	first := js[0]
+	if first.Legs[0].Line == nil || first.Legs[0].From.Name != "NEUFCHATEL" || first.Legs[0].Depart.Before(time.Unix(at, 0)) ||
+		first.BoardWalk > 300 || first.FinalWalk > 800 || !first.Arrive.After(first.Legs[len(first.Legs)-1].Arrive) {
+		t.Fatalf("premier trajet : %+v", first)
 	}
 
 	// Sans horaires chargés : aucune option, pas d'erreur.
