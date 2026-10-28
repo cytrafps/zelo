@@ -15,5 +15,6 @@ Une décision n'est jamais réécrite : si elle change, une nouvelle la remplace
 | [0008](0008-acces-par-cloudflare-tunnel.md) | Accès depuis Internet par Cloudflare Tunnel | Acceptée |
 | [0009](0009-itineraires-valhalla.md) | Itinéraires calculés par Valhalla auto-hébergé | Acceptée |
 | [0010](0010-infra-en-code.md) | Infrastructure du homelab décrite en code (Terraform + Ansible) | Acceptée |
+| [0011](0011-android-auto-parking-recharge.md) | Android Auto en catégories parking et recharge | Acceptée |
 
 Nouvelle décision : copier [le modèle](modele.md), prendre le numéro suivant, l'ajouter à ce tableau dans la même PR.

@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.zelo.auto'
+version = '0.1.0'
+
+android {
+  namespace "app.zelo.auto"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // Android for Cars App Library : gabarits dessinés par la voiture (catégories parking et recharge).
+  implementation "androidx.car.app:app:1.7.0"
+}
