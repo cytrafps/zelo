@@ -45,6 +45,7 @@ spec:
               or label_replace(vector(259200), "source", "parkings",           "", "")
               or label_replace(vector(259200), "source", "feux_stops",         "", "")
               or label_replace(vector(259200), "source", "aires",              "", "")
+              or label_replace(vector(259200), "source", "tram",               "", "")
               or label_replace(vector(10800),  "source", "purge_signalements", "", "")
             )
           for: 5m

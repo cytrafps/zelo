@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
-import { getChargeStations, getParkings, type BBox } from '@/api/zelo';
+import { getChargeStations, getParkings, getParkRides, type BBox } from '@/api/zelo';
 import { Glass } from '@/components/glass';
 import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus, type Place as DataPlace } from '@/hooks/use-map-data';
@@ -30,6 +30,7 @@ import { PinImages, type Category } from './pins';
 import { PlaceSheet, type Selection } from './place-sheet';
 import { ReportDetailSheet } from './report-detail-sheet';
 import { ReportSheet } from './report-sheet';
+import { TransitCard } from './transit-card';
 import { RouteLayer } from './route-layer';
 import { TripPanel } from './trip-panel';
 
@@ -56,7 +57,8 @@ export function MapScreen() {
   const parked = useParkedCar();
   const trips = useTrip();
   const trip = trips.trip;
-  const guiding = trip !== null && trip.phase !== 'preview';
+  // Guidage sur la carte en voiture et à pied ; en tram, une carte d'horaires suffit.
+  const guiding = trip !== null && (trip.phase === 'drive' || trip.phase === 'walk');
   // En voiture, le cap GPS (le téléphone est fixé n'importe comment) ; à pied, la boussole (le cap GPS est trop bruité à 5 km/h).
   const tracking: TrackUserLocation | undefined = guiding
     ? following
@@ -112,9 +114,11 @@ export function MapScreen() {
   const goTo = (place: Place) => {
     setRecents((list) => pushRecent(list, place));
     const box = around(place, 0.012);
-    const options = Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]).then(
-      ([parkings, charge]) => targets(place, parkings, charge),
-    );
+    const options = Promise.all([
+      getParkings(box).catch(() => []),
+      getChargeStations(box).catch(() => []),
+      getParkRides(place, location.position).catch(() => []),
+    ]).then(([parkings, charge, relays]) => targets(place, parkings, charge, relays));
     return startTrip(place, options);
   };
 
@@ -228,7 +232,9 @@ export function MapScreen() {
         />
         <PinImages dark={dark} />
         {location.granted && <UserLocation accuracy heading={trip?.phase !== 'drive'} />}
-        {trip && trip.target.kind !== 'dropoff' && trip.phase !== 'walk' && <StopMarker target={trip.target} c={c} />}
+        {trip && trip.target.kind !== 'dropoff' && (trip.phase === 'preview' || trip.phase === 'drive') && (
+          <StopMarker target={trip.target} c={c} />
+        )}
         {trip && <DestinationMarker at={trip.destination} c={c} />}
         {parked.car && <CarMarker at={parked.car} c={c} onPress={() => setCarOpen(true)} />}
       </Map>
@@ -264,7 +270,9 @@ export function MapScreen() {
         />
       ) : (
         <View onLayout={(e) => setPanelHeight(e.nativeEvent.layout.height)} style={styles.panelMeasure} pointerEvents="box-none">
-          {trip ? (
+          {trip?.phase === 'transit' && trip.target.kind === 'parkride' ? (
+            <TransitCard relay={trip.target.relay} c={c} bottomInset={insets.bottom} onAlighted={trips.alighted} onClose={trips.end} />
+          ) : trip ? (
             <TripPanel
               trip={trip}
               reports={data.reports}

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 	"github.com/cytrafps/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/transit"
 )
 
 func main() {
@@ -168,11 +170,16 @@ func run(log *slog.Logger, once bool) error {
 	}, func() float64 { return float64(hub.Len()) }))
 	registerPoolMetrics(db)
 
+	// Horaires du tram : chaque réplique garde les siens en mémoire (quelques Mo), rechargés chaque jour.
+	var timetable atomic.Pointer[transit.Timetable]
+	go loadTimetable(ctx, log, client, envOr("GTFS_URL", transit.FeedURL), &timetable)
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	cfg := httpapi.Config{
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
 		TrustedProxies: trusted,
+		Transit:        timetable.Load,
 		OriginPatterns: splitList(os.Getenv("WS_ORIGINS")),
 	}
 	if u := os.Getenv("VALHALLA_URL"); u != "" {
@@ -303,6 +310,32 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// loadTimetable charge le GTFS au démarrage puis chaque jour ; après un échec, réessaie dans 15 min.
+// Les horaires précédents restent servis tant que les nouveaux ne sont pas lus.
+func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, url string, into *atomic.Pointer[transit.Timetable]) {
+	for {
+		wait := 24 * time.Hour
+		start := time.Now()
+		tt, err := transit.Fetch(ctx, client, url)
+		if err != nil {
+			log.Error("horaires du tram", "err", err)
+			metrics.IngestRuns.WithLabelValues("tram", "erreur").Inc()
+			wait = 15 * time.Minute
+		} else {
+			into.Store(tt)
+			metrics.IngestRuns.WithLabelValues("tram", "ok").Inc()
+			metrics.IngestRows.WithLabelValues("tram").Set(float64(len(tt.Stops)))
+			metrics.IngestLastSuccess.WithLabelValues("tram").SetToCurrentTime()
+			log.Info("horaires du tram", "arrets", len(tt.Stops), "duree", time.Since(start).Round(time.Millisecond).String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
 }
 
 // registerPoolMetrics expose le pool PostgreSQL : un pool saturé (acquisitions qui attendent)

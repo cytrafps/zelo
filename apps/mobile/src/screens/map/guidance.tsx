@@ -6,7 +6,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useNow } from '@/hooks/use-now';
 import { areaFuel, areaName, nextArea } from '@/utils/areas';
-import type { Phase, TripTarget } from '@/hooks/use-trip';
+import type { TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
 import { cumulative, formatClock, formatDuration, progress, type Lane, type Progress, type Route } from '@/utils/route';
@@ -44,7 +44,7 @@ function useNavigationFix() {
 
 type Props = {
   route: Route;
-  phase: Exclude<Phase, 'preview'>;
+  phase: 'drive' | 'walk';
   target: TripTarget;
   c: Couleurs;
   top: number;
@@ -202,15 +202,15 @@ function Stop({ phase, target, c }: { phase: Props['phase']; target: TripTarget;
   if (target.kind === 'dropoff') return null;
   return (
     <View style={styles.stop}>
-      <View style={[styles.tile, { backgroundColor: target.kind === 'parking' ? c.stationnement.base : c.recharge.base }]}>
-        {target.kind === 'parking' ? (
+      <View style={[styles.tile, { backgroundColor: target.kind !== 'charge' ? c.stationnement.base : c.recharge.base }]}>
+        {target.kind !== 'charge' ? (
           <Text style={styles.tileLetter}>P</Text>
         ) : (
           <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor="#FFFFFF" size={13} />
         )}
       </View>
       <Text numberOfLines={1} style={[styles.stopText, { color: c.texte.principal }]}>
-        {target.item.name || (target.kind === 'parking' ? 'Parking' : 'Borne')}
+        {target.item.name || (target.kind !== 'charge' ? 'Parking' : 'Borne')}
       </Text>
     </View>
   );

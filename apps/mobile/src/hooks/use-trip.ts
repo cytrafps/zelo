@@ -1,16 +1,19 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { Place } from '@/api/geocode';
-import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking, type Vehicle } from '@/api/zelo';
+import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking, type ParkRide, type Vehicle } from '@/api/zelo';
 import { useStored } from '@/hooks/use-stored';
 import type { Fix } from '@/utils/geo';
 import type { Route } from '@/utils/route';
 import { needsWalk, targetPoint, type Target } from '@/utils/targets';
 
-export type TripTarget = Target<Parking, ChargeStation>;
+export type TripTarget = Target<Parking, ChargeStation, ParkRide>;
 
-/** aperçu (03) → en voiture (04) → à pied (05c) ; fin quand on arrive. */
-export type Phase = 'preview' | 'drive' | 'walk';
+/**
+ * aperçu (03) → en voiture (04) → à pied (05c) ; fin quand on arrive.
+ * Par un parking relais : en voiture → en tram (horaires, sans guidage) → à pied depuis l'arrêt.
+ */
+export type Phase = 'preview' | 'drive' | 'transit' | 'walk';
 
 export type Trip = {
   destination: Place;
@@ -20,7 +23,7 @@ export type Trip = {
   /** En aperçu : le meilleur puis les alternatives. En guidage : le trajet suivi. */
   routes: Route[];
   selected: number;
-  /** Du point d'arrêt à la destination ; null pour une dépose. */
+  /** Du point d'arrêt (ou de l'arrêt de tram) à la destination ; null pour une dépose. */
   walk: Route | null;
   /** Heure de départ choisie (ms) ; null : maintenant. */
   depart: number | null;
@@ -70,6 +73,8 @@ export function useTrip() {
     setTrip((t) => (t ? { ...t, target, depart, loading: true, error: null } : t));
     try {
       const stop = targetPoint(target, destination);
+      // Par le tram, la marche part de l'arrêt d'arrivée, pas du parking.
+      const walkFrom = target.kind === 'parkride' ? target.relay.alight : stop;
       const [routes, walk] = await Promise.all([
         getRoutes(
           from,
@@ -80,7 +85,7 @@ export function useTrip() {
         ),
         !needsWalk(target)
           ? Promise.resolve(null)
-          : getRoutes(stop, destination, 'walk', {}, ctl.signal).then((r) => r[0]),
+          : getRoutes(walkFrom, destination, 'walk', {}, ctl.signal).then((r) => r[0]),
       ]);
       if (ctl.signal.aborted) return;
       setTrip((t) => (t ? { ...t, routes, selected: 0, walk, loading: false } : t));
@@ -161,7 +166,15 @@ export function useTrip() {
 
   /** Arrivé au point d'arrêt : la suite se fait à pied, s'il y a lieu. */
   const parked = useCallback(() => {
-    setTrip((t) => (t && t.walk ? { ...t, phase: 'walk', routes: [t.walk], selected: 0 } : null));
+    setTrip((t) => {
+      if (t?.target.kind === 'parkride') return { ...t, phase: 'transit' };
+      return t && t.walk ? { ...t, phase: 'walk', routes: [t.walk], selected: 0 } : null;
+    });
+  }, []);
+
+  /** Descendu du tram : la marche jusqu'à la destination commence. */
+  const alighted = useCallback(() => {
+    setTrip((t) => (t && t.phase === 'transit' && t.walk ? { ...t, phase: 'walk', routes: [t.walk], selected: 0 } : null));
   }, []);
 
   const end = useCallback(() => {
@@ -178,5 +191,5 @@ export function useTrip() {
     [end],
   );
 
-  return { trip, avoid, vehicle, open, start, cancel, update, select, go, reroute, parked, end };
+  return { trip, avoid, vehicle, open, start, cancel, update, select, go, reroute, parked, alighted, end };
 }
