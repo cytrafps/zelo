@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/cytrafps/zelo/services/api/internal/closure"
 	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/httpapi"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
@@ -177,6 +178,10 @@ func run(log *slog.Logger, once bool) error {
 	go loadTimetable(ctx, log, client, envOr("GTFS_URL", transit.FeedURL), envOr("OVERPASS_URL", overpass.URL), &timetable)
 	go loadRealtime(ctx, log, envOr("GTFS_RT_URL", transit.RealtimeURL), &realtime)
 	go loadTariffs(ctx, log, client)
+	var closures atomic.Pointer[[]closure.Closure]
+	if bbox != (irve.BBox{}) {
+		go loadClosures(ctx, log, client, envOr("DIALOG_URL", closure.FeedURL), closure.BBox(bbox), &closures)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
@@ -185,6 +190,12 @@ func run(log *slog.Logger, once bool) error {
 		TrustedProxies: trusted,
 		Transit:        timetable.Load,
 		Realtime:       realtime.Load,
+		Closures: func() []closure.Closure {
+			if c := closures.Load(); c != nil {
+				return *c
+			}
+			return nil
+		},
 		OriginPatterns: splitList(os.Getenv("WS_ORIGINS")),
 	}
 	if u := os.Getenv("VALHALLA_URL"); u != "" {
@@ -340,6 +351,33 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 			metrics.IngestRows.WithLabelValues("transports").Set(float64(len(tt.Stops)))
 			metrics.IngestLastSuccess.WithLabelValues("transports").SetToCurrentTime()
 			log.Info("horaires tram et bus", "arrets", len(tt.Stops), "duree", time.Since(start).Round(time.Millisecond).String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// loadClosures lit chaque jour les fermetures de rues publiées dans DiaLog (flux national
+// d'environ 80 Mo, lu au fil de l'eau : seules celles de la zone restent en mémoire). Après
+// un échec, les précédentes restent appliquées et un nouvel essai a lieu dans 1 h.
+func loadClosures(ctx context.Context, log *slog.Logger, client *http.Client, url string, zone closure.BBox, into *atomic.Pointer[[]closure.Closure]) {
+	for {
+		wait := 24 * time.Hour
+		start := time.Now()
+		c, err := closure.Fetch(ctx, client, url, zone)
+		if err != nil {
+			log.Warn("fermetures de rues (DiaLog)", "err", err)
+			metrics.IngestRuns.WithLabelValues("fermetures", "erreur").Inc()
+			wait = time.Hour
+		} else {
+			into.Store(&c)
+			metrics.IngestRuns.WithLabelValues("fermetures", "ok").Inc()
+			metrics.IngestRows.WithLabelValues("fermetures").Set(float64(len(c)))
+			metrics.IngestLastSuccess.WithLabelValues("fermetures").SetToCurrentTime()
+			log.Info("fermetures de rues (DiaLog)", "fermetures", len(c), "duree", time.Since(start).Round(time.Millisecond).String())
 		}
 		select {
 		case <-ctx.Done():

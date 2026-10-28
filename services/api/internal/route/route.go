@@ -114,6 +114,8 @@ type Options struct {
 	Depart time.Time
 	// Évitements souples : Valhalla les contourne s'il existe un autre chemin.
 	AvoidTolls, AvoidHighways bool
+	// Exclude : zones interdites (rues fermées), anneaux [lon, lat] ; voir Around et Corridor.
+	Exclude [][][2]float64
 }
 
 // HeadingTolerance (°) : écart admis entre le cap donné et la direction de la route.
@@ -156,6 +158,7 @@ type request struct {
 	Alternates     int                  `json:"alternates,omitempty"`
 	Format         string               `json:"format"`
 	Voice          bool                 `json:"voice_instructions"`
+	Exclude        [][][2]float64       `json:"exclude_polygons,omitempty"`
 	Directions     struct {
 		Language string `json:"language"`
 		Units    string `json:"units"`
@@ -236,6 +239,7 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 	}
 	req.Format = "osrm"
 	req.Voice = true
+	req.Exclude = opts.Exclude
 	req.Directions.Language = "fr-FR"
 	req.Directions.Units = "kilometers"
 	body, _ := json.Marshal(req)

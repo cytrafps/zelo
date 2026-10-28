@@ -47,6 +47,7 @@ spec:
               or label_replace(vector(259200), "source", "aires",              "", "")
               or label_replace(vector(259200), "source", "transports",         "", "")
               or label_replace(vector(259200), "source", "tarifs",             "", "")
+              or label_replace(vector(259200), "source", "fermetures",         "", "")
               or label_replace(vector(600),    "source", "temps_reel",         "", "")
               or label_replace(vector(10800),  "source", "purge_signalements", "", "")
             )
