@@ -14,6 +14,7 @@ import (
 
 	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
+	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
 )
 
@@ -277,7 +278,54 @@ func (s *Store) SaveParkings(ctx context.Context, parkings []parking.Parking) er
 	})
 }
 
+// SaveControls remplace les feux et stops : comme pour les parkings, ce qui a disparu d'OSM disparaît.
+func (s *Store) SaveControls(ctx context.Context, controls []junction.Control) error {
+	if len(controls) == 0 {
+		return errors.New("aucun feu ni stop reçu : import ignoré pour ne pas vider la table")
+	}
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_jc (id text, kind text, lon float8, lat float8) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_jc"}, []string{"id", "kind", "lon", "lat"},
+			pgx.CopyFromSlice(len(controls), func(i int) ([]any, error) {
+				c := controls[i]
+				return []any{c.ID, c.Kind, c.Lon, c.Lat}, nil
+			})); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			DELETE FROM junction_control j WHERE NOT EXISTS (SELECT 1 FROM tmp_jc t WHERE t.id = j.id);
+			INSERT INTO junction_control (id, kind, geom)
+			SELECT DISTINCT ON (id) id, kind, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography FROM tmp_jc
+			ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, geom = EXCLUDED.geom
+			WHERE (junction_control.kind, ST_AsBinary(junction_control.geom)) IS DISTINCT FROM (EXCLUDED.kind, ST_AsBinary(EXCLUDED.geom));`)
+		return err
+	})
+}
+
 // --- Lectures
+
+// Controls : feux et stops à moins de radius mètres d'un des points ([lon, lat]), les
+// manœuvres d'un itinéraire : quelques lignes, même pour un long trajet.
+func (s *Store) Controls(ctx context.Context, points [][2]float64, radius float64) ([]junction.Control, error) {
+	if len(points) == 0 {
+		return nil, nil
+	}
+	lons, lats := make([]float64, len(points)), make([]float64, len(points))
+	for i, p := range points {
+		lons[i], lats[i] = p[0], p[1]
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT j.id, j.kind, ST_Y(j.geom::geometry), ST_X(j.geom::geometry)
+		FROM unnest($1::float8[], $2::float8[]) AS p(lon, lat)
+		JOIN junction_control j ON ST_DWithin(j.geom, ST_SetSRID(ST_MakePoint(p.lon, p.lat), 4326)::geography, $3)`,
+		lons, lats, radius)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[junction.Control])
+}
 
 type FuelStation struct {
 	ID      string             `json:"id"`

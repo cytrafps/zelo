@@ -1,7 +1,8 @@
 // Package route calcule les itinéraires avec Valhalla, auto-hébergé à côté de l'API.
 //
-// L'API ne fait que relayer : elle impose la langue, l'unité et la distance maximale
-// d'accroche (search_cutoff), puis renvoie une forme compacte à l'app.
+// L'API impose la langue, l'unité et la distance maximale d'accroche (search_cutoff), demande
+// la réponse au format OSRM (le seul qui donne les voies de circulation), puis renvoie une forme
+// compacte à l'app.
 package route
 
 import (
@@ -12,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 	_ "time/tzdata" // l'image de l'API n'a pas de base de fuseaux horaires
 )
@@ -45,6 +48,18 @@ type Step struct {
 	Distance    float64 `json:"distance"` // mètres
 	Duration    float64 `json:"duration"` // secondes
 	Shape       int     `json:"shape"`    // index du premier point de la manœuvre dans Coordinates
+	// Lanes : voies à l'approche de la manœuvre, de gauche à droite ; absent si la route n'en
+	// décrit pas ou si toutes conviennent (rien à montrer).
+	Lanes []Lane `json:"lanes,omitempty"`
+	// Control : feu ou stop au carrefour de la manœuvre (« feu », « stop »), voir Annotate.
+	Control string `json:"control,omitempty"`
+}
+
+// Lane : une voie, ses flèches au sol (« left », « straight », « slight right »…) et si elle
+// mène à la manœuvre.
+type Lane struct {
+	Directions []string `json:"directions"`
+	Take       bool     `json:"take"`
 }
 
 type Route struct {
@@ -119,37 +134,48 @@ type request struct {
 	CostingOptions map[Mode]autoCosting `json:"costing_options,omitempty"`
 	DateTime       *dateTime            `json:"date_time,omitempty"`
 	Alternates     int                  `json:"alternates,omitempty"`
+	Format         string               `json:"format"`
 	Directions     struct {
 		Language string `json:"language"`
 		Units    string `json:"units"`
 	} `json:"directions_options"`
 }
 
-type trip struct {
-	Trip struct {
-		Summary struct {
-			Length float64 `json:"length"` // km
-			Time   float64 `json:"time"`   // s
-		} `json:"summary"`
-		Legs []struct {
-			Shape     string `json:"shape"`
-			Maneuvers []struct {
-				Type        int      `json:"type"`
-				Instruction string   `json:"instruction"`
-				StreetNames []string `json:"street_names"`
-				Length      float64  `json:"length"` // km
-				Time        float64  `json:"time"`
-				BeginShape  int      `json:"begin_shape_index"`
-			} `json:"maneuvers"`
-		} `json:"legs"`
-	} `json:"trip"`
+// Réponse au format OSRM (format: "osrm") : seule à décrire les voies aux carrefours.
+type osrmLane struct {
+	Indications []string `json:"indications"`
+	Valid       bool     `json:"valid"`
+	Active      bool     `json:"active"`
+}
+
+type osrmStep struct {
+	Name     string  `json:"name"`
+	Distance float64 `json:"distance"` // m
+	Duration float64 `json:"duration"` // s
+	Maneuver struct {
+		Type        string `json:"type"`
+		Modifier    string `json:"modifier"`
+		Instruction string `json:"instruction"`
+	} `json:"maneuver"`
+	Intersections []struct {
+		GeometryIndex int        `json:"geometry_index"`
+		Lanes         []osrmLane `json:"lanes"`
+	} `json:"intersections"`
+}
+
+type osrmRoute struct {
+	Distance float64 `json:"distance"`
+	Duration float64 `json:"duration"`
+	Geometry string  `json:"geometry"`
+	Legs     []struct {
+		Steps []osrmStep `json:"steps"`
+	} `json:"legs"`
 }
 
 type response struct {
-	trip
-	Alternates []trip `json:"alternates"`
-	ErrorCode  int    `json:"error_code"`
-	Error      string `json:"error"`
+	Code    string      `json:"code"` // « Ok », « NoSegment », « NoRoute »…
+	Message string      `json:"message"`
+	Routes  []osrmRoute `json:"routes"`
 }
 
 // MaxAlternates : Valhalla propose au plus deux itinéraires en plus du meilleur.
@@ -179,6 +205,7 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 		}
 		req.CostingOptions = map[Mode]autoCosting{Car: a}
 	}
+	req.Format = "osrm"
 	req.Directions.Language = "fr-FR"
 	req.Directions.Units = "kilometers"
 	body, _ := json.Marshal(req)
@@ -198,19 +225,19 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 	if err := json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("valhalla: réponse illisible (HTTP %d): %w", res.StatusCode, err)
 	}
-	if res.StatusCode != http.StatusOK {
-		switch out.ErrorCode {
-		case 170, 171: // aucune route à moins de search_cutoff
+	if res.StatusCode != http.StatusOK || out.Code != "Ok" {
+		switch out.Code {
+		case "NoSegment": // aucune route à moins de search_cutoff
 			return nil, ErrOutOfArea
-		case 442: // points accrochés mais non reliés
+		case "NoRoute": // points accrochés mais non reliés
 			return nil, ErrNoRoute
 		}
-		return nil, fmt.Errorf("valhalla: HTTP %d, erreur %d: %s", res.StatusCode, out.ErrorCode, out.Error)
+		return nil, fmt.Errorf("valhalla: HTTP %d, %s: %s", res.StatusCode, out.Code, out.Message)
 	}
 
-	routes := make([]Route, 0, 1+len(out.Alternates))
-	for _, t := range append([]trip{out.trip}, out.Alternates...) {
-		r, err := t.route()
+	routes := make([]Route, 0, len(out.Routes))
+	for _, o := range out.Routes {
+		r, err := o.route()
 		if err != nil {
 			return nil, err
 		}
@@ -220,24 +247,165 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 	return routes, nil
 }
 
-func (t trip) route() (Route, error) {
-	r := Route{Distance: t.Trip.Summary.Length * 1000, Duration: t.Trip.Summary.Time}
-	for _, leg := range t.Trip.Legs {
-		offset := len(r.Coordinates)
-		pts, err := decodePolyline6(leg.Shape)
-		if err != nil {
-			return Route{}, fmt.Errorf("valhalla: tracé: %w", err)
-		}
-		r.Coordinates = append(r.Coordinates, pts...)
-		for _, m := range leg.Maneuvers {
-			s := Step{Instruction: m.Instruction, Type: m.Type, Distance: m.Length * 1000, Duration: m.Time, Shape: offset + m.BeginShape}
-			if len(m.StreetNames) > 0 {
-				s.Street = m.StreetNames[0]
+func (o osrmRoute) route() (Route, error) {
+	pts, err := decodePolyline6(o.Geometry)
+	if err != nil {
+		return Route{}, fmt.Errorf("valhalla: tracé: %w", err)
+	}
+	r := Route{Distance: o.Distance, Duration: o.Duration, Coordinates: pts}
+	for _, leg := range o.Legs {
+		for k, st := range leg.Steps {
+			if len(st.Intersections) == 0 {
+				return Route{}, errors.New("valhalla: étape sans point de manœuvre")
+			}
+			s := Step{
+				Instruction: st.Maneuver.Instruction,
+				Street:      st.Name,
+				Type:        maneuverType(st.Maneuver.Type, st.Maneuver.Modifier),
+				Distance:    st.Distance,
+				Duration:    st.Duration,
+				Shape:       st.Intersections[0].GeometryIndex,
+			}
+			if st.Maneuver.Type == "arrive" {
+				s.Street = "" // la consigne (« destination sur la droite ») dit mieux l'arrivée que la rue
+			} else if k > 0 {
+				s.Lanes = approachLanes(leg.Steps[k-1], st, pts)
 			}
 			r.Steps = append(r.Steps, s)
 		}
 	}
 	return r, nil
+}
+
+// LanesWithin : au-delà, des voies décrites avant la manœuvre concernent un autre carrefour.
+const LanesWithin = 150.0
+
+// approachLanes : les voies à prendre pour la manœuvre de st. Valhalla les décrit au carrefour
+// de la manœuvre, ou (plus souvent) au dernier carrefour qui la précède, avec les voies qui y
+// mènent marquées « active ». Rien si toutes les voies conviennent : il n'y a pas à choisir.
+func approachLanes(prev, st osrmStep, pts [][2]float64) []Lane {
+	at := st.Intersections[0]
+	lanes := at.Lanes
+	if len(lanes) == 0 {
+		for i := len(prev.Intersections) - 1; i >= 1; i-- {
+			x := prev.Intersections[i]
+			if len(x.Lanes) == 0 {
+				continue
+			}
+			if pathLength(pts, x.GeometryIndex, at.GeometryIndex) <= LanesWithin {
+				lanes = x.Lanes
+			}
+			break
+		}
+	}
+	if len(lanes) < 2 {
+		return nil
+	}
+	out := make([]Lane, len(lanes))
+	all, fits := true, false
+	want := laneDirection(st.Maneuver.Modifier)
+	for i, l := range lanes {
+		take := l.Active || (l.Valid && !anyActive(lanes))
+		out[i] = Lane{Directions: l.Indications, Take: take}
+		all = all && take
+		if take {
+			for _, d := range l.Indications {
+				fits = fits || strings.Contains(d, want) || (want == "left" && d == "uturn")
+			}
+		}
+	}
+	// Toutes conviennent : rien à choisir. Aucune voie retenue ne va dans le sens de la manœuvre :
+	// ces voies décrivent un carrefour intermédiaire (on y va tout droit), pas celui où l'on tourne.
+	if all || !fits {
+		return nil
+	}
+	return out
+}
+
+// laneDirection : la flèche au sol attendue pour une manœuvre (« left », « right », « straight »).
+func laneDirection(modifier string) string {
+	switch {
+	case modifier == "uturn" || strings.Contains(modifier, "left"):
+		return "left"
+	case strings.Contains(modifier, "right"):
+		return "right"
+	}
+	return "straight"
+}
+
+func anyActive(lanes []osrmLane) bool {
+	for _, l := range lanes {
+		if l.Active {
+			return true
+		}
+	}
+	return false
+}
+
+// pathLength : longueur (m) du tracé entre les points i et j.
+func pathLength(pts [][2]float64, i, j int) float64 {
+	d := 0.0
+	for k := max(i, 0); k < j && k+1 < len(pts); k++ {
+		d += meters(pts[k], pts[k+1])
+	}
+	return d
+}
+
+// meters : distance entre deux points [lon, lat] proches (projection locale, exacte sur une ville).
+func meters(a, b [2]float64) float64 {
+	const mPerDeg = 111_320.0
+	c := math.Cos((a[1] + b[1]) / 2 * math.Pi / 180)
+	return math.Hypot((b[0]-a[0])*mPerDeg*c, (b[1]-a[1])*mPerDeg)
+}
+
+// maneuverType traduit la manœuvre OSRM en type Valhalla (valhalla/odin/maneuver.h), que l'app
+// connaît déjà pour choisir ses icônes. Demi-tour par la gauche : on roule à droite (le champ
+// driving_side de Valhalla 3.9 vaut « left » même en France, il n'est pas fiable).
+func maneuverType(kind, modifier string) int {
+	side := func(straight, right, left int) int {
+		switch {
+		case strings.Contains(modifier, "right"):
+			return right
+		case strings.Contains(modifier, "left"):
+			return left
+		}
+		return straight
+	}
+	switch kind {
+	case "depart":
+		return side(1, 2, 3)
+	case "arrive":
+		return side(4, 5, 6)
+	case "roundabout", "rotary", "roundabout turn":
+		return 26
+	case "exit roundabout", "exit rotary":
+		return 27
+	case "on ramp":
+		return side(17, 18, 19)
+	case "off ramp":
+		return side(20, 20, 21)
+	case "fork":
+		return side(22, 23, 24)
+	case "merge":
+		return side(25, 37, 38)
+	}
+	switch modifier {
+	case "uturn":
+		return 13
+	case "sharp right":
+		return 11
+	case "right":
+		return 10
+	case "slight right":
+		return 9
+	case "slight left":
+		return 16
+	case "left":
+		return 15
+	case "sharp left":
+		return 14
+	}
+	return 8 // tout droit, nouveau nom de rue
 }
 
 // decodePolyline6 décode le tracé de Valhalla (polyline Google, précision 1e-6) en [lon, lat].

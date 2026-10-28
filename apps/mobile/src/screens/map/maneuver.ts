@@ -9,6 +9,27 @@ const SLIGHT_RIGHT: Icon = { ios: 'arrow.up.right', android: 'turn_slight_right'
 const SLIGHT_LEFT: Icon = { ios: 'arrow.up.left', android: 'turn_slight_left' };
 const ARRIVE: Icon = { ios: 'mappin.circle.fill', android: 'flag' };
 
+/**
+ * Flèche d'une voie : celle qui sert la manœuvre si la voie en porte plusieurs
+ * (« tout droit ou à droite » montrée « à droite » quand on tourne à droite).
+ */
+export function laneIcon(directions: readonly string[], toward: 'left' | 'right' | 'straight'): Icon {
+  const d = directions.find((x) => x.includes(toward)) ?? directions[0] ?? 'straight';
+  if (d === 'uturn') return { ios: 'arrow.uturn.left', android: 'u_turn_left' };
+  if (d === 'slight right') return SLIGHT_RIGHT;
+  if (d === 'slight left') return SLIGHT_LEFT;
+  if (d.includes('right')) return RIGHT;
+  if (d.includes('left')) return LEFT;
+  return STRAIGHT;
+}
+
+/** Côté d'une manœuvre Valhalla, pour choisir la flèche des voies. */
+export function maneuverSide(type: number): 'left' | 'right' | 'straight' {
+  if ([2, 9, 10, 11, 12, 18, 20, 23, 37].includes(type)) return 'right';
+  if ([3, 13, 14, 15, 16, 19, 21, 24, 38].includes(type)) return 'left';
+  return 'straight';
+}
+
 /** Icône d'une manœuvre Valhalla (types de valhalla/odin/maneuver.h). */
 export function maneuverIcon(type: number): Icon {
   switch (type) {

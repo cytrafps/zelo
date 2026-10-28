@@ -14,6 +14,7 @@ import (
 
 	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
+	"github.com/cytrafps/zelo/services/api/internal/junction"
 )
 
 // Tests d'intégration : ils demandent une vraie base PostGIS (ZELO_TEST_DATABASE_URL),
@@ -297,5 +298,28 @@ func TestFuelStationsNearestFirst(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "T-KNN-CENTRE" {
 		t.Fatalf("limite 1 : %+v, attendu T-KNN-CENTRE", got)
+	}
+}
+
+// Feux et stops : remplacés à chaque import, cherchés autour des points de manœuvre seulement.
+func TestControlsNearManeuvers(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if err := s.SaveControls(ctx, []junction.Control{
+		{ID: "node/T1", Kind: "feu", Lat: 49.2800, Lon: 4.0500},
+		{ID: "node/T2", Kind: "stop", Lat: 49.2810, Lon: 4.0500}, // ~110 m plus au nord
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Controls(ctx, [][2]float64{{4.0500, 49.2801}}, 45)
+	if err != nil || len(got) != 1 || got[0].ID != "node/T1" || got[0].Kind != "feu" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	// Nouvel import sans T1 : il disparaît.
+	if err := s.SaveControls(ctx, []junction.Control{{ID: "node/T2", Kind: "stop", Lat: 49.2810, Lon: 4.0500}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Controls(ctx, [][2]float64{{4.0500, 49.2801}}, 45); len(got) != 0 {
+		t.Fatalf("feu supprimé d'OSM encore là : %+v", got)
 	}
 }

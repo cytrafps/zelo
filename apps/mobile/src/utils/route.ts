@@ -10,6 +10,17 @@ export type Step = {
   duration: number;
   /** Index du premier point de la manœuvre dans `coordinates`. */
   shape: number;
+  /** Voies à l'approche, de gauche à droite ; absentes si toutes conviennent ou si la route ne les décrit pas. */
+  lanes?: Lane[];
+  /** La manœuvre se fait à un feu ou à un stop (OpenStreetMap). */
+  control?: 'feu' | 'stop';
+};
+
+export type Lane = {
+  /** Flèches au sol : « left », « straight », « slight right »… */
+  directions: string[];
+  /** Voie qui mène à la manœuvre. */
+  take: boolean;
 };
 
 export type Route = {

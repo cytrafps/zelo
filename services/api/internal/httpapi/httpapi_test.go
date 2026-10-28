@@ -15,6 +15,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
 	"github.com/cytrafps/zelo/services/api/internal/route"
@@ -26,6 +27,7 @@ type fakeStore struct {
 	added     []store.Report
 	reporters []string
 	hub       *live.Hub
+	controls  []junction.Control
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -37,6 +39,9 @@ func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.Ch
 }
 func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking, error) {
 	return []store.Parking{{ID: "way/31432939", Name: "Erlon"}, {ID: "way/1", Name: "Sans relevé"}}, nil
+}
+func (f *fakeStore) Controls(context.Context, [][2]float64, float64) ([]junction.Control, error) {
+	return f.controls, nil
 }
 func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, error) {
 	return f.added, nil
@@ -291,4 +296,34 @@ func TestMetrics(t *testing.T) {
 	if testutil.ToFloat64(metrics.Routes.WithLabelValues("car", "ok")) != routesBefore+1 {
 		t.Error("itinéraire non compté")
 	}
+}
+
+// Itinéraire en voiture : les manœuvres faites à un feu le disent ; à pied, rien n'est ajouté.
+func TestRouteMarksTrafficLights(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := route.Route{
+		Coordinates: [][2]float64{{4.0, 49.25}, {4.0013784, 49.25}, {4.0013784, 49.2508983}},
+		Steps:       []route.Step{{Type: 1, Shape: 0}, {Type: 15, Shape: 1, Instruction: "Tournez à gauche."}, {Type: 4, Shape: 2}},
+	}
+	s := &fakeStore{controls: []junction.Control{{ID: "node/1", Kind: "feu", Lat: 49.25, Lon: 4.0012}}}
+	for mode, want := range map[string]string{"car": "Au feu, tournez à gauche.", "walk": "Tournez à gauche."} {
+		rec := httptest.NewRecorder()
+		New(s, live.NewHub(0), quiet, Config{Router: fixedRouter{r}}).ServeHTTP(rec,
+			httptest.NewRequest("GET", "/v1/route?from=49.25,4.0&to=49.2509,4.0014&mode="+mode, nil))
+		var body struct{ Routes []route.Route }
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("%s : %d %v", mode, rec.Code, err)
+		}
+		if got := body.Routes[0].Steps[1].Instruction; got != want {
+			t.Errorf("%s : %q, attendu %q", mode, got, want)
+		}
+	}
+}
+
+type fixedRouter struct{ r route.Route }
+
+func (f fixedRouter) Routes(context.Context, route.Point, route.Point, route.Mode, route.Options) ([]route.Route, error) {
+	r := f.r
+	r.Steps = append([]route.Step(nil), f.r.Steps...) // chaque appel reçoit sa copie, comme de Valhalla
+	return []route.Route{r}, nil
 }
