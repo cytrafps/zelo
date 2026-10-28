@@ -12,8 +12,8 @@ export type Step = {
   shape: number;
   /** Voies à l'approche, de gauche à droite ; absentes si toutes conviennent ou si la route ne les décrit pas. */
   lanes?: Lane[];
-  /** La manœuvre se fait à un feu ou à un stop (OpenStreetMap). */
-  control?: 'feu' | 'stop';
+  /** La manœuvre se fait à un feu, un stop ou un cédez-le-passage (OpenStreetMap). */
+  control?: 'feu' | 'stop' | 'cédez';
 };
 
 export type Lane = {

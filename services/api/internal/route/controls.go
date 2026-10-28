@@ -6,9 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// Control : feu tricolore ou stop d'OpenStreetMap (highway=traffic_signals, highway=stop).
+// Control : feu tricolore, stop ou cédez-le-passage d'OpenStreetMap.
 type Control struct {
-	Kind     string // « feu », « stop »
+	Kind     string // « feu », « stop », « cédez »
 	Lat, Lon float64
 }
 
@@ -23,7 +23,8 @@ const (
 	ControlRadius = controlBefore + controlOffset
 )
 
-// Annotate marque les manœuvres qui se font à un feu ou à un stop (« Au feu, tournez à droite »).
+// Annotate marque les manœuvres qui se font à un feu, un stop ou un cédez-le-passage (« Au feu,
+// tournez à droite »).
 // Un feu placé juste après le carrefour règle le sens inverse : la fenêtre (35 m avant, 5 m
 // après le point de manœuvre) l'écarte. Les ronds-points et l'arrivée ne sont pas concernés.
 func Annotate(r *Route, controls []Control) {
@@ -48,7 +49,7 @@ func Annotate(r *Route, controls []Control) {
 			}
 			along, off := project(r.Coordinates, cum, p, at-controlBefore, at+controlAfter)
 			if off <= controlOffset && along >= at-controlBefore && along <= at+controlAfter {
-				if best == "" || c.Kind == "feu" { // un feu l'emporte sur un stop
+				if rank[c.Kind] > rank[best] { // un feu l'emporte sur un stop, un stop sur un cédez-le-passage
 					best = c.Kind
 				}
 			}
@@ -84,9 +85,14 @@ func project(pts [][2]float64, cum []float64, p [2]float64, from, to float64) (a
 	return along, off
 }
 
+var rank = map[string]int{"cédez": 1, "stop": 2, "feu": 3}
+
 func prefix(kind string) string {
-	if kind == "stop" {
+	switch kind {
+	case "stop":
 		return "Au stop, "
+	case "cédez":
+		return "Au cédez-le-passage, "
 	}
 	return "Au feu, "
 }

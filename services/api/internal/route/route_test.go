@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -332,5 +333,43 @@ func TestMotorcycleAvoidsHighways(t *testing.T) {
 	moto, ok := got["costing_options"].(map[string]any)["motorcycle"].(map[string]any)
 	if got["costing"] != "motorcycle" || !ok || moto["use_highways"] != 0.0 {
 		t.Fatalf("requête : %v", got)
+	}
+}
+
+// Un cédez-le-passage annonce la manœuvre, sauf là où un feu ou un stop la règle déjà.
+func TestAnnotateGiveWay(t *testing.T) {
+	body, err := os.ReadFile("testdata/gare-saint-remi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var controls []Control
+	raw, _ := os.ReadFile("testdata/controles-saint-remi.json")
+	if err := json.Unmarshal(raw, &controls); err != nil {
+		t.Fatal(err)
+	}
+	r := routes[0]
+	for _, s := range r.Steps[1:] {
+		p := r.Coordinates[s.Shape]
+		controls = append(controls, Control{Kind: "cédez", Lat: p[1], Lon: p[0]})
+	}
+	Annotate(&r, controls)
+	if r.Steps[2].Control != "feu" || r.Steps[11].Control != "stop" {
+		t.Fatalf("feu ou stop écrasé : %q, %q", r.Steps[2].Control, r.Steps[11].Control)
+	}
+	n := 0
+	for _, s := range r.Steps {
+		if s.Control == "cédez" {
+			n++
+			if !strings.HasPrefix(s.Instruction, "Au cédez-le-passage, ") {
+				t.Errorf("consigne : %q", s.Instruction)
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("aucune manœuvre au cédez-le-passage")
 	}
 }

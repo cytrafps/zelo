@@ -17,7 +17,7 @@ func TestFromElements(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := FromElements(els)
-	if len(got) != 2 || got[0] != (Control{"node/1", "feu", 49.25, 4.03}) || got[1].Kind != "stop" {
+	if len(got) != 3 || got[0] != (Control{"node/1", "feu", 49.25, 4.03}) || got[1].Kind != "stop" || got[2].Kind != "cédez" {
 		t.Fatalf("%+v", got)
 	}
 }

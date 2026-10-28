@@ -114,7 +114,7 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
           <View style={styles.flex}>
             <Text style={styles.distance}>
               {rerouting ? 'Nouvel itinéraire…' : formatDistance(p?.toNext ?? step?.distance ?? 0)}
-              {!rerouting && step?.control && <Text style={styles.control}>{` · au ${step.control}`}</Text>}
+              {!rerouting && step?.control && <Text style={styles.control}>{` · ${CONTROL[step.control]}`}</Text>}
             </Text>
             <Text numberOfLines={2} style={styles.street}>
               {step?.street || step?.instruction || ''}
@@ -217,6 +217,8 @@ function Stop({ phase, target, c }: { phase: Props['phase']; target: TripTarget;
 }
 
 const shadow = { shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 6 };
+
+const CONTROL = { feu: 'au feu', stop: 'au stop', cédez: 'au cédez-le-passage' } as const;
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
