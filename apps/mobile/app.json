@@ -37,7 +37,34 @@
           "locationWhenInUsePermission": "Zelo utilise ta position pour centrer la carte et placer tes signalements."
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "GoogleSansFlex",
+                "path": "./assets/fonts/GoogleSansFlex.ttf",
+                "fontDefinitions": [
+                  {
+                    "weight": 400
+                  },
+                  {
+                    "weight": 500
+                  },
+                  {
+                    "weight": 600
+                  },
+                  {
+                    "weight": 700
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

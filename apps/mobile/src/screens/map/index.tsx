@@ -10,6 +10,7 @@ import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus } from '@/hooks/use-map-data';
 import { useParkedCar } from '@/hooks/use-parked-car';
 import { useStored } from '@/hooks/use-stored';
+import { Glass } from '@/components/glass';
 import { useTrip } from '@/hooks/use-trip';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
@@ -315,10 +316,12 @@ function StatusPill(props: { status: DataStatus; live: boolean; notice: string |
     <Pressable
       disabled={status !== 'error'}
       onPress={onRetry}
-      style={[styles.pill, { top, backgroundColor: c.fond.surface }]}
+      style={[styles.pillPosition, { top }]}
       accessibilityRole={status === 'error' ? 'button' : 'text'}
     >
-      <Text style={[texte.petit, { color: status === 'error' ? c.alerte.base : c.texte.secondaire }]}>{message}</Text>
+      <Glass style={styles.pill}>
+        <Text style={[texte.petit, { color: status === 'error' ? c.alerte.base : c.texte.secondaire }]}>{message}</Text>
+      </Glass>
     </Pressable>
   );
 }
@@ -337,32 +340,20 @@ function MapButton(props: { c: Couleurs; label: string; onPress: () => void; chi
       accessibilityRole="button"
       accessibilityLabel={props.label}
       onPress={props.onPress}
-      style={({ pressed }) => [styles.mapButton, { backgroundColor: props.c.fond.surface, opacity: pressed ? 0.85 : 1 }]}
+      style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
     >
-      {props.children}
+      <Glass interactive style={styles.mapButton}>
+        {props.children}
+      </Glass>
     </Pressable>
   );
 }
 
-const shadow = {
-  shadowColor: '#000',
-  shadowOpacity: 0.12,
-  shadowRadius: 12,
-  shadowOffset: { width: 0, height: 4 },
-  elevation: 4,
-};
-
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   mapButtons: { position: 'absolute', right: espace[4], gap: espace[3] },
-  mapButton: { width: 48, height: 48, borderRadius: rayon.m, alignItems: 'center', justifyContent: 'center', ...shadow },
+  mapButton: { width: 48, height: 48, borderRadius: rayon.m, alignItems: 'center', justifyContent: 'center' },
   panelMeasure: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  pill: {
-    position: 'absolute',
-    alignSelf: 'center',
-    paddingHorizontal: espace[4],
-    paddingVertical: espace[2],
-    borderRadius: rayon.pilule,
-    ...shadow,
-  },
+  pillPosition: { position: 'absolute', alignSelf: 'center' },
+  pill: { paddingHorizontal: espace[4], paddingVertical: espace[2], borderRadius: rayon.pilule },
 });

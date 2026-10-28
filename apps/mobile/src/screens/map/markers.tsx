@@ -3,7 +3,7 @@ import { SymbolView } from 'expo-symbols';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { TripTarget } from '@/hooks/use-trip';
-import type { Couleurs } from '@/theme';
+import { police, type Couleurs } from '@/theme';
 import type { LatLon } from '@/utils/geo';
 
 // Deux marqueurs au plus : des vues React suffisent (les centaines de points restent en couches GeoJSON).
@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow,
   },
-  stopLetter: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
+  stopLetter: { color: '#FFFFFF', fontFamily: police, fontSize: 18, fontWeight: '700' },
   pinWrap: { alignItems: 'center' },
   pin: {
     width: 36,

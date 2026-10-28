@@ -42,12 +42,18 @@ export const rayon = {
   hauteurBouton: ios ? 52 : 56,
 } as const;
 
+/**
+ * Police de l'interface : SF Pro sur iOS (système), Google Sans Flex sur Android, la police
+ * d'Android 16 (fichier variable embarqué, voir app.json et assets/fonts).
+ */
+export const police = ios ? undefined : 'GoogleSansFlex';
+
 export const texte = {
-  titre: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
-  corps: { fontSize: ios ? 17 : 16, lineHeight: ios ? 22 : 24, fontWeight: '400' },
-  corpsFort: { fontSize: ios ? 17 : 16, lineHeight: ios ? 22 : 24, fontWeight: '600' },
-  secondaire: { fontSize: ios ? 15 : 14, lineHeight: 20, fontWeight: '400' },
-  petit: { fontSize: ios ? 13 : 12, lineHeight: ios ? 18 : 16, fontWeight: '500' },
+  titre: { fontFamily: police, fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  corps: { fontFamily: police, fontSize: ios ? 17 : 16, lineHeight: ios ? 22 : 24, fontWeight: '400' },
+  corpsFort: { fontFamily: police, fontSize: ios ? 17 : 16, lineHeight: ios ? 22 : 24, fontWeight: '600' },
+  secondaire: { fontFamily: police, fontSize: ios ? 15 : 14, lineHeight: 20, fontWeight: '400' },
+  petit: { fontFamily: police, fontSize: ios ? 13 : 12, lineHeight: ios ? 18 : 16, fontWeight: '500' },
 } as const satisfies Record<string, TextStyle>;
 
 export const REPORT_META: Record<ReportKind, { label: string; couleur: string }> = {

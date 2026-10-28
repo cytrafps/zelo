@@ -4,7 +4,7 @@ import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { BBox, ChargeStation, FuelStation, Parking } from '@/api/zelo';
-import { rayon, type Couleurs } from '@/theme';
+import { police, rayon, type Couleurs } from '@/theme';
 import { FUEL_ORDER } from '@/utils/format';
 import { nearest, type LatLon } from '@/utils/geo';
 
@@ -106,6 +106,6 @@ const styles = StyleSheet.create({
   },
   pillIcon: { paddingRight: 4 },
   tile: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  letter: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  label: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  letter: { color: '#FFFFFF', fontFamily: police, fontSize: 15, fontWeight: '700' },
+  label: { fontFamily: police, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
 });
