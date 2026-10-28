@@ -1,6 +1,7 @@
 // Géocodage de la Géoplateforme (IGN), successeur de l'API Adresse : gratuit, sans clé.
 // Index « address » (Base Adresse Nationale) et « poi » (lieux : gare, cathédrale, parking…).
 import { rankByProximity } from '@/utils/geo';
+import { fetchWithin } from '@/utils/net';
 
 const SEARCH_URL = 'https://data.geopf.fr/geocodage/search';
 
@@ -40,9 +41,10 @@ export async function searchPlaces(query: string, near: { lat: number; lon: numb
     lat: near.lat.toFixed(4),
     lon: near.lon.toFixed(4),
   });
-  const res = await fetch(`${SEARCH_URL}?${params}`, { signal, headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`géocodage : HTTP ${res.status}`);
-  const { features } = (await res.json()) as { features: Feature[] };
+  const { features } = await fetchWithin(`${SEARCH_URL}?${params}`, { signal, headers: { Accept: 'application/json' } }, (res) => {
+    if (!res.ok) throw new Error(`géocodage : HTTP ${res.status}`);
+    return res.json() as Promise<{ features: Feature[] }>;
+  });
   return rankByProximity(features.map(toPlace), near, 5).map(
     (p): Place => ({ id: p.id, label: p.label, name: p.name, detail: p.detail, lat: p.lat, lon: p.lon }),
   );

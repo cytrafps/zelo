@@ -42,11 +42,18 @@ export function useTrip() {
   /** Péages et autoroutes à éviter : gardés d'un trajet à l'autre, comme dans Plans. */
   const [avoid, setAvoidStored] = useStored<Avoid[]>('trajet.eviter', []);
   const request = useRef<AbortController | null>(null);
+  /** Numéro du trajet demandé en dernier : une préparation plus ancienne (position, arrêts) est ignorée. */
+  const seq = useRef(0);
 
-  const load = useCallback(async ({ from, destination, target, depart, avoid }: Request, alternates: number) => {
+  const abortable = () => {
     request.current?.abort();
     const ctl = new AbortController();
     request.current = ctl;
+    return ctl;
+  };
+
+  const load = useCallback(async ({ from, destination, target, depart, avoid }: Request, alternates: number) => {
+    const ctl = abortable();
     setTrip((t) => (t ? { ...t, target, depart, loading: true, error: null } : t));
     try {
       const stop = targetPoint(target, destination);
@@ -63,9 +70,20 @@ export function useTrip() {
     }
   }, []);
 
-  /** Ouvre l'aperçu vers `destination` ; `options[0]` est l'arrêt proposé par défaut. */
+  /**
+   * Ouvre l'aperçu tout de suite, en chargement, pendant qu'on cherche la position et les arrêts.
+   * Renvoie le numéro à passer à `start` (ou `cancel`).
+   */
+  const open = useCallback((destination: Place) => {
+    request.current?.abort();
+    setTrip({ destination, target: { kind: 'dropoff' }, options: [], phase: 'preview', routes: [], selected: 0, walk: null, depart: null, loading: true, error: null });
+    return ++seq.current;
+  }, []);
+
+  /** Calcule l'aperçu vers `destination` ; `options[0]` est l'arrêt proposé par défaut. */
   const start = useCallback(
-    (from: Fix, destination: Place, options: TripTarget[]) => {
+    (token: number, from: Fix, destination: Place, options: TripTarget[]) => {
+      if (token !== seq.current) return; // fermé, ou une autre destination choisie entre-temps
       const target = options[0] ?? { kind: 'dropoff' };
       setTrip({ destination, target, options, phase: 'preview', routes: [], selected: 0, walk: null, depart: null, loading: true, error: null });
       void load({ from, destination, target, depart: null, avoid }, 2);
@@ -106,8 +124,10 @@ export function useTrip() {
     async (from: Fix) => {
       if (!trip) return;
       if (trip.phase !== 'walk') return load({ from, destination: trip.destination, target: trip.target, depart: null, avoid }, 0);
+      const ctl = abortable();
       try {
-        const [walk] = await getRoutes(from, trip.destination, 'walk');
+        const [walk] = await getRoutes(from, trip.destination, 'walk', {}, ctl.signal);
+        if (ctl.signal.aborted) return;
         setTrip((t) => (t && t.phase === 'walk' ? { ...t, routes: [walk], walk } : t));
       } catch {
         // On garde l'ancien tracé : la position suivante relancera le calcul.
@@ -122,9 +142,18 @@ export function useTrip() {
   }, []);
 
   const end = useCallback(() => {
+    seq.current++;
     request.current?.abort();
     setTrip(null);
   }, []);
 
-  return { trip, avoid, start, update, select, go, reroute, parked, end };
+  /** Préparation `token` abandonnée (pas de position) : ferme l'aperçu s'il est toujours le sien. */
+  const cancel = useCallback(
+    (token: number) => {
+      if (token === seq.current) end();
+    },
+    [end],
+  );
+
+  return { trip, avoid, open, start, cancel, update, select, go, reroute, parked, end };
 }

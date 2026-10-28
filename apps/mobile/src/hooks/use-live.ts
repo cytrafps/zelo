@@ -3,11 +3,15 @@ import { AppState } from 'react-native';
 
 import { LIVE_URL, type LiveEvent, type Report } from '@/api/zelo';
 
+/** Le serveur bat toutes les 25 s : rien reçu pendant 60 s, la connexion est morte sans le dire. */
+const SILENCE_MS = 60_000;
+
 /**
  * Flux temps réel des signalements (WebSocket /v1/live).
  * Reconnexion avec attente exponentielle ; coupé quand l'app passe en arrière-plan
  * (pas de batterie gaspillée) et rouvert au retour. Après chaque reconnexion,
  * `onResync` permet de recharger ce qui a pu être manqué pendant la coupure.
+ * Une connexion muette (réseau mobile changé, NAT expiré) est détectée par l'absence de battement.
  */
 export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) => void, onResync: () => void) {
   const [connected, setConnected] = useState(false);
@@ -18,6 +22,7 @@ export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) =
   useEffect(() => {
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     let attempt = 0;
     let everOpened = false;
     let active = AppState.currentState !== 'background';
@@ -27,6 +32,11 @@ export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) =
       if (ws || !active) return;
       const socket = new WebSocket(LIVE_URL);
       ws = socket;
+      const alive = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => drop(socket), SILENCE_MS);
+      };
+      alive();
       socket.onopen = () => {
         attempt = 0;
         setConnected(true);
@@ -34,6 +44,7 @@ export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) =
         everOpened = true;
       };
       socket.onmessage = (e) => {
+        alive();
         try {
           const ev = JSON.parse(String(e.data)) as LiveEvent;
           if (ev.type === 'report') report(ev.report);
@@ -42,18 +53,27 @@ export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) =
           // message illisible : ignoré
         }
       };
-      socket.onclose = () => {
-        if (ws !== socket) return;
-        ws = null;
-        setConnected(false);
-        if (!active) return;
-        const delay = Math.min(30_000, 1_000 * 2 ** attempt++) * (0.5 + Math.random() / 2);
-        timer = setTimeout(connect, delay);
-      };
+      socket.onclose = () => drop(socket);
+    };
+
+    /**
+     * Fin d'une socket, fermée ou muette : on la lâche sans attendre sa fermeture (qui peut ne
+     * jamais venir sur un réseau coupé) et on retente avec une attente croissante.
+     */
+    const drop = (socket: WebSocket) => {
+      if (ws !== socket) return;
+      clearTimeout(watchdog);
+      ws = null;
+      socket.close();
+      setConnected(false);
+      if (!active) return;
+      const delay = Math.min(30_000, 1_000 * 2 ** attempt++) * (0.5 + Math.random() / 2);
+      timer = setTimeout(connect, delay);
     };
 
     const disconnect = () => {
       clearTimeout(timer);
+      clearTimeout(watchdog);
       const socket = ws;
       ws = null;
       socket?.close();

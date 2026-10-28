@@ -1,5 +1,6 @@
 // Client de l'API Zelo (services/api). Les formes suivent services/api/internal/store.
 import { deviceId } from '@/utils/device';
+import { fetchWithin } from '@/utils/net';
 import type { Route } from '@/utils/route';
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
@@ -87,7 +88,11 @@ export type Report = {
 };
 
 /** « report » : nouveau ou mis à jour (votes) ; « report_removed » : retiré après des « plus là ». */
-export type LiveEvent = { type: 'report'; report: Report } | { type: 'report_removed'; id: number };
+export type LiveEvent =
+  | { type: 'report'; report: Report }
+  | { type: 'report_removed'; id: number }
+  /** Battement du serveur toutes les 25 s : prouve que la connexion vit. */
+  | { type: 'hb' };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -97,14 +102,13 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(API_URL + path, {
-    ...init,
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Zelo-Device': deviceId() },
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Zelo-Device': deviceId() };
+  return fetchWithin(API_URL + path, { ...init, headers }, async (res) => {
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+    return body as T;
   });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
-  return body as T;
 }
 
 const list = <T>(path: string, bbox: BBox, signal?: AbortSignal) =>

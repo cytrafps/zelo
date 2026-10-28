@@ -65,3 +65,27 @@ test('bounds et pointAt', () => {
   const mid = pointAt(route.coordinates, cum, 0.5);
   assert.ok(mid[0] >= w && mid[0] <= e && mid[1] >= s && mid[1] <= n);
 });
+
+test("progress : sur un aller-retour, l'indice garde le guidage sur le bon passage", () => {
+  // Aller vers l'est puis retour par la même rue : chaque point de l'aller existe aussi au retour.
+  const go: [number, number][] = Array.from({ length: 11 }, (_, i) => [4.03 + i * 0.001, 49.25]);
+  const loop: Route = {
+    distance: 0,
+    duration: 600,
+    coordinates: [...go, ...go.slice(0, -1).reverse()],
+    steps: [
+      { instruction: 'Départ', type: 1, distance: 0, duration: 0, shape: 0 },
+      { instruction: 'Demi-tour', type: 12, distance: 0, duration: 0, shape: 10 },
+      { instruction: 'Arrivée', type: 4, distance: 0, duration: 0, shape: 20 },
+    ],
+  };
+  const c = cumulative(loop.coordinates);
+  const back = { lat: 49.25, lon: 4.0335 }; // entre les points 3 et 4, sur le chemin du retour
+  const first = progress(loop, c, { lat: 49.25, lon: 4.0395 }); // juste avant le demi-tour
+  const p = progress(loop, c, back, progress(loop, c, { lat: 49.25, lon: 4.0345 }, 16).segment);
+  assert.ok(first.segment < 10);
+  assert.equal(p.next, 2, 'après le demi-tour, la prochaine manœuvre est l’arrivée');
+  assert.ok(p.segment >= 10);
+  // Sans indice, la même position tombe sur l'aller.
+  assert.ok(progress(loop, c, back).segment < 10);
+});
