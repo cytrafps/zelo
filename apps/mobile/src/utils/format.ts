@@ -12,6 +12,14 @@ export const formatCents = (c: number) => (c === 0 ? 'Gratuit' : `${cents.format
 /** Durée de stationnement : « 30 min », « 1 h », « 24 h ». */
 export const formatStay = (minutes: number) => (minutes < 60 ? `${minutes} min` : `${minutes / 60} h`);
 
+const kwh = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
+/** Prix de recharge : « 0,59 €/kWh », « dès 0,36 €/kWh », « Gratuite ». */
+export function formatChargePrice(p: { free: boolean; kwh: number; from: boolean }) {
+  if (p.free) return 'Gratuite';
+  return `${p.from ? 'dès ' : ''}${kwh.format(p.kwh)} €/kWh`;
+}
+
 /** « il y a 5 min », « dans 2 h », « hier », « à l'instant »… */
 export function formatAgo(iso: string, now = Date.now()) {
   const minutes = Math.round((new Date(iso).getTime() - now) / 60_000);

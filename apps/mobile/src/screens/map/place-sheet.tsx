@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import type { ChargeStation, FuelStation, Parking } from '@/api/zelo';
 import { texte, useTheme, type Couleurs } from '@/theme';
-import { formatAgo, formatCents, formatPrice, formatStay, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
+import { formatAgo, formatCents, formatChargePrice, formatPrice, formatStay, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
 
 export type Selection =
   | { kind: 'fuel'; item: FuelStation }
@@ -88,6 +88,14 @@ function ChargeDetails({ s, c, onGo }: { s: ChargeStation; c: Couleurs; onGo: ()
         <ListItem trailing={<Text textStyle={{ ...texte.corps, color: c.texte.secondaire }}>{`${Math.round(s.maxPowerKw)} kW`}</Text>}>
           <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>Puissance max.</Text>
         </ListItem>
+        {s.price && (
+          <ListItem
+            supportingText="Annoncé par l'opérateur, hors abonnement"
+            trailing={<Text textStyle={{ ...texte.corps, color: c.texte.secondaire }}>{formatChargePrice(s.price)}</Text>}
+          >
+            <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>Prix</Text>
+          </ListItem>
+        )}
         <ListItem
           trailing={
             <Text textStyle={{ ...texte.corps, color: c.texte.secondaire }}>

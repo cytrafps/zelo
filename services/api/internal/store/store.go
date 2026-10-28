@@ -130,27 +130,33 @@ func (s *Store) SaveChargePoints(ctx context.Context, points []irve.ChargePoint)
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_cp (
 			id text, station_id text, station_name text, operator text, address text,
-			lon float8, lat float8, power_kw real, sockets text[], free boolean, card_payment boolean, hours text) ON COMMIT DROP`); err != nil {
+			lon float8, lat float8, power_kw real, sockets text[], free boolean, card_payment boolean, hours text,
+			price_kwh real, price_from boolean) ON COMMIT DROP`); err != nil {
 			return err
 		}
 		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_cp"},
-			[]string{"id", "station_id", "station_name", "operator", "address", "lon", "lat", "power_kw", "sockets", "free", "card_payment", "hours"},
+			[]string{"id", "station_id", "station_name", "operator", "address", "lon", "lat", "power_kw", "sockets", "free", "card_payment", "hours", "price_kwh", "price_from"},
 			pgx.CopyFromSlice(len(points), func(i int) ([]any, error) {
 				p := points[i]
+				var price *float32
+				if p.PriceKWh != nil {
+					v := float32(*p.PriceKWh)
+					price = &v
+				}
 				return []any{p.ID, p.StationID, p.StationName, p.Operator, p.Address, p.Lon, p.Lat,
-					float32(p.PowerKW), p.Sockets, p.Free, p.CardPayment, p.Hours}, nil
+					float32(p.PowerKW), p.Sockets, p.Free, p.CardPayment, p.Hours, price, p.PriceFrom}, nil
 			})); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `
-			INSERT INTO charge_point (id, station_id, station_name, operator, address, geom, power_kw, sockets, free, card_payment, hours, seen_at)
+			INSERT INTO charge_point (id, station_id, station_name, operator, address, geom, power_kw, sockets, free, card_payment, hours, price_kwh, price_from, seen_at)
 			SELECT id, station_id, station_name, operator, address, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography,
-				power_kw, coalesce(sockets, '{}'), free, card_payment, hours, now()
+				power_kw, coalesce(sockets, '{}'), free, card_payment, hours, price_kwh, price_from, now()
 			FROM tmp_cp
 			ON CONFLICT (id) DO UPDATE SET station_id = EXCLUDED.station_id, station_name = EXCLUDED.station_name,
 				operator = EXCLUDED.operator, address = EXCLUDED.address, geom = EXCLUDED.geom, power_kw = EXCLUDED.power_kw,
 				sockets = EXCLUDED.sockets, free = EXCLUDED.free, card_payment = EXCLUDED.card_payment,
-				hours = EXCLUDED.hours, seen_at = now();
+				hours = EXCLUDED.hours, price_kwh = EXCLUDED.price_kwh, price_from = EXCLUDED.price_from, seen_at = now();
 
 			DELETE FROM charge_point WHERE seen_at < now() - interval '7 days';`)
 		return err
@@ -264,6 +270,16 @@ type ChargeStation struct {
 	// Available est nil quand aucun état récent (moins de 24 h) n'est publié.
 	Available  *int       `json:"available"`
 	ObservedAt *time.Time `json:"observedAt"`
+	// Price : prix au kWh annoncé par l'opérateur, nil s'il n'est pas publié lisiblement.
+	Price *ChargePrice `json:"price"`
+}
+
+type ChargePrice struct {
+	// Free : tous les points de la station sont déclarés gratuits.
+	Free bool    `json:"free"`
+	KWh  float32 `json:"kwh"` // euros, le moins cher de la station
+	// From : d'autres frais s'ajoutent, ou le prix varie selon le point : « dès … ».
+	From bool `json:"from"`
 }
 
 func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]ChargeStation, error) {
@@ -275,7 +291,8 @@ func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]Charge
 			count(*),
 			count(*) FILTER (WHERE st.occupancy = 'libre' AND st.state = 'en_service' AND st.observed_at > now() - interval '24 hours'),
 			count(st.id) FILTER (WHERE st.observed_at > now() - interval '24 hours'),
-			max(st.observed_at)
+			max(st.observed_at),
+			bool_and(c.free), min(c.price_kwh), bool_or(c.price_from) OR count(DISTINCT c.price_kwh) > 1
 		FROM charge_point c
 		LEFT JOIN charge_status st ON st.id = c.id
 		WHERE ST_Intersects(c.geom, `+envelope+`)
@@ -287,9 +304,18 @@ func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]Charge
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ChargeStation, error) {
 		var c ChargeStation
 		var free, withStatus int
-		err := r.Scan(&c.ID, &c.Name, &c.Operator, &c.Lat, &c.Lon, &c.MaxPowerKW, &c.Sockets, &c.Total, &free, &withStatus, &c.ObservedAt)
+		var allFree, priceFrom bool
+		var price *float32
+		err := r.Scan(&c.ID, &c.Name, &c.Operator, &c.Lat, &c.Lon, &c.MaxPowerKW, &c.Sockets, &c.Total, &free, &withStatus, &c.ObservedAt,
+			&allFree, &price, &priceFrom)
 		if withStatus > 0 {
 			c.Available = &free
+		}
+		switch {
+		case allFree:
+			c.Price = &ChargePrice{Free: true}
+		case price != nil:
+			c.Price = &ChargePrice{KWh: *price, From: priceFrom}
 		}
 		return c, err
 	})

@@ -29,6 +29,8 @@ export type ChargeStation = {
   /** null : aucun état publié depuis 24 h. */
   available: number | null;
   observedAt: string | null;
+  /** Prix annoncé par l'opérateur ; null s'il ne le publie pas lisiblement. */
+  price: { free: boolean; kwh: number; from: boolean } | null;
 };
 
 export type Parking = {
