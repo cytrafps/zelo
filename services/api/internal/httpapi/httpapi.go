@@ -72,6 +72,8 @@ type Config struct {
 	Router Router
 	// Transit : horaires du tram et des bus en vigueur (rechargés chaque jour) ; nil ou nil renvoyé : aucun parking relais proposé.
 	Transit func() *transit.Timetable
+	// Realtime : dernier flux temps réel lu ; nil : horaires théoriques.
+	Realtime func() *transit.Realtime
 }
 
 type Router interface {

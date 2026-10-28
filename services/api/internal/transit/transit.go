@@ -44,6 +44,7 @@ type call struct {
 	stop string // station mère
 	dep  int    // secondes depuis minuit du jour de service (peut dépasser 24 h)
 	arr  int
+	seq  int32 // stop_sequence GTFS, que le temps réel référence
 }
 
 type trip struct {
@@ -76,6 +77,12 @@ type Timetable struct {
 
 	mu    sync.Mutex
 	conns map[string][]conn // connexions d'un jour de service, triées par départ
+
+	// Connexions corrigées par le dernier flux temps réel appliqué (voir effective).
+	rtFor   *Realtime
+	rtDay   string
+	rtConns []conn
+	rtDelay []int32 // 1 : course suivie en temps réel
 }
 
 // Fetch télécharge et lit le GTFS.
@@ -207,7 +214,7 @@ func Parse(archive []byte) (*Timetable, error) {
 			return err
 		}
 		n, _ := strconv.Atoi(get("stop_sequence"))
-		t.trips[i].calls = append(t.trips[i].calls, call{stop: station(get("stop_id")), dep: dep, arr: arr})
+		t.trips[i].calls = append(t.trips[i].calls, call{stop: station(get("stop_id")), dep: dep, arr: arr, seq: int32(n)})
 		seq[i] = append(seq[i], n)
 		return nil
 	}); err != nil {

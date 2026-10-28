@@ -172,7 +172,9 @@ func run(log *slog.Logger, once bool) error {
 
 	// Horaires du tram et des bus : chaque réplique garde les siens en mémoire (quelques Mo), rechargés chaque jour.
 	var timetable atomic.Pointer[transit.Timetable]
-	go loadTimetable(ctx, log, client, envOr("GTFS_URL", transit.FeedURL), &timetable)
+	var realtime atomic.Pointer[transit.Realtime]
+	go loadTimetable(ctx, log, client, envOr("GTFS_URL", transit.FeedURL), envOr("OVERPASS_URL", overpass.URL), &timetable)
+	go loadRealtime(ctx, log, envOr("GTFS_RT_URL", transit.RealtimeURL), &realtime)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
@@ -180,6 +182,7 @@ func run(log *slog.Logger, once bool) error {
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
 		TrustedProxies: trusted,
 		Transit:        timetable.Load,
+		Realtime:       realtime.Load,
 		OriginPatterns: splitList(os.Getenv("WS_ORIGINS")),
 	}
 	if u := os.Getenv("VALHALLA_URL"); u != "" {
@@ -314,7 +317,7 @@ func envOr(key, def string) string {
 
 // loadTimetable charge le GTFS (tram et bus) au démarrage puis chaque jour ; après un échec, réessaie dans 15 min.
 // Les horaires précédents restent servis tant que les nouveaux ne sont pas lus.
-func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, url string, into *atomic.Pointer[transit.Timetable]) {
+func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, url, osmURL string, into *atomic.Pointer[transit.Timetable]) {
 	for {
 		wait := 24 * time.Hour
 		start := time.Now()
@@ -324,6 +327,12 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 			metrics.IngestRuns.WithLabelValues("transports", "erreur").Inc()
 			wait = 15 * time.Minute
 		} else {
+			// Noms accentués d'OSM : sans eux, les noms GTFS (en capitales) restent.
+			if osm, err := tt.FetchNames(ctx, client, osmURL); err != nil {
+				log.Warn("noms des arrêts", "err", err)
+			} else {
+				log.Info("noms des arrêts", "renommes", tt.Rename(osm))
+			}
 			into.Store(tt)
 			metrics.IngestRuns.WithLabelValues("transports", "ok").Inc()
 			metrics.IngestRows.WithLabelValues("transports").Set(float64(len(tt.Stops)))
@@ -334,6 +343,32 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
+		}
+	}
+}
+
+// loadRealtime lit le temps réel (GTFS-RT) toutes les 30 s ; un flux en échec n'efface pas le
+// précédent, que Plan ignore de lui-même passé quelques minutes.
+func loadRealtime(ctx context.Context, log *slog.Logger, url string, into *atomic.Pointer[transit.Realtime]) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	failures := 0
+	for {
+		rt, err := transit.FetchRealtime(ctx, client, url)
+		if err != nil {
+			if failures++; failures == 1 || failures%20 == 0 {
+				log.Warn("temps réel tram et bus", "err", err, "echecs", failures)
+			}
+			metrics.IngestRuns.WithLabelValues("temps_reel", "erreur").Inc()
+		} else {
+			failures = 0
+			into.Store(rt)
+			metrics.IngestRuns.WithLabelValues("temps_reel", "ok").Inc()
+			metrics.IngestLastSuccess.WithLabelValues("temps_reel").SetToCurrentTime()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
 		}
 	}
 }

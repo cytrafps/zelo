@@ -90,7 +90,11 @@ func (a *API) parkRide(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var js []journeyJSON
-		for _, j := range tt.Plan(origins, targets, at, ridesWindow, maxRides) {
+		var rt *transit.Realtime
+		if a.cfg.Realtime != nil {
+			rt = a.cfg.Realtime()
+		}
+		for _, j := range tt.Plan(origins, targets, at, ridesWindow, maxRides, rt) {
 			js = append(js, journeyJSON{Journey: j, BoardWalk: originDist[j.Legs[0].From.ID], FinalWalk: targetDist[j.Legs[len(j.Legs)-1].To.ID]})
 		}
 		if len(js) > 0 {
