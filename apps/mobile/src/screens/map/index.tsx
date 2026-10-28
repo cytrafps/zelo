@@ -271,6 +271,7 @@ export function MapScreen() {
               c={c}
               bottomInset={insets.bottom}
               avoid={trips.avoid}
+              vehicle={trips.vehicle}
               onSelect={trips.select}
               onGo={(i) => {
                 setFollowing(true);

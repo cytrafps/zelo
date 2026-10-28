@@ -348,3 +348,17 @@ func TestToAreas(t *testing.T) {
 		t.Errorf("c sans station ni borne : %+v", got[2])
 	}
 }
+
+// Moto et vélo : le bon mode part vers Valhalla ; les feux valent pour les deux.
+func TestRouteModes(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for q, want := range map[string]route.Mode{"moto": route.Motorcycle, "bike": route.Bicycle, "car": route.Car, "walk": route.Walk} {
+		router := &fakeRouter{}
+		rec := httptest.NewRecorder()
+		New(&fakeStore{}, live.NewHub(0), quiet, Config{Router: router}).ServeHTTP(rec,
+			httptest.NewRequest("GET", "/v1/route?from=49.2591,4.0245&to=49.2535,4.0341&mode="+q, nil))
+		if rec.Code != http.StatusOK || router.mode != want {
+			t.Errorf("mode=%s : %d, %q", q, rec.Code, router.mode)
+		}
+	}
+}

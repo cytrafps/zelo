@@ -1,9 +1,9 @@
 import { MenuView } from '@expo/ui/community/menu';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import type { Avoid, Report } from '@/api/zelo';
+import type { Avoid, Report, Vehicle } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
@@ -26,7 +26,8 @@ type Props = {
   onSelect: (i: number) => void;
   onGo: (i: number) => void;
   avoid: readonly Avoid[];
-  onChange: (change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[] }) => void;
+  vehicle: Vehicle;
+  onChange: (change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[]; vehicle?: Vehicle }) => void;
   onClose: () => void;
 };
 
@@ -34,7 +35,8 @@ type Props = {
 const DEPARTS = [0, 15, 30, 60, 120];
 
 /** Aperçu du trajet (maquettes 03 et 03b) : où se garer, puis les itinéraires et « Y aller ». */
-export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, onChange, onClose }: Props) {
+export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, vehicle, onChange, onClose }: Props) {
+  const bike = vehicle === 'bike';
   const [choosing, setChoosing] = useState(false);
   const now = useNow();
   // Heure de départ : choisie, ou maintenant.
@@ -66,8 +68,23 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsRow}>
-        {/* Sans choix d'arrêt (« Y aller » vers une station), pas de puce. */}
-        {(trip.target.kind !== 'dropoff' || trip.options.length > 1) && (
+        <MenuView
+          title="Véhicule"
+          actions={VEHICLES.map(([id, title]) => ({ id, title, state: id === vehicle ? 'on' : 'off' }))}
+          onPressAction={(e) => {
+            const id = e.nativeEvent.event as Vehicle;
+            if (id !== vehicle) onChange({ vehicle: id });
+          }}
+        >
+          <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Véhicule">
+            <SymbolView name={VEHICLE_ICON[vehicle]} tintColor={c.texte.principal} size={16} />
+            <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{VEHICLES.find(([id]) => id === vehicle)?.[1]}</Text>
+            <Chevron c={c} />
+          </View>
+        </MenuView>
+
+        {/* Sans choix d'arrêt (« Y aller » vers une station, ou à vélo), pas de puce. */}
+        {!bike && (trip.target.kind !== 'dropoff' || trip.options.length > 1) && (
           <Pressable
             onPress={() => setChoosing((v) => !v)}
             disabled={trip.options.length < 2}
@@ -102,23 +119,25 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
           </View>
         </MenuView>
 
-        <MenuView
-          title="Éviter"
-          actions={AVOID.map(([id, title]) => ({ id, title, state: avoid.includes(id) ? 'on' : 'off' }))}
-          onPressAction={(e) => {
-            const id = e.nativeEvent.event as Avoid;
-            onChange({ avoid: avoid.includes(id) ? avoid.filter((a) => a !== id) : [...avoid, id] });
-          }}
-        >
-          <View
-            style={[styles.chip, { borderColor: avoid.length ? c.action : c.fond.separateur }]}
-            accessibilityRole="button"
-            accessibilityLabel="Éviter les péages ou les autoroutes"
+        {!bike && (
+          <MenuView
+            title="Éviter"
+            actions={AVOID.map(([id, title]) => ({ id, title, state: avoid.includes(id) ? 'on' : 'off' }))}
+            onPressAction={(e) => {
+              const id = e.nativeEvent.event as Avoid;
+              onChange({ avoid: avoid.includes(id) ? avoid.filter((a) => a !== id) : [...avoid, id] });
+            }}
           >
-            <Text style={[texte.corpsFort, { color: avoid.length ? c.action : c.texte.principal }]}>{avoidLabel(avoid)}</Text>
-            <Chevron c={c} />
-          </View>
-        </MenuView>
+            <View
+              style={[styles.chip, { borderColor: avoid.length ? c.action : c.fond.separateur }]}
+              accessibilityRole="button"
+              accessibilityLabel="Éviter les péages ou les autoroutes"
+            >
+              <Text style={[texte.corpsFort, { color: avoid.length ? c.action : c.texte.principal }]}>{avoidLabel(avoid)}</Text>
+              <Chevron c={c} />
+            </View>
+          </MenuView>
+        )}
       </ScrollView>
 
       {choosing ? (
@@ -263,6 +282,18 @@ function Areas({ areas, c }: { areas: Area[] | undefined; c: Couleurs }) {
 function Chevron({ c }: { c: Couleurs }) {
   return <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />;
 }
+
+const VEHICLES: [Vehicle, string][] = [
+  ['car', 'Voiture'],
+  ['moto', 'Moto'],
+  ['bike', 'Vélo'],
+];
+
+const VEHICLE_ICON: Record<Vehicle, SymbolViewProps['name']> = {
+  car: { ios: 'car.fill', android: 'directions_car' },
+  moto: { ios: 'motorcycle', android: 'two_wheeler' },
+  bike: { ios: 'bicycle', android: 'directions_bike' },
+};
 
 const AVOID: [Avoid, string][] = [
   ['tolls', 'Péages'],

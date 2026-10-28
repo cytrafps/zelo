@@ -336,9 +336,9 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var routeModes = map[string]route.Mode{"car": route.Car, "walk": route.Walk}
+var routeModes = map[string]route.Mode{"car": route.Car, "moto": route.Motorcycle, "bike": route.Bicycle, "walk": route.Walk}
 
-// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|walk
+// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|moto|bike|walk
 // [&alternates=0..2][&heading=0..360][&depart=<secondes Unix>][&avoid=tolls,highways]
 func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.Router == nil {
@@ -354,7 +354,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	to, err2 := parsePoint(q.Get("to"))
 	mode, ok := routeModes[q.Get("mode")]
 	if err := errors.Join(err1, err2); err != nil || !ok {
-		httpError(w, http.StatusBadRequest, `attendu : from=lat,lon&to=lat,lon&mode=car|walk`)
+		httpError(w, http.StatusBadRequest, `attendu : from=lat,lon&to=lat,lon&mode=car|moto|bike|walk`)
 		return
 	}
 	opts, err := routeOptions(q, time.Now())
@@ -380,8 +380,8 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, "calcul d'itinéraire indisponible")
 	default:
 		metrics.Routes.WithLabelValues(q.Get("mode"), "ok").Inc()
-		if mode == route.Car {
-			a.annotate(ctx, res)
+		if mode != route.Walk {
+			a.annotate(ctx, res, mode.Motorized())
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"routes": res})
@@ -390,8 +390,11 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 
 // annotate ajoute feux et stops aux manœuvres, et les aires d'autoroute desservies. Sans eux,
 // le trajet reste juste : une base indisponible est seulement journalisée.
-func (a *API) annotate(ctx context.Context, routes []route.Route) {
+func (a *API) annotate(ctx context.Context, routes []route.Route, areas bool) {
 	for i := range routes {
+		if !areas {
+			break // à vélo, pas d'autoroute
+		}
 		found, err := a.store.AreasAlong(ctx, routes[i].Coordinates, route.AreaReach)
 		if err != nil {
 			a.log.Warn("aires", "err", err)

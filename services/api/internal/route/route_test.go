@@ -318,3 +318,19 @@ func TestPlaceAreas(t *testing.T) {
 		}
 	}
 }
+
+func TestMotorcycleAvoidsHighways(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(`{"code":"Ok","routes":[{"distance":1000,"duration":60,"geometry":"","legs":[{"steps":[]}]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	if _, err := New(srv.URL).Routes(context.Background(), gare, cathedrale, Motorcycle, Options{AvoidHighways: true}); err != nil {
+		t.Fatal(err)
+	}
+	moto, ok := got["costing_options"].(map[string]any)["motorcycle"].(map[string]any)
+	if got["costing"] != "motorcycle" || !ok || moto["use_highways"] != 0.0 {
+		t.Fatalf("requête : %v", got)
+	}
+}

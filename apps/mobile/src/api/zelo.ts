@@ -131,6 +131,9 @@ export const voteReport = (id: number, up: boolean) =>
 
 export type Avoid = 'tolls' | 'highways';
 
+/** Véhicule du trajet : à vélo, ni péage ni autoroute, et on s'arrête à la destination. */
+export type Vehicle = 'car' | 'moto' | 'bike';
+
 export type RouteOptions = {
   alternates?: number;
   /** Cap au départ (°) : évite de faire partir à contresens une voiture qui roule. */
@@ -144,7 +147,7 @@ export type RouteOptions = {
 export function getRoutes(
   from: { lat: number; lon: number },
   to: { lat: number; lon: number },
-  mode: 'car' | 'walk',
+  mode: Vehicle | 'walk',
   opts: RouteOptions = {},
   signal?: AbortSignal,
 ) {
