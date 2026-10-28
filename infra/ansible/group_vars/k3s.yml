@@ -1,0 +1,7 @@
+---
+# Versions figées : une mise à jour est une PR relue, pas une surprise au redéploiement.
+k3s_version: v1.36.5+k3s1
+argocd_version: 3.5.6
+
+# Dépôt local (contrôleur Ansible) : les applications Argo CD sont lues depuis deploy/argocd.
+repo_root: "{{ playbook_dir }}/../.."

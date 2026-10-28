@@ -1,0 +1,7 @@
+---
+- name: Redémarrer K3s
+  ansible.builtin.systemd_service:
+    name: k3s
+    state: restarted
+  # Au premier passage, le service n'existe pas encore : l'installeur le démarre avec la configuration.
+  when: k3s_version in k3s_installed.stdout | default('')

@@ -1,0 +1,75 @@
+---
+- name: Version de K3s installée
+  ansible.builtin.command: k3s --version
+  register: k3s_installed
+  changed_when: false
+  failed_when: false
+
+- name: Dossier de configuration de K3s
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+- name: Configuration de K3s
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/config.yaml
+    content: |
+      # Géré par Ansible (infra/ansible/roles/k3s).
+      write-kubeconfig-mode: "0600"
+      tls-san:
+        - {{ ansible_host }}
+    mode: "0600"
+  notify: Redémarrer K3s
+
+- name: Télécharger l'installeur de K3s
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /usr/local/bin/k3s-install.sh
+    mode: "0755"
+  when: k3s_version not in k3s_installed.stdout | default('')
+
+- name: Installer K3s {{ k3s_version }}
+  ansible.builtin.command: /usr/local/bin/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  changed_when: true
+  when: k3s_version not in k3s_installed.stdout | default('')
+
+- name: Appliquer la configuration avant de continuer
+  ansible.builtin.meta: flush_handlers
+
+- name: Attendre que le nœud soit prêt
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=180s
+  changed_when: false
+
+- name: Dossier ~/.kube de zelo
+  ansible.builtin.file:
+    path: /home/zelo/.kube
+    state: directory
+    owner: zelo
+    group: zelo
+    mode: "0700"
+
+- name: Kubeconfig pour l'utilisateur zelo
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: /home/zelo/.kube/config
+    remote_src: true
+    owner: zelo
+    group: zelo
+    mode: "0600"
+
+- name: Lire le kubeconfig
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  register: k3s_kubeconfig
+
+# Pour piloter le cluster depuis le PC : KUBECONFIG=infra/ansible/kubeconfig kubectl get pods -A
+- name: Kubeconfig sur le poste qui lance Ansible
+  ansible.builtin.copy:
+    content: "{{ k3s_kubeconfig.content | b64decode | replace('127.0.0.1', ansible_host) }}"
+    dest: "{{ playbook_dir }}/kubeconfig"
+    mode: "0600"
+  delegate_to: localhost
+  become: false

@@ -46,7 +46,7 @@ flowchart LR
 
 ## Installation sur le homelab
 
-Prérequis : une VM Linux, avec 2 vCPU et 4 Go de RAM au minimum.
+La VM et le cluster sont décrits en code : voir [`infra/`](../infra/README.md) (Terraform crée la VM sur Proxmox, Ansible installe K3s, Argo CD et ces applications). Les étapes ci-dessous en sont l'équivalent manuel, sur une VM Linux existante (2 vCPU et 4 Go de RAM au minimum).
 
 ```sh
 # 1. K3s (Traefik et stockage local inclus)

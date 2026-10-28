@@ -1,0 +1,36 @@
+---
+- name: Mettre à jour le système
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    upgrade: dist
+
+- name: Installer les paquets de base
+  ansible.builtin.apt:
+    name:
+      - qemu-guest-agent # Proxmox voit l'IP et arrête la VM proprement
+      - unattended-upgrades # correctifs de sécurité appliqués chaque nuit
+      - curl
+      - ca-certificates
+      - openssl
+    state: present
+
+- name: Démarrer l'agent Proxmox
+  ansible.builtin.systemd_service:
+    name: qemu-guest-agent
+    state: started
+    enabled: true
+  tags: [proxmox] # sans objet hors d'une VM Proxmox (test en conteneur : --skip-tags proxmox)
+
+- name: Fuseau horaire de Paris
+  community.general.timezone:
+    name: Europe/Paris
+
+- name: SSH par clé uniquement
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-zelo.conf
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+    mode: "0644"
+  notify: Recharger SSH
