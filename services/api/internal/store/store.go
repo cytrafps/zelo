@@ -16,6 +16,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/irve"
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
+	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 )
 
 //go:embed schema.sql
@@ -304,7 +305,103 @@ func (s *Store) SaveControls(ctx context.Context, controls []junction.Control) e
 	})
 }
 
+// SaveAreas remplace les aires d'autoroute de la zone importée.
+func (s *Store) SaveAreas(ctx context.Context, areas []servicearea.Area) error {
+	if len(areas) == 0 {
+		return errors.New("aucune aire reçue : import ignoré pour ne pas vider la table")
+	}
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_sa (id text, kind text, name text, operator text, ring text, lon float8, lat float8, services text[]) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_sa"}, []string{"id", "kind", "name", "operator", "ring", "lon", "lat", "services"},
+			pgx.CopyFromSlice(len(areas), func(i int) ([]any, error) {
+				a := areas[i]
+				return []any{a.ID, a.Kind, a.Name, a.Operator, wktPolygon(a.Ring), a.Lon, a.Lat, a.Services}, nil
+			})); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			DELETE FROM service_area a WHERE NOT EXISTS (SELECT 1 FROM tmp_sa t WHERE t.id = a.id);
+			INSERT INTO service_area (id, kind, name, operator, geom, center, services)
+			SELECT DISTINCT ON (id) id, kind, name, operator,
+				-- ST_MakeValid : un contour OSM qui se recoupe reste exploitable.
+				ST_MakeValid(ST_GeomFromText(ring, 4326))::geography,
+				ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography, services
+			FROM tmp_sa
+			WHERE ST_GeometryType(ST_MakeValid(ST_GeomFromText(ring, 4326))) = 'ST_Polygon'
+			ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, name = EXCLUDED.name, operator = EXCLUDED.operator,
+				geom = EXCLUDED.geom, center = EXCLUDED.center, services = EXCLUDED.services;`)
+		return err
+	})
+}
+
+func wktPolygon(ring [][2]float64) string {
+	var b strings.Builder
+	b.WriteString("POLYGON((")
+	for i, p := range ring {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, "%.7f %.7f", p[0], p[1])
+	}
+	b.WriteString("))")
+	return b.String()
+}
+
 // --- Lectures
+
+// AreaOnRoute : une aire proche d'un tracé, avec les prix et les bornes de ce qu'elle contient.
+type AreaOnRoute struct {
+	ID, Kind, Name string
+	Lat, Lon       float64
+	Services       []string
+	Fuel           map[string]float64
+	ChargeTotal    int
+	ChargeFree     int
+	ChargeKnown    int // points avec un état publié depuis moins de 24 h
+}
+
+// AreasAlong : aires à moins de within mètres du tracé ([lon, lat]). Carburant : le prix le plus
+// bas de chaque carburant aux stations de l'aire ; recharge : ses points et leur état.
+func (s *Store) AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]AreaOnRoute, error) {
+	if len(line) < 2 {
+		return nil, nil
+	}
+	lons, lats := make([]float64, len(line)), make([]float64, len(line))
+	for i, p := range line {
+		lons[i], lats[i] = p[0], p[1]
+	}
+	rows, err := s.db.Query(ctx, `
+		WITH line AS (
+			SELECT ST_Simplify(ST_MakeLine(ST_SetSRID(ST_MakePoint(lon, lat), 4326) ORDER BY ord), 0.00005)::geography AS g
+			FROM unnest($1::float8[], $2::float8[]) WITH ORDINALITY AS p(lon, lat, ord)
+		)
+		SELECT a.id, a.kind, a.name, ST_Y(a.center::geometry), ST_X(a.center::geometry), a.services,
+			coalesce((
+				SELECT jsonb_object_agg(fuel, price) FROM (
+					SELECT p.fuel, min(p.price)::float8 AS price
+					FROM fuel_station f JOIN fuel_price p ON p.station_id = f.id
+					WHERE ST_DWithin(f.geom, a.geom, 50) AND p.updated_at > now() - interval '7 days'
+					GROUP BY p.fuel) x), '{}'),
+			c.total, c.free, c.known
+		FROM service_area a, line
+		CROSS JOIN LATERAL (
+			SELECT count(*) AS total,
+				count(*) FILTER (WHERE st.occupancy = 'libre' AND st.state = 'en_service' AND st.observed_at > now() - interval '24 hours') AS free,
+				count(st.id) FILTER (WHERE st.observed_at > now() - interval '24 hours') AS known
+			FROM charge_point cp LEFT JOIN charge_status st ON st.id = cp.id
+			WHERE ST_DWithin(cp.geom, a.geom, 30)) c
+		WHERE ST_DWithin(a.geom, line.g, $3)`, lons, lats, within)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (AreaOnRoute, error) {
+		var a AreaOnRoute
+		err := r.Scan(&a.ID, &a.Kind, &a.Name, &a.Lat, &a.Lon, &a.Services, &a.Fuel, &a.ChargeTotal, &a.ChargeFree, &a.ChargeKnown)
+		return a, err
+	})
+}
 
 // Controls : feux et stops à moins de radius mètres d'un des points ([lon, lat]), les
 // manœuvres d'un itinéraire : quelques lignes, même pour un long trajet.

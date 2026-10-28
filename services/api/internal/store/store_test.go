@@ -15,6 +15,8 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
 	"github.com/cytrafps/zelo/services/api/internal/junction"
+	"github.com/cytrafps/zelo/services/api/internal/overpass"
+	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 )
 
 // Tests d'intégration : ils demandent une vraie base PostGIS (ZELO_TEST_DATABASE_URL),
@@ -321,5 +323,59 @@ func TestControlsNearManeuvers(t *testing.T) {
 	}
 	if got, _ := s.Controls(ctx, [][2]float64{{4.0500, 49.2801}}, 45); len(got) != 0 {
 		t.Fatalf("feu supprimé d'OSM encore là : %+v", got)
+	}
+}
+
+// Aires : enregistrées depuis OSM, retrouvées le long d'un tracé avec le carburant de leur station.
+func TestAreasAlong(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	ring := [][2]float64{{4.30, 49.30}, {4.31, 49.30}, {4.31, 49.31}, {4.30, 49.31}, {4.30, 49.30}}
+	if err := s.SaveAreas(ctx, []servicearea.Area{
+		{ID: "way/T1", Kind: "services", Name: "Aire test", Ring: ring, Lat: 49.305, Lon: 4.305, Services: []string{"restauration", "douches"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := s.SaveFuel(ctx, []fuel.Station{
+		{ID: "T-AIRE-1", Lat: 49.305, Lon: 4.305, Prices: []fuel.Price{{Fuel: "Gazole", Value: 1.789, UpdatedAt: now}, {Fuel: "SP98", Value: 1.999, UpdatedAt: now}}},
+		{ID: "T-AIRE-2", Lat: 49.306, Lon: 4.306, Prices: []fuel.Price{{Fuel: "Gazole", Value: 1.759, UpdatedAt: now}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	line := [][2]float64{{4.3115, 49.29}, {4.3115, 49.32}} // longe l'aire à l'est, à ~40 m
+	got, err := s.AreasAlong(ctx, line, 400)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	a := got[0]
+	if a.Name != "Aire test" || a.Fuel["Gazole"] != 1.759 || a.Fuel["SP98"] != 1.999 || a.ChargeTotal != 0 || len(a.Services) != 2 {
+		t.Fatalf("%+v", a)
+	}
+	if far, _ := s.AreasAlong(ctx, [][2]float64{{4.40, 49.29}, {4.40, 49.32}}, 400); len(far) != 0 {
+		t.Fatalf("aire à 6 km retenue : %+v", far)
+	}
+}
+
+// Les contours réels de la Marne s'enregistrent tous (aucun perdu à la validation).
+func TestSaveAreasMarne(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	f, err := os.Open("../servicearea/testdata/marne.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	els, err := overpass.Parse(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	areas := servicearea.FromElements(els)
+	if err := s.SaveAreas(ctx, areas); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM service_area`).Scan(&n); err != nil || n != len(areas) {
+		t.Fatalf("%d aires enregistrées sur %d (%v)", n, len(areas), err)
 	}
 }

@@ -28,6 +28,7 @@ type fakeStore struct {
 	reporters []string
 	hub       *live.Hub
 	controls  []junction.Control
+	areas     []store.AreaOnRoute
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -42,6 +43,9 @@ func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking,
 }
 func (f *fakeStore) Controls(context.Context, [][2]float64, float64) ([]junction.Control, error) {
 	return f.controls, nil
+}
+func (f *fakeStore) AreasAlong(context.Context, [][2]float64, float64) ([]store.AreaOnRoute, error) {
+	return f.areas, nil
 }
 func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, error) {
 	return f.added, nil
@@ -326,4 +330,21 @@ func (f fixedRouter) Routes(context.Context, route.Point, route.Point, route.Mod
 	r := f.r
 	r.Steps = append([]route.Step(nil), f.r.Steps...) // chaque appel reçoit sa copie, comme de Valhalla
 	return []route.Route{r}, nil
+}
+
+func TestToAreas(t *testing.T) {
+	got := toAreas([]store.AreaOnRoute{
+		{ID: "a", Fuel: map[string]float64{"Gazole": 1.8}, ChargeTotal: 4, ChargeFree: 2, ChargeKnown: 4},
+		{ID: "b", ChargeTotal: 2},
+		{ID: "c", Fuel: map[string]float64{}},
+	})
+	if got[0].Charge == nil || *got[0].Charge.Available != 2 || got[0].Fuel["Gazole"] != 1.8 {
+		t.Errorf("a : %+v", got[0])
+	}
+	if got[1].Charge == nil || got[1].Charge.Available != nil {
+		t.Errorf("b sans état publié : %+v", got[1].Charge)
+	}
+	if got[2].Charge != nil || got[2].Fuel != nil {
+		t.Errorf("c sans station ni borne : %+v", got[2])
+	}
 }

@@ -29,6 +29,26 @@ export type Route = {
   /** [lon, lat] */
   coordinates: [number, number][];
   steps: Step[];
+  /** Aires d'autoroute desservies (en voiture), dans l'ordre de passage. */
+  areas?: Area[];
+};
+
+export type AreaService = 'restauration' | 'boutique' | 'toilettes' | 'douches' | 'camping-car' | 'pique-nique' | 'jeux';
+
+export type Area = {
+  id: string;
+  /** « services » : aire de service ; « rest_area » : aire de repos. */
+  kind: 'services' | 'rest_area';
+  name: string;
+  lat: number;
+  lon: number;
+  services: AreaService[];
+  /** Prix le plus bas de chaque carburant à l'aire (€/L). */
+  fuel?: Record<string, number>;
+  /** Points de recharge ; `available` null sans état publié. */
+  charge?: { total: number; available: number | null };
+  /** Mètres depuis le départ. */
+  along: number;
 };
 
 const M_PER_DEG = 111_320;
