@@ -117,6 +117,32 @@ jobs:
           promtool check rules rules.yml
           promtool test rules deploy/monitoring/alerts_test.yml
 
+  # Infrastructure du homelab : VM Proxmox (Terraform) et installation du cluster (Ansible).
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Outils
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sSfL https://releases.hashicorp.com/terraform/1.13.4/terraform_1.13.4_linux_amd64.zip -o tf.zip
+          unzip -q tf.zip terraform -d "$HOME/bin" && rm tf.zip
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          pipx install ansible-core==2.21.5 && pipx inject ansible-core ansible-lint==26.10.1 --include-apps
+      - name: Terraform
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate
+      - name: Ansible
+        working-directory: infra/ansible
+        run: |
+          ansible-galaxy collection install -r requirements.yml
+          cp inventory.ini.example inventory.ini
+          ansible-playbook --syntax-check site.yml
+          ansible-lint --profile production site.yml
+
   mobile:
     runs-on: ubuntu-latest
     defaults:

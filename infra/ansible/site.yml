@@ -1,0 +1,12 @@
+---
+# Installe le cluster de Zelo sur la VM créée par Terraform :
+#   base → K3s → Argo CD → applications (supervision puis Zelo).
+# Rejouable sans effet de bord : chaque étape vérifie l'état avant d'agir.
+- name: Cluster K3s de Zelo
+  hosts: k3s
+  become: true
+  roles:
+    - base
+    - k3s
+    - argocd
+    - zelo
