@@ -92,7 +92,9 @@ export type LiveEvent =
   | { type: 'report'; report: Report }
   | { type: 'report_removed'; id: number }
   /** Battement du serveur toutes les 25 s : prouve que la connexion vit. */
-  | { type: 'hb' };
+  | { type: 'hb' }
+  /** Le serveur a pu perdre des événements (base reconnectée) : recharger les signalements. */
+  | { type: 'resync' };
 
 export class ApiError extends Error {
   readonly status: number;

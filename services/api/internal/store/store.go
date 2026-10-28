@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,7 +28,11 @@ type Store struct {
 // Open attend la base jusqu'à 30 s : au démarrage d'un conteneur ou d'un pod,
 // PostgreSQL peut encore être en train de s'initialiser.
 func Open(ctx context.Context, url string) (*Store, error) {
-	db, err := pgxpool.New(ctx, url)
+	cfg, err := poolConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	db, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +45,27 @@ func Open(ctx context.Context, url string) (*Store, error) {
 		return nil, fmt.Errorf("schéma: %w", err)
 	}
 	return &Store{db: db, url: url}, nil
+}
+
+// poolConfig complète l'URL par des valeurs sûres, sauf si elle les fixe déjà
+// (pool_max_conns, connect_timeout, options=-c statement_timeout=…) :
+// une base lente ou bloquée renvoie une erreur au lieu d'accumuler les requêtes en attente.
+func poolConfig(url string) (*pgxpool.Config, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(url, "pool_max_conns") {
+		cfg.MaxConns = 10 // deux répliques : 20 connexions, loin des 100 de PostgreSQL
+	}
+	if cfg.ConnConfig.ConnectTimeout == 0 {
+		cfg.ConnConfig.ConnectTimeout = 5 * time.Second
+	}
+	if _, ok := cfg.ConnConfig.RuntimeParams["statement_timeout"]; !ok && !strings.Contains(url, "statement_timeout") {
+		// Large : les collectes écrivent des dizaines de milliers de lignes en une requête.
+		cfg.ConnConfig.RuntimeParams["statement_timeout"] = "60s"
+	}
+	return cfg, nil
 }
 
 // schemaLock sérialise l'application du schéma : deux répliques qui démarrent ensemble

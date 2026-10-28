@@ -65,4 +65,19 @@ var (
 		Help:    "Temps de calcul d'un itinéraire par Valhalla.",
 		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 	}, []string{"mode"})
+
+	LiveDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zelo_live_dropped_total",
+		Help: "Clients du flux temps réel déconnectés car trop lents à lire.",
+	})
+
+	LiveRejected = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zelo_live_rejected_total",
+		Help: "Connexions au flux temps réel refusées (instance pleine ou à l'arrêt).",
+	})
+
+	LiveReconnects = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "zelo_live_listen_reconnects_total",
+		Help: "Reconnexions de l'écoute PostgreSQL (LISTEN) du flux temps réel.",
+	})
 )

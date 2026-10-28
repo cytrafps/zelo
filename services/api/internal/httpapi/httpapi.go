@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -56,8 +56,12 @@ type Store interface {
 }
 
 type Config struct {
-	// TrustProxy : lire l'IP cliente dans CF-Connecting-IP (derrière Cloudflare uniquement).
+	// TrustProxy : toute connexion vient d'un proxy de confiance (Cloudflare Tunnel sur l'hôte).
 	TrustProxy bool
+	// TrustedProxies : adresses des proxys de confiance (Traefik dans le cluster). Pour une
+	// connexion qui en vient, l'IP cliente est lue dans X-Forwarded-For (jamais dans
+	// CF-Connecting-IP, que Traefik laisse passer tel quel).
+	TrustedProxies []netip.Prefix
 	// OriginPatterns autorisés pour le WebSocket depuis un navigateur (tableau de bord web).
 	OriginPatterns []string
 	// Router calcule les itinéraires (Valhalla) ; nil : /v1/route répond 503.
@@ -287,7 +291,11 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 		return // Accept a déjà répondu au client
 	}
 	defer c.CloseNow()
-	events, unsubscribe := a.hub.Subscribe()
+	events, unsubscribe, ok := a.hub.Subscribe()
+	if !ok {
+		c.Close(websocket.StatusTryAgainLater, "instance pleine")
+		return
+	}
 	defer unsubscribe()
 
 	ctx := c.CloseRead(r.Context()) // le client n'envoie rien ; on détecte seulement sa déconnexion
@@ -300,6 +308,8 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 			return
 		case msg, ok := <-events:
 			if !ok {
+				// Client trop lent ou instance qui s'arrête : il se reconnecte (ailleurs) et resynchronise.
+				c.Close(websocket.StatusGoingAway, "")
 				return
 			}
 			wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -456,17 +466,46 @@ func validLatLon(lat, lon float64) bool {
 	return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && !(lat == 0 && lon == 0)
 }
 
+// clientIP : l'adresse de la connexion, ou celle que donne un proxy de confiance. Un en-tête venu
+// d'ailleurs est ignoré : sinon un client choisirait son IP et contournerait les quotas.
 func (a *API) clientIP(r *http.Request) string {
-	if a.cfg.TrustProxy {
-		if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-			return ip
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	remote, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
-	return host
+	addr := remote.Addr().Unmap()
+	if a.cfg.TrustProxy {
+		// Cloudflare Tunnel : il écrase toujours CF-Connecting-IP, un client ne peut pas le choisir.
+		if ip, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); err == nil {
+			return ip.Unmap().String()
+		}
+		return addr.String()
+	}
+	if !a.trusted(addr) {
+		return addr.String()
+	}
+	// X-Forwarded-For : chaque proxy ajoute à droite l'adresse qu'il a vue. On remonte depuis la
+	// droite tant que c'est un proxy de confiance ; la première autre adresse est le client.
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		ip, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			break
+		}
+		if ip = ip.Unmap(); !a.trusted(ip) || i == 0 {
+			return ip.String()
+		}
+	}
+	return addr.String()
+}
+
+func (a *API) trusted(ip netip.Addr) bool {
+	for _, p := range a.cfg.TrustedProxies {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *API) serverError(w http.ResponseWriter, r *http.Request, err error) {

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/cytrafps/zelo/services/api/internal/metrics"
 )
 
 // LiveChannel est le canal PostgreSQL LISTEN/NOTIFY des événements temps réel.
@@ -14,7 +16,8 @@ import (
 const LiveChannel = "zelo_live"
 
 // LiveEvent est le message envoyé aux clients WebSocket.
-// Type « report » : signalement nouveau ou mis à jour (votes) ; « report_removed » : retiré.
+// Type « report » : signalement nouveau ou mis à jour (votes) ; « report_removed » : retiré ;
+// « resync » : des événements ont pu être perdus, le client recharge les signalements.
 type LiveEvent struct {
 	Type   string  `json:"type"`
 	Report *Report `json:"report,omitempty"`
@@ -34,8 +37,19 @@ func notify(ctx context.Context, tx pgx.Tx, ev LiveEvent) error {
 // La connexion est dédiée (LISTEN ne passe pas par le pool) et rétablie en cas de coupure.
 func (s *Store) Listen(ctx context.Context, log *slog.Logger, onEvent func([]byte)) {
 	backoff := time.Second
+	first := true
+	resync, _ := json.Marshal(LiveEvent{Type: "resync"})
+	connected := func() {
+		backoff = time.Second
+		// NOTIFY n'est pas rejoué : ce qui est arrivé pendant la coupure n'a atteint aucun client.
+		if !first {
+			metrics.LiveReconnects.Inc()
+			onEvent(resync)
+		}
+		first = false
+	}
 	for ctx.Err() == nil {
-		err := s.listenOnce(ctx, onEvent, func() { backoff = time.Second })
+		err := s.listenOnce(ctx, onEvent, connected)
 		if ctx.Err() != nil {
 			return
 		}

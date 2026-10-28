@@ -1,0 +1,11 @@
+# Réponses JSON compressées par Traefik (gzip, brotli, zstd selon le client) : une liste de
+# stations ou un itinéraire pèse 5 à 10 fois moins sur le réseau mobile. Les petites réponses
+# (< 1 Kio) et le flux temps réel ne sont pas concernés.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: compress
+  namespace: zelo
+spec:
+  compress:
+    minResponseBodyBytes: 1024

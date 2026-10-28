@@ -66,7 +66,7 @@ func (f *fakeStore) Vote(_ context.Context, id int64, voter string, up bool, _ f
 }
 
 func newTestAPI() (http.Handler, *fakeStore, *live.Hub) {
-	hub := live.NewHub()
+	hub := live.NewHub(0)
 	s := &fakeStore{hub: hub}
 	return New(s, hub, slog.New(slog.NewTextHandler(io.Discard, nil)), Config{}), s, hub
 }
@@ -88,7 +88,7 @@ func TestParseBBox(t *testing.T) {
 
 func TestAddReportBroadcasts(t *testing.T) {
 	h, s, hub := newTestAPI()
-	events, unsubscribe := hub.Subscribe()
+	events, unsubscribe, _ := hub.Subscribe()
 	defer unsubscribe()
 
 	rec := httptest.NewRecorder()
@@ -217,7 +217,7 @@ func TestRoute(t *testing.T) {
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	call := func(cfg Config, query string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		New(&fakeStore{}, live.NewHub(), quiet, cfg).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?"+query, nil))
+		New(&fakeStore{}, live.NewHub(0), quiet, cfg).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?"+query, nil))
 		return rec
 	}
 	ok := "from=49.2591,4.0245&to=49.2535,4.0341&mode=car&alternates=2"
@@ -266,7 +266,7 @@ func TestRoute(t *testing.T) {
 func TestParkingsTariff(t *testing.T) {
 	rec := httptest.NewRecorder()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	New(&fakeStore{}, live.NewHub(), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3", nil))
+	New(&fakeStore{}, live.NewHub(0), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3", nil))
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, `"name":"Erlon"`) || !strings.Contains(body, `"tariff":{"free":30,"prices":[{"minutes":60,"cents":120}`) || !strings.Contains(body, `"name":"Sans relevé","operator":"","kind":"","lat":0,"lon":0,"capacity":null,"disabled":null,"charging":null,"fee":null,"maxHeight":null,"openingHours":"","parkRide":false,"tariff":null`) {
 		t.Fatalf("%d %s", rec.Code, body)
@@ -275,7 +275,7 @@ func TestParkingsTariff(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := New(&fakeStore{}, live.NewHub(), quiet, Config{Router: &fakeRouter{}})
+	h := New(&fakeStore{}, live.NewHub(0), quiet, Config{Router: &fakeRouter{}})
 	count := func(route, code string) float64 {
 		return testutil.ToFloat64(metrics.HTTPRequests.WithLabelValues(route, code))
 	}

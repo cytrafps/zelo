@@ -1,5 +1,7 @@
 # Calcul d'itinéraires (Valhalla) avec le graphe routier embarqué dans l'image
 # (construit chaque semaine par la CI : .github/workflows/valhalla.yml). Sans état : se relance en 0,4 s.
+# Deux répliques à deux fils : un calcul long (trajet national) ne bloque plus les autres, et une
+# mise à jour du graphe ou un nœud en maintenance ne coupe pas les itinéraires.
 apiVersion: v1
 kind: Service
 metadata:
@@ -19,7 +21,9 @@ metadata:
   labels:
     app.kubernetes.io/name: valhalla
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   selector:
     matchLabels:
       app.kubernetes.io/name: valhalla
@@ -29,6 +33,13 @@ spec:
         app.kubernetes.io/name: valhalla
     spec:
       automountServiceAccountToken: false
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: valhalla
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -37,6 +48,8 @@ spec:
       containers:
         - name: valhalla
           image: ghcr.io/cytrafps/zelo-valhalla
+          # Nombre de fils de calcul (dernier argument), aussi fixé dans l'image depuis cette version.
+          command: [valhalla_service, /custom_files/valhalla.json, "2"]
           ports:
             - name: http
               containerPort: 8002
@@ -47,11 +60,22 @@ spec:
             httpGet: { path: /status, port: http }
             periodSeconds: 20
           resources:
-            # Mesuré : 40 Mo au repos, ~200 Mo après une série de calculs (essai du 27/10/2026).
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { memory: 512Mi }
+            # Mesuré à un fil : 40 Mo au repos, ~200 Mo après une série de calculs (essai du 27/10/2026) ;
+            # chaque fil a son propre cache de tuiles.
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { memory: 768Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: valhalla
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valhalla
