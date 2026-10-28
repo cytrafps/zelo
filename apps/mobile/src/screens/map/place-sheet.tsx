@@ -1,18 +1,18 @@
-import { BottomSheet, Column, Host, List, ListItem, Text } from '@expo/ui';
+import { BottomSheet, Button, Column, Host, List, ListItem, Text } from '@expo/ui';
 import { useState } from 'react';
 
 import type { ChargeStation, FuelStation, Parking } from '@/api/zelo';
 import { texte, useTheme, type Couleurs } from '@/theme';
-import { formatAgo, formatChargePrice, formatPrice, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
+import { formatAgo, formatCents, formatChargePrice, formatPrice, formatStay, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
 
 export type Selection =
   | { kind: 'fuel'; item: FuelStation }
   | { kind: 'charge'; item: ChargeStation }
   | { kind: 'parking'; item: Parking };
 
-type Props = { selection: Selection | null; onDismiss: () => void };
+type Props = { selection: Selection | null; onDismiss: () => void; onGo: (s: Selection) => void };
 
-export function PlaceSheet({ selection, onDismiss }: Props) {
+export function PlaceSheet({ selection, onDismiss, onGo }: Props) {
   const { c, dark } = useTheme();
   // On garde le dernier contenu affiché pendant l'animation de fermeture.
   const [shown, setShown] = useState(selection);
@@ -20,30 +20,33 @@ export function PlaceSheet({ selection, onDismiss }: Props) {
   return (
     <Host matchContents colorScheme={dark ? 'dark' : 'light'} seedColor={c.action}>
       <BottomSheet isPresented={selection !== null} onDismiss={onDismiss} snapPoints={['half', 'full']}>
-        {shown?.kind === 'fuel' && <FuelDetails s={shown.item} c={c} />}
-        {shown?.kind === 'charge' && <ChargeDetails s={shown.item} c={c} />}
-        {shown?.kind === 'parking' && <ParkingDetails p={shown.item} c={c} />}
+        {shown?.kind === 'fuel' && <FuelDetails s={shown.item} c={c} onGo={() => onGo(shown)} />}
+        {shown?.kind === 'charge' && <ChargeDetails s={shown.item} c={c} onGo={() => onGo(shown)} />}
+        {shown?.kind === 'parking' && <ParkingDetails p={shown.item} c={c} onGo={() => onGo(shown)} />}
       </BottomSheet>
     </Host>
   );
 }
 
-function Header({ title, subtitle, c }: { title: string; subtitle: string; c: Couleurs }) {
+function Header({ title, subtitle, c, onGo }: { title: string; subtitle: string; c: Couleurs; onGo: () => void }) {
   return (
-    <Column spacing={4} style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 }}>
-      <Text numberOfLines={2} textStyle={{ ...texte.titre, color: c.texte.principal }}>
-        {title}
-      </Text>
-      <Text textStyle={{ ...texte.secondaire, color: c.texte.secondaire }}>{subtitle}</Text>
+    <Column spacing={12} style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 }}>
+      <Column spacing={4}>
+        <Text numberOfLines={2} textStyle={{ ...texte.titre, color: c.texte.principal }}>
+          {title}
+        </Text>
+        <Text textStyle={{ ...texte.secondaire, color: c.texte.secondaire }}>{subtitle}</Text>
+      </Column>
+      <Button label="Y aller" onPress={onGo} />
     </Column>
   );
 }
 
-function FuelDetails({ s, c }: { s: FuelStation; c: Couleurs }) {
+function FuelDetails({ s, c, onGo }: { s: FuelStation; c: Couleurs; onGo: () => void }) {
   const fuels = Object.keys(s.prices).sort((a, b) => rank(a) - rank(b));
   return (
     <>
-      <Header title={s.address || 'Station-service'} subtitle={`${s.city} · prix mis à jour ${formatAgo(s.updatedAt)}`} c={c} />
+      <Header title={s.address || 'Station-service'} subtitle={`${s.city} · prix mis à jour ${formatAgo(s.updatedAt)}`} c={c} onGo={onGo} />
       <List>
         {fuels.length === 0 ? (
           <ListItem>
@@ -66,7 +69,7 @@ function FuelDetails({ s, c }: { s: FuelStation; c: Couleurs }) {
   );
 }
 
-function ChargeDetails({ s, c }: { s: ChargeStation; c: Couleurs }) {
+function ChargeDetails({ s, c, onGo }: { s: ChargeStation; c: Couleurs; onGo: () => void }) {
   const availability =
     s.available === null
       ? 'Disponibilité non publiée'
@@ -74,7 +77,7 @@ function ChargeDetails({ s, c }: { s: ChargeStation; c: Couleurs }) {
   const color = s.available === null ? c.texte.secondaire : s.available > 0 ? c.recharge.texte : c.alerte.base;
   return (
     <>
-      <Header title={s.name || 'Borne de recharge'} subtitle={s.operator || 'Opérateur inconnu'} c={c} />
+      <Header title={s.name || 'Borne de recharge'} subtitle={s.operator || 'Opérateur inconnu'} c={c} onGo={onGo} />
       <List>
         <ListItem
           supportingText={s.observedAt ? `État relevé ${formatAgo(s.observedAt)}` : undefined}
@@ -116,11 +119,14 @@ const PARKING_KIND = {
 
 const meters = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function ParkingDetails({ p, c }: { p: Parking; c: Couleurs }) {
+function ParkingDetails({ p, c, onGo }: { p: Parking; c: Couleurs; onGo: () => void }) {
   const rows: [label: string, value: string][] = [
     ['Places', p.capacity === null ? 'Non renseigné' : String(p.capacity)],
-    ['Tarif', p.fee === null ? 'Non renseigné' : p.fee ? 'Payant' : 'Gratuit'],
   ];
+  if (p.tariff) {
+    if (p.tariff.free > 0) rows.push([formatStay(p.tariff.free), 'Offertes']);
+    for (const { minutes, cents } of p.tariff.prices) rows.push([formatStay(minutes), formatCents(cents)]);
+  } else rows.push(['Tarif', p.fee === null ? 'Non renseigné' : p.fee ? 'Payant' : 'Gratuit']);
   if (p.maxHeight !== null) rows.push(['Hauteur max.', `${meters.format(p.maxHeight)} m`]);
   if (p.disabled !== null) rows.push(['Places PMR', String(p.disabled)]);
   if (p.charging !== null) rows.push(['Places avec recharge', String(p.charging)]);
@@ -131,7 +137,7 @@ function ParkingDetails({ p, c }: { p: Parking; c: Couleurs }) {
     .join(' · ');
   return (
     <>
-      <Header title={p.name || PARKING_KIND[p.kind]} subtitle={subtitle || 'Parking public'} c={c} />
+      <Header title={p.name || PARKING_KIND[p.kind]} subtitle={subtitle || 'Parking public'} c={c} onGo={onGo} />
       <List>
         {rows.map(([label, value]) => (
           <ListItem key={label} trailing={<Text textStyle={{ ...texte.corps, color: c.texte.secondaire }}>{value}</Text>}>
@@ -140,11 +146,18 @@ function ParkingDetails({ p, c }: { p: Parking; c: Couleurs }) {
         ))}
       </List>
       <Column style={{ paddingHorizontal: 20, paddingVertical: 12 }}>
-        <Text textStyle={{ ...texte.petit, color: c.texte.tertiaire }}>Données © contributeurs OpenStreetMap</Text>
+        <Text textStyle={{ ...texte.petit, color: c.texte.tertiaire }}>
+          {p.tariff
+            ? `Tarifs relevés le ${checkedDate(p.tariff.checked)} sur le site de l'exploitant ; seuls ceux affichés sur place font foi. Données © contributeurs OpenStreetMap`
+            : 'Données © contributeurs OpenStreetMap'}
+        </Text>
       </Column>
     </>
   );
 }
+
+const day = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+const checkedDate = (iso: string) => day.format(new Date(`${iso}T12:00:00`));
 
 const rank = (fuel: string) => {
   const i = FUEL_ORDER.indexOf(fuel);

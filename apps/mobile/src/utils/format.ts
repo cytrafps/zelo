@@ -4,6 +4,14 @@ const euro = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 3, maximumF
 
 export const formatPrice = (value: number) => `${euro.format(value)} €`;
 
+const cents = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Prix en centimes : « 1,20 € », « Gratuit ». */
+export const formatCents = (c: number) => (c === 0 ? 'Gratuit' : `${cents.format(c / 100)} €`);
+
+/** Durée de stationnement : « 30 min », « 1 h », « 24 h ». */
+export const formatStay = (minutes: number) => (minutes < 60 ? `${minutes} min` : `${minutes / 60} h`);
+
 const kwh = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 
 /** Prix de recharge : « 0,59 €/kWh », « dès 0,36 €/kWh », « Gratuite ». */

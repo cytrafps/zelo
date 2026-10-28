@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"slices"
 	"time"
+	_ "time/tzdata" // l'image de l'API n'a pas de base de fuseaux horaires
 )
 
 // Mode de déplacement : en voiture jusqu'au parking, à pied jusqu'à la destination.
@@ -62,17 +63,59 @@ func New(baseURL string) *Client {
 	return &Client{base: baseURL, http: &http.Client{Timeout: 5 * time.Second}}
 }
 
+// Options d'un calcul d'itinéraire ; la valeur zéro donne le plus rapide, en partant maintenant.
+type Options struct {
+	// Alternates : nombre d'itinéraires en plus du meilleur, borné à MaxAlternates.
+	Alternates int
+	// Heading : cap au départ, en degrés depuis le nord. Évite de faire partir à contresens
+	// (et donc de faire faire demi-tour) une voiture qui roule déjà. nil si inconnu.
+	Heading *float64
+	// Depart : heure de départ, pour l'heure d'arrivée et les restrictions horaires
+	// (zones piétonnes, accès réglementés). Zéro : maintenant.
+	Depart time.Time
+	// Évitements souples : Valhalla les contourne s'il existe un autre chemin.
+	AvoidTolls, AvoidHighways bool
+}
+
+// HeadingTolerance (°) : écart admis entre le cap donné et la direction de la route.
+const HeadingTolerance = 45
+
+// Reims, comme toute la zone couverte : Valhalla attend l'heure locale du point de départ.
+var paris = mustLoad("Europe/Paris")
+
+func mustLoad(name string) *time.Location {
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		panic(err)
+	}
+	return loc
+}
+
 type location struct {
-	Lat          float64 `json:"lat"`
-	Lon          float64 `json:"lon"`
-	SearchCutoff int     `json:"search_cutoff"`
+	Lat              float64  `json:"lat"`
+	Lon              float64  `json:"lon"`
+	SearchCutoff     int      `json:"search_cutoff"`
+	Heading          *float64 `json:"heading,omitempty"`
+	HeadingTolerance int      `json:"heading_tolerance,omitempty"`
+}
+
+type dateTime struct {
+	Type  int    `json:"type"` // 1 : partir à
+	Value string `json:"value"`
+}
+
+type autoCosting struct {
+	UseTolls    *float64 `json:"use_tolls,omitempty"`
+	UseHighways *float64 `json:"use_highways,omitempty"`
 }
 
 type request struct {
-	Locations  []location `json:"locations"`
-	Costing    Mode       `json:"costing"`
-	Alternates int        `json:"alternates,omitempty"`
-	Directions struct {
+	Locations      []location           `json:"locations"`
+	Costing        Mode                 `json:"costing"`
+	CostingOptions map[Mode]autoCosting `json:"costing_options,omitempty"`
+	DateTime       *dateTime            `json:"date_time,omitempty"`
+	Alternates     int                  `json:"alternates,omitempty"`
+	Directions     struct {
 		Language string `json:"language"`
 		Units    string `json:"units"`
 	} `json:"directions_options"`
@@ -108,12 +151,30 @@ type response struct {
 // MaxAlternates : Valhalla propose au plus deux itinéraires en plus du meilleur.
 const MaxAlternates = 2
 
-// Routes calcule l'itinéraire de from à to, puis jusqu'à `alternates` autres, du plus rapide au plus lent.
-func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, alternates int) ([]Route, error) {
+// Routes calcule l'itinéraire de from à to, puis jusqu'à opts.Alternates autres, du plus rapide au plus lent.
+func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Options) ([]Route, error) {
 	var req request
-	req.Locations = []location{{from.Lat, from.Lon, SearchCutoff}, {to.Lat, to.Lon, SearchCutoff}}
+	start := location{Lat: from.Lat, Lon: from.Lon, SearchCutoff: SearchCutoff}
+	if opts.Heading != nil {
+		start.Heading, start.HeadingTolerance = opts.Heading, HeadingTolerance
+	}
+	req.Locations = []location{start, {Lat: to.Lat, Lon: to.Lon, SearchCutoff: SearchCutoff}}
 	req.Costing = mode
-	req.Alternates = min(max(alternates, 0), MaxAlternates)
+	req.Alternates = min(max(opts.Alternates, 0), MaxAlternates)
+	if !opts.Depart.IsZero() {
+		req.DateTime = &dateTime{Type: 1, Value: opts.Depart.In(paris).Format("2006-01-02T15:04")}
+	}
+	if mode == Car && (opts.AvoidTolls || opts.AvoidHighways) {
+		var a autoCosting
+		zero := 0.0
+		if opts.AvoidTolls {
+			a.UseTolls = &zero
+		}
+		if opts.AvoidHighways {
+			a.UseHighways = &zero
+		}
+		req.CostingOptions = map[Mode]autoCosting{Car: a}
+	}
 	req.Directions.Language = "fr-FR"
 	req.Directions.Units = "kilometers"
 	body, _ := json.Marshal(req)

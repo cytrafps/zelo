@@ -49,6 +49,18 @@ export type Parking = {
   maxHeight: number | null;
   openingHours: string;
   parkRide: boolean;
+  /** Tarifs relevés sur le site de l'exploitant ; null si non relevés. */
+  tariff: Tariff | null;
+};
+
+export type Tariff = {
+  /** Minutes offertes. */
+  free: number;
+  /** Prix (centimes) pour 1 h, 3 h, 24 h. */
+  prices: { minutes: number; cents: number }[];
+  source: string;
+  /** Date du relevé (AAAA-MM-JJ). */
+  checked: string;
 };
 
 export const REPORT_KINDS = [
@@ -111,15 +123,28 @@ export const postReport = (kind: ReportKind, lat: number, lon: number) =>
 export const voteReport = (id: number, up: boolean) =>
   request<{ report: Report; removed: boolean }>(`/v1/reports/${id}/votes`, { method: 'POST', body: JSON.stringify({ up }) });
 
+export type Avoid = 'tolls' | 'highways';
+
+export type RouteOptions = {
+  alternates?: number;
+  /** Cap au départ (°) : évite de faire partir à contresens une voiture qui roule. */
+  heading?: number | null;
+  /** Heure de départ (ms) ; absente : maintenant. */
+  depart?: number | null;
+  avoid?: readonly Avoid[];
+};
+
 /** Itinéraires (Valhalla), du plus rapide au plus lent. 422 : point hors de la zone couverte. */
-export const getRoutes = (
+export function getRoutes(
   from: { lat: number; lon: number },
   to: { lat: number; lon: number },
   mode: 'car' | 'walk',
-  alternates = 0,
+  opts: RouteOptions = {},
   signal?: AbortSignal,
-) =>
-  request<{ routes: Route[] }>(
-    `/v1/route?from=${from.lat},${from.lon}&to=${to.lat},${to.lon}&mode=${mode}&alternates=${alternates}`,
-    { signal },
-  ).then((r) => r.routes);
+) {
+  const q = [`from=${from.lat},${from.lon}`, `to=${to.lat},${to.lon}`, `mode=${mode}`, `alternates=${opts.alternates ?? 0}`];
+  if (opts.heading != null) q.push(`heading=${Math.round(opts.heading) % 360}`);
+  if (opts.depart != null) q.push(`depart=${Math.floor(opts.depart / 1000)}`);
+  if (opts.avoid?.length) q.push(`avoid=${opts.avoid.join(',')}`);
+  return request<{ routes: Route[] }>(`/v1/route?${q.join('&')}`, { signal }).then((r) => r.routes);
+}
