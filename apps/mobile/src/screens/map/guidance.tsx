@@ -7,7 +7,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNow } from '@/hooks/use-now';
 import type { Phase, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
-import { formatDistance, type LatLon } from '@/utils/geo';
+import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
 import { cumulative, formatClock, formatDuration, progress, type Route } from '@/utils/route';
 
 import { maneuverIcon } from './maneuver';
@@ -22,12 +22,12 @@ const ARRIVED_M = { drive: 30, walk: 15 } as const;
 
 /** Position précise pendant le guidage seulement (la carte d'accueil se contente d'une précision moyenne). */
 function useNavigationFix() {
-  const [fix, setFix] = useState<LatLon | null>(null);
+  const [fix, setFix] = useState<Fix | null>(null);
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
     Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, (l) =>
-      setFix({ lat: l.coords.latitude, lon: l.coords.longitude }),
+      setFix({ lat: l.coords.latitude, lon: l.coords.longitude, heading: course(l.coords) }),
     ).then((s) => (cancelled ? s.remove() : (sub = s)));
     return () => {
       cancelled = true;
@@ -45,7 +45,7 @@ type Props = {
   top: number;
   bottomInset: number;
   rerouting: boolean;
-  onReroute: (from: LatLon) => void;
+  onReroute: (from: Fix) => void;
   onArrive: (at: LatLon) => void;
   onClose: () => void;
 };

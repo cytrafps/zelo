@@ -116,7 +116,7 @@ export function MapScreen() {
     if (!from) return flash('Active la localisation pour calculer un itinéraire');
     const box = around(place, 0.012);
     const [parkings, charge] = await Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]);
-    trips.start(from, place, targets(place, parkings, charge));
+    trips.start({ ...from, heading: location.heading() }, place, targets(place, parkings, charge));
   };
 
   // Aperçu : la carte cadre tous les itinéraires au-dessus de la feuille.
@@ -245,14 +245,15 @@ export function MapScreen() {
               reports={data.reports}
               c={c}
               bottomInset={insets.bottom}
+              avoid={trips.avoid}
               onSelect={trips.select}
               onGo={(i) => {
                 setFollowing(true);
                 trips.go(i);
               }}
-              onTarget={async (t) => {
+              onChange={async (change) => {
                 const from = await location.locate().catch(() => null);
-                if (from) trips.setTarget(from, t);
+                if (from) trips.update({ ...from, heading: location.heading() }, change);
               }}
               onClose={trips.end}
             />

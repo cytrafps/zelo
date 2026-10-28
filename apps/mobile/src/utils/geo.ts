@@ -2,6 +2,19 @@
 
 export type LatLon = { lat: number; lon: number };
 
+/** Position GPS avec, quand on roule, le cap de déplacement (° depuis le nord). */
+export type Fix = LatLon & { heading?: number | null };
+
+/** Vitesse (m/s, ~11 km/h) sous laquelle le cap GPS n'a pas de sens : à l'arrêt, il est aléatoire. */
+export const MIN_COURSE_SPEED = 3;
+
+/** Cap de déplacement fiable, ou null : à l'arrêt, à pied ou sans mesure, on ne le donne pas. */
+export function course(c: { heading: number | null; speed: number | null }) {
+  return c.speed !== null && c.speed >= MIN_COURSE_SPEED && c.heading !== null && c.heading >= 0 && c.heading <= 360
+    ? c.heading
+    : null;
+}
+
 const EARTH_RADIUS_M = 6_371_008.8;
 const rad = (deg: number) => (deg * Math.PI) / 180;
 

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
 var gare, cathedrale = Point{49.2591, 4.0245}, Point{49.2535, 4.0341}
@@ -39,7 +40,7 @@ func TestRouteGareCathedrale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, 0)
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, Options{})
 	if err != nil || len(routes) != 1 {
 		t.Fatal(routes, err)
 	}
@@ -70,7 +71,7 @@ func TestRoutesAlternatives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, Point{49.2475, 4.042}, Car, 5)
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, Point{49.2475, 4.042}, Car, Options{Alternates: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestRouteErreurs(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := fakeValhalla(t, tc.status, []byte(tc.body)).Routes(context.Background(), gare, cathedrale, Walk, 0)
+			_, err := fakeValhalla(t, tc.status, []byte(tc.body)).Routes(context.Background(), gare, cathedrale, Walk, Options{})
 			if err == nil || (tc.want != nil && !errors.Is(err, tc.want)) {
 				t.Errorf("erreur %v, attendu %v", err, tc.want)
 			}
@@ -124,5 +125,45 @@ func TestDecodePolyline6(t *testing.T) {
 	}
 	if _, err := decodePolyline6("_izlhA~rlgd"); err == nil {
 		t.Error("tracé tronqué accepté")
+	}
+}
+
+func TestRouteOptions(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = nil
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(`{"trip":{"summary":{"length":1,"time":60},"legs":[{"shape":"","maneuvers":[]}]}}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := 92.5
+	// 7 h 30 UTC un 28 octobre : 8 h 30 à Reims (heure d'hiver).
+	depart := time.Date(2026, 10, 28, 7, 30, 0, 0, time.UTC)
+	if _, err := New(srv.URL).Routes(context.Background(), gare, cathedrale, Car, Options{Heading: &h, Depart: depart, AvoidTolls: true}); err != nil {
+		t.Fatal(err)
+	}
+	start := got["locations"].([]any)[0].(map[string]any)
+	if start["heading"] != 92.5 || start["heading_tolerance"] != float64(HeadingTolerance) {
+		t.Errorf("départ : %v", start)
+	}
+	if _, ok := got["locations"].([]any)[1].(map[string]any)["heading"]; ok {
+		t.Error("le cap ne concerne que le départ")
+	}
+	if dt := got["date_time"].(map[string]any); dt["type"] != 1.0 || dt["value"] != "2026-10-28T08:30" {
+		t.Errorf("date_time : %v", dt)
+	}
+	auto := got["costing_options"].(map[string]any)["auto"].(map[string]any)
+	if auto["use_tolls"] != 0.0 || auto["use_highways"] != nil {
+		t.Errorf("costing_options : %v", auto)
+	}
+
+	// Sans option : requête inchangée.
+	if _, err := New(srv.URL).Routes(context.Background(), gare, cathedrale, Walk, Options{AvoidTolls: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"date_time", "costing_options"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("%s envoyé sans raison", k)
+		}
 	}
 }

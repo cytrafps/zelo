@@ -1,7 +1,12 @@
 import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 
+import { course } from '@/utils/geo';
+
 export type Position = { lat: number; lon: number };
+
+/** Au-delà, le cap mesuré ne dit plus rien de la direction actuelle. */
+const HEADING_TTL_MS = 10_000;
 
 /**
  * Position de l'utilisateur, au premier plan uniquement (pas de suivi en arrière-plan).
@@ -10,6 +15,7 @@ export type Position = { lat: number; lon: number };
 export function useUserLocation() {
   const [permission, requestPermission] = Location.useForegroundPermissions();
   const [position, setPosition] = useState<Position | null>(null);
+  const lastCourse = useRef<{ heading: number | null; at: number }>({ heading: null, at: 0 });
   const granted = permission?.granted ?? false;
   const asked = useRef(false);
 
@@ -24,9 +30,10 @@ export function useUserLocation() {
     if (!granted) return;
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
-    Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 20 }, (l) =>
-      setPosition({ lat: l.coords.latitude, lon: l.coords.longitude }),
-    ).then((s) => (cancelled ? s.remove() : (sub = s)));
+    Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 20 }, (l) => {
+      lastCourse.current = { heading: course(l.coords), at: l.timestamp };
+      setPosition({ lat: l.coords.latitude, lon: l.coords.longitude });
+    }).then((s) => (cancelled ? s.remove() : (sub = s)));
     return () => {
       cancelled = true;
       sub?.remove();
@@ -41,5 +48,8 @@ export function useUserLocation() {
     return { lat: l.coords.latitude, lon: l.coords.longitude };
   };
 
-  return { granted, position, locate };
+  /** Cap de déplacement si l'on roule en ce moment, sinon null (voir `course`). */
+  const heading = () => (Date.now() - lastCourse.current.at < HEADING_TTL_MS ? lastCourse.current.heading : null);
+
+  return { granted, position, locate, heading };
 }
