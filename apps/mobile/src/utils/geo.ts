@@ -63,3 +63,30 @@ export function rankByProximity<T extends LatLon & { score: number; municipality
   const adjusted = (x: T) => (x.municipality ? x.score : x.score - 0.15 * Math.log10(1 + distance(origin, x) / 1000));
   return [...items].sort((a, b) => adjusted(b) - adjusted(a)).slice(0, limit);
 }
+
+/** Position trop imprécise pour guider (m) : gardée seulement faute de mieux. */
+const MAX_ACCURACY_M = 100;
+/** Vitesse impossible en ville comme sur autoroute (m/s, ~250 km/h) : un saut GPS, pas un déplacement. */
+const MAX_SPEED_MS = 70;
+/** Une position imprécise reste écartée tant que la dernière bonne a moins de ça. */
+const KEEP_GOOD_MS = 10_000;
+
+export type TimedFix = Fix & { at: number };
+
+/**
+ * Filtre des positions (à la Traccar) : écarte un saut impossible depuis la position retenue et
+ * une position imprécise quand une bonne est récente. Renvoie la position à retenir.
+ */
+export function keepFix(prev: TimedFix | null, next: TimedFix): TimedFix {
+  if (!prev) return next;
+  const dt = (next.at - prev.at) / 1000;
+  if (dt <= 0) return prev;
+  const bad = (next.accuracy ?? 0) > MAX_ACCURACY_M;
+  const fresh = next.at - prev.at < KEEP_GOOD_MS && (prev.accuracy ?? 0) <= MAX_ACCURACY_M;
+  if (bad && fresh) return prev;
+  if (distance(prev, next) / dt > MAX_SPEED_MS && !bad) {
+    // Un saut, sauf s'il se confirme : au-delà de 10 s, la nouvelle position l'emporte.
+    return next.at - prev.at < KEEP_GOOD_MS ? prev : next;
+  }
+  return next;
+}

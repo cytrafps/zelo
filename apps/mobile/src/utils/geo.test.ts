@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { course, distance, formatDistance, nearest, rankByProximity, walkingMinutes } from './geo.ts';
+import { course, distance, formatDistance, keepFix, nearest, rankByProximity, walkingMinutes } from './geo.ts';
 
 const cathedrale = { lat: 49.2535, lon: 4.0341 };
 const gare = { lat: 49.2591, lon: 4.0245 };
@@ -57,4 +57,21 @@ test("course : le cap GPS seulement quand on roule", () => {
   assert.equal(course({ heading: 87, speed: 1.2 }), null); // à pied ou à l'arrêt
   assert.equal(course({ heading: -1, speed: 12 }), null); // Android : cap inconnu
   assert.equal(course({ heading: null, speed: null }), null);
+});
+
+test('filtre GPS : saut impossible et position imprécise écartés tant qu’une bonne est récente', () => {
+  const a = { lat: 49.25, lon: 4.03, accuracy: 8, at: 0 };
+  // 1 km en 2 s : 500 m/s, un saut.
+  assert.equal(keepFix(a, { lat: 49.259, lon: 4.03, accuracy: 8, at: 2000 }), a);
+  // 30 m en 2 s : normal.
+  const b = { lat: 49.2503, lon: 4.03, accuracy: 8, at: 2000 };
+  assert.equal(keepFix(a, b), b);
+  // Position à 300 m près juste après une bonne : écartée ; 15 s plus tard, faute de mieux, gardée.
+  assert.equal(keepFix(b, { lat: 49.2504, lon: 4.03, accuracy: 300, at: 4000 }), b);
+  const late = { lat: 49.2504, lon: 4.03, accuracy: 300, at: 20_000 };
+  assert.equal(keepFix(b, late), late);
+  // Un saut qui se confirme au-delà de 10 s (tunnel, GPS revenu) est accepté.
+  const far = { lat: 49.3, lon: 4.03, accuracy: 8, at: 13_000 };
+  assert.equal(keepFix(a, far), far);
+  assert.equal(keepFix(null, a), a);
 });
