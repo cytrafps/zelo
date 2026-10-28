@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -25,7 +27,7 @@ func fakeValhalla(t *testing.T, status int, body []byte) *Client {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatal(err)
 		}
-		if req.Directions.Language != "fr-FR" || len(req.Locations) != 2 || req.Locations[1].SearchCutoff != SearchCutoff || req.Alternates > MaxAlternates {
+		if req.Format != "osrm" || req.Directions.Language != "fr-FR" || len(req.Locations) != 2 || req.Locations[1].SearchCutoff != SearchCutoff || req.Alternates > MaxAlternates {
 			t.Errorf("options manquantes : %+v", req)
 		}
 		w.WriteHeader(status)
@@ -45,14 +47,18 @@ func TestRouteGareCathedrale(t *testing.T) {
 		t.Fatal(routes, err)
 	}
 	r := routes[0]
-	if r.Distance != 1875 || math.Round(r.Duration) != 449 {
+	if math.Round(r.Distance) != 2588 || math.Round(r.Duration) != 500 {
 		t.Errorf("distance %v m, durée %v s", r.Distance, r.Duration)
 	}
-	if len(r.Steps) != 13 || r.Steps[4].Instruction != "Tournez tout de suite à gauche dans Boulevard Général Leclerc." {
+	if len(r.Steps) != 9 || r.Steps[1].Instruction != "Tournez à droite dans Boulevard Joffre." || r.Steps[1].Type != 10 {
 		t.Fatalf("étapes : %+v", r.Steps)
 	}
-	if r.Steps[0].Street != "Cour de la Gare" || r.Steps[0].Distance != 55 {
+	if r.Steps[0].Street != "Cour de la Gare" || r.Steps[0].Type != 1 || math.Round(r.Steps[0].Distance) != 52 {
 		t.Errorf("première étape : %+v", r.Steps[0])
+	}
+	// Types Valhalla retrouvés depuis OSRM : demi-tour, rond-point (entrée, sortie), arrivée à droite.
+	if got := []int{r.Steps[2].Type, r.Steps[5].Type, r.Steps[6].Type, r.Steps[8].Type}; !slices.Equal(got, []int{13, 26, 27, 5}) {
+		t.Errorf("types : %v", got)
 	}
 	// Le tracé part de la gare et arrive à la cathédrale (à quelques dizaines de mètres près).
 	first, last := r.Coordinates[0], r.Coordinates[len(r.Coordinates)-1]
@@ -94,9 +100,9 @@ func TestRouteErreurs(t *testing.T) {
 		body   string
 		want   error
 	}{
-		"hors zone":    {400, `{"error_code":171,"error":"No suitable edges near location"}`, ErrOutOfArea},
-		"non reliés":   {400, `{"error_code":442,"error":"No path could be found for input"}`, ErrNoRoute},
-		"autre erreur": {500, `{"error_code":0,"error":"boom"}`, nil},
+		"hors zone":    {400, `{"code":"NoSegment","message":"One of the supplied input coordinates could not snap to street segment."}`, ErrOutOfArea},
+		"non reliés":   {400, `{"code":"NoRoute","message":"Impossible route between points"}`, ErrNoRoute},
+		"autre erreur": {500, `{"code":"InvalidValue","message":"boom"}`, nil},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -133,7 +139,7 @@ func TestRouteOptions(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = nil
 		json.NewDecoder(r.Body).Decode(&got)
-		w.Write([]byte(`{"trip":{"summary":{"length":1,"time":60},"legs":[{"shape":"","maneuvers":[]}]}}`))
+		w.Write([]byte(`{"code":"Ok","routes":[{"distance":1000,"duration":60,"geometry":"","legs":[{"steps":[]}]}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	h := 92.5
@@ -164,6 +170,110 @@ func TestRouteOptions(t *testing.T) {
 	for _, k := range []string{"date_time", "costing_options"} {
 		if _, ok := got[k]; ok {
 			t.Errorf("%s envoyé sans raison", k)
+		}
+	}
+}
+
+// Feux et stops relevés dans OSM autour du trajet gare → Saint-Rémi : trois manœuvres s'y font.
+func TestAnnotateControls(t *testing.T) {
+	body, err := os.ReadFile("testdata/gare-saint-remi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var controls []Control
+	raw, _ := os.ReadFile("testdata/controles-saint-remi.json")
+	if err := json.Unmarshal(raw, &controls); err != nil {
+		t.Fatal(err)
+	}
+	r := routes[0]
+	Annotate(&r, controls)
+	got := map[int]string{}
+	for i, s := range r.Steps {
+		if s.Control != "" {
+			got[i] = s.Control
+		}
+		if (s.Type == 26 || s.Type == 27) && s.Control != "" {
+			t.Errorf("rond-point annoté : %+v", s)
+		}
+	}
+	if want := map[int]string{2: "feu", 8: "feu", 11: "stop"}; !maps.Equal(got, want) {
+		t.Fatalf("contrôles %v, attendu %v", got, want)
+	}
+	if s := r.Steps[2].Instruction; s != "Au feu, tournez à droite dans Boulevard Louis Roederer." {
+		t.Errorf("consigne : %q", s)
+	}
+	if s := r.Steps[11].Instruction; s != "Au stop, tournez à droite dans Rue Damide." {
+		t.Errorf("consigne : %q", s)
+	}
+}
+
+// Un feu du sens inverse, posé juste après le carrefour sur la rue où l'on s'engage, est ignoré.
+func TestAnnotateIgnoresOppositeSignal(t *testing.T) {
+	// Tout droit vers l'est 100 m, puis à gauche vers le nord 100 m : virage au point 1.
+	r := Route{
+		Coordinates: [][2]float64{{4.0, 49.25}, {4.0013784, 49.25}, {4.0013784, 49.2508983}},
+		Steps:       []Step{{Type: 1, Shape: 0}, {Type: 15, Shape: 1, Instruction: "Tournez à gauche."}, {Type: 4, Shape: 2}},
+	}
+	after := Control{Kind: "feu", Lat: 49.2501797, Lon: 4.0013784} // 20 m après le virage
+	Annotate(&r, []Control{after})
+	if r.Steps[1].Control != "" {
+		t.Fatalf("feu du sens inverse retenu : %+v", r.Steps[1])
+	}
+	before := Control{Kind: "feu", Lat: 49.25, Lon: 4.0012} // 12 m avant
+	Annotate(&r, []Control{before})
+	if r.Steps[1].Control != "feu" || r.Steps[1].Instruction != "Au feu, tournez à gauche." {
+		t.Fatalf("feu d'approche ignoré : %+v", r.Steps[1])
+	}
+}
+
+func TestApproachLanes(t *testing.T) {
+	pts := [][2]float64{{4.0, 49.25}, {4.0006, 49.25}, {4.0012, 49.25}} // ~44 m entre points
+	step := func(modifier string, lanes ...[]osrmLane) osrmStep {
+		var s osrmStep
+		s.Maneuver.Modifier = modifier
+		for i, l := range lanes {
+			s.Intersections = append(s.Intersections, struct {
+				GeometryIndex int        `json:"geometry_index"`
+				Lanes         []osrmLane `json:"lanes"`
+			}{i, l})
+		}
+		return s
+	}
+	left := []osrmLane{{Indications: []string{"left"}, Valid: true, Active: true}, {Indications: []string{"straight", "right"}, Valid: false}}
+	straight := []osrmLane{{Indications: []string{"straight"}, Valid: true, Active: true}, {Indications: []string{"straight", "right"}, Valid: true}}
+
+	// Voies décrites au carrefour précédent (44 m avant), qui mènent au virage à gauche.
+	prev, turn := step("", nil, left), step("left")
+	turn.Intersections = append(turn.Intersections, struct {
+		GeometryIndex int        `json:"geometry_index"`
+		Lanes         []osrmLane `json:"lanes"`
+	}{2, nil})
+	if got := approachLanes(prev, turn, pts); len(got) != 2 || !got[0].Take || got[1].Take {
+		t.Errorf("virage à gauche : %+v", got)
+	}
+	// Voies « tout droit » d'un carrefour intermédiaire : sans rapport avec le virage, rien à montrer.
+	if got := approachLanes(step("", nil, straight), turn, pts); got != nil {
+		t.Errorf("voies hors sujet : %+v", got)
+	}
+}
+
+func TestManeuverType(t *testing.T) {
+	cases := []struct {
+		kind, modifier string
+		want           int
+	}{
+		{"depart", "", 1}, {"turn", "right", 10}, {"turn", "sharp left", 14}, {"end of road", "left", 15},
+		{"continue", "uturn", 13}, {"new name", "straight", 8}, {"off ramp", "slight right", 20},
+		{"on ramp", "slight left", 19}, {"fork", "slight right", 23}, {"merge", "slight left", 38},
+		{"rotary", "right", 26}, {"exit roundabout", "slight right", 27}, {"arrive", "left", 6},
+	}
+	for _, c := range cases {
+		if got := maneuverType(c.kind, c.modifier); got != c.want {
+			t.Errorf("%s %s : %d, attendu %d", c.kind, c.modifier, got, c.want)
 		}
 	}
 }

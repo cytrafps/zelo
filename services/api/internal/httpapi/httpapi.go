@@ -21,6 +21,7 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/time/rate"
 
+	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
 	"github.com/cytrafps/zelo/services/api/internal/route"
@@ -50,6 +51,7 @@ type Store interface {
 	FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error)
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(context.Context, store.BBox, int) ([]store.Parking, error)
+	Controls(ctx context.Context, points [][2]float64, radius float64) ([]junction.Control, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
 	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
 	Vote(ctx context.Context, id int64, voter string, up bool, ttl func(kind string) time.Duration) (store.Report, bool, error)
@@ -377,8 +379,36 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, "calcul d'itinéraire indisponible")
 	default:
 		metrics.Routes.WithLabelValues(q.Get("mode"), "ok").Inc()
+		if mode == route.Car {
+			a.annotate(ctx, res)
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"routes": res})
+	}
+}
+
+// annotate ajoute feux et stops aux manœuvres. Sans eux, le guidage reste juste : une base
+// indisponible est seulement journalisée.
+func (a *API) annotate(ctx context.Context, routes []route.Route) {
+	var points [][2]float64
+	for _, r := range routes {
+		for _, s := range r.Steps {
+			if s.Shape < len(r.Coordinates) {
+				points = append(points, r.Coordinates[s.Shape])
+			}
+		}
+	}
+	found, err := a.store.Controls(ctx, points, route.ControlRadius)
+	if err != nil {
+		a.log.Warn("feux et stops", "err", err)
+		return
+	}
+	controls := make([]route.Control, len(found))
+	for i, c := range found {
+		controls[i] = route.Control{Kind: c.Kind, Lat: c.Lat, Lon: c.Lon}
+	}
+	for i := range routes {
+		route.Annotate(&routes[i], controls)
 	}
 }
 

@@ -8,9 +8,9 @@ import { useNow } from '@/hooks/use-now';
 import type { Phase, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
-import { cumulative, formatClock, formatDuration, progress, type Progress, type Route } from '@/utils/route';
+import { cumulative, formatClock, formatDuration, progress, type Lane, type Progress, type Route } from '@/utils/route';
 
-import { maneuverIcon } from './maneuver';
+import { laneIcon, maneuverIcon, maneuverSide } from './maneuver';
 
 const ios = Platform.OS === 'ios';
 
@@ -69,6 +69,8 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
       : progress(route, cum, fix, last?.route === route ? last.p.segment : undefined);
   if (fix && p && (last?.fix !== fix || last.route !== route)) setLast({ fix, route, p });
 
+  /** Hauteur du bandeau (il grandit avec les voies) : « Puis » se place juste dessous. */
+  const [bannerHeight, setBannerHeight] = useState(110);
   const offCount = useRef(0);
   const lastReroute = useRef(0);
   const arrived = useRef<Route | null>(null);
@@ -98,19 +100,27 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
 
   return (
     <>
-      <View style={[styles.banner, { top }]} accessibilityLiveRegion="polite">
+      <View
+        style={[styles.banner, { top }]}
+        accessibilityLiveRegion="polite"
+        onLayout={(e) => setBannerHeight(e.nativeEvent.layout.height)}
+      >
         <View style={styles.bannerRow}>
           <SymbolView name={maneuverIcon(step?.type ?? 0)} tintColor="#FFFFFF" size={40} />
           <View style={styles.flex}>
-            <Text style={styles.distance}>{rerouting ? 'Nouvel itinéraire…' : formatDistance(p?.toNext ?? step?.distance ?? 0)}</Text>
+            <Text style={styles.distance}>
+              {rerouting ? 'Nouvel itinéraire…' : formatDistance(p?.toNext ?? step?.distance ?? 0)}
+              {!rerouting && step?.control && <Text style={styles.control}>{` · au ${step.control}`}</Text>}
+            </Text>
             <Text numberOfLines={2} style={styles.street}>
-              {step?.street ?? step?.instruction ?? ''}
+              {step?.street || step?.instruction || ''}
             </Text>
           </View>
         </View>
+        {!rerouting && step?.lanes && <Lanes lanes={step.lanes} type={step.type} />}
       </View>
       {then && !rerouting && (
-        <View style={[styles.then, { top: top + 118 }]}>
+        <View style={[styles.then, { top: top + bannerHeight + espace[2] }]}>
           <Text style={styles.thenLabel}>Puis</Text>
           <SymbolView name={maneuverIcon(then.type)} tintColor="#FFFFFF" size={16} />
           <Text numberOfLines={1} style={styles.thenStreet}>
@@ -137,6 +147,28 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
         </Pressable>
       </View>
     </>
+  );
+}
+
+/** Voies à l'approche (comme sur les panneaux) : celles à prendre en blanc, les autres estompées. */
+function Lanes({ lanes, type }: { lanes: Lane[]; type: number }) {
+  const toward = maneuverSide(type);
+  const take = lanes.filter((l) => l.take).length;
+  return (
+    <View
+      style={styles.lanes}
+      accessible
+      accessibilityLabel={`${take} voie${take > 1 ? 's' : ''} sur ${lanes.length} pour cette manœuvre`}
+    >
+      {lanes.map((l, i) => (
+        <SymbolView
+          key={i}
+          name={laneIcon(l.directions, toward)}
+          tintColor={l.take ? '#FFFFFF' : 'rgba(255,255,255,0.3)'}
+          size={26}
+        />
+      ))}
+    </View>
   );
 }
 
@@ -182,6 +214,16 @@ const styles = StyleSheet.create({
   bannerRow: { flexDirection: 'row', alignItems: 'center', gap: espace[4] },
   distance: { color: '#FFFFFF', fontFamily: police, fontSize: 36, lineHeight: 42, fontWeight: '700', fontVariant: ['tabular-nums'] },
   street: { color: '#FFFFFF', fontFamily: police, fontSize: 20, lineHeight: 26, fontWeight: '500' },
+  control: { color: 'rgba(255,255,255,0.7)', fontSize: 24, fontWeight: '600' },
+  lanes: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: espace[4],
+    marginTop: espace[3],
+    paddingTop: espace[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+  },
   then: {
     position: 'absolute',
     left: espace[2],

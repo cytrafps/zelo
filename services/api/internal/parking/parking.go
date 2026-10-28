@@ -7,23 +7,20 @@ package parking
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/cytrafps/zelo/services/api/internal/overpass"
 )
 
 // OverpassURL est l'instance publique ; à remplacer par une instance dédiée en production.
-const OverpassURL = "https://overpass-api.de/api/interpreter"
+const OverpassURL = overpass.URL
 
-// userAgent identifie le projet, comme le demande la politique d'usage d'Overpass.
-const userAgent = "zelo/0.1 (+https://github.com/cytrafps/zelo)"
-
-type BBox struct{ MinLon, MinLat, MaxLon, MaxLat float64 }
+type BBox = overpass.BBox
 
 type Parking struct {
 	ID           string // « way/123 », « node/456 », « relation/789 »
@@ -42,8 +39,7 @@ type Parking struct {
 
 // Query renvoie la requête Overpass QL des parkings de la zone.
 func Query(b BBox) string {
-	return fmt.Sprintf(`[out:json][timeout:90];nwr["amenity"="parking"](%g,%g,%g,%g);out center tags;`,
-		b.MinLat, b.MinLon, b.MaxLat, b.MaxLon)
+	return `[out:json][timeout:90];nwr["amenity"="parking"]` + b.Filter() + `;out center tags;`
 }
 
 // Fetch interroge Overpass pour la zone donnée.
@@ -51,60 +47,36 @@ func Fetch(ctx context.Context, client *http.Client, endpoint string, b BBox) ([
 	if b == (BBox{}) {
 		return nil, fmt.Errorf("zone d'import obligatoire : Overpass ne sert pas la France entière")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
-		strings.NewReader(url.Values{"data": {Query(b)}}.Encode()))
+	els, err := overpass.Fetch(ctx, client, endpoint, Query(b))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", userAgent)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-		return nil, fmt.Errorf("overpass: HTTP %d", resp.StatusCode)
-	}
-	return Parse(resp.Body)
-}
-
-type element struct {
-	Type   string                      `json:"type"`
-	ID     int64                       `json:"id"`
-	Lat    float64                     `json:"lat"`
-	Lon    float64                     `json:"lon"`
-	Center *struct{ Lat, Lon float64 } `json:"center"`
-	Tags   map[string]string           `json:"tags"`
+	return fromElements(els), nil
 }
 
 // Parse lit une réponse Overpass JSON et ne garde que les parkings utiles à un conducteur.
 func Parse(r io.Reader) ([]Parking, error) {
-	var body struct {
-		Remark   string    `json:"remark"`
-		Elements []element `json:"elements"`
+	els, err := overpass.Parse(r)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.NewDecoder(r).Decode(&body); err != nil {
-		return nil, fmt.Errorf("overpass: %w", err)
-	}
-	// Overpass répond 200 avec une remarque quand la requête a expiré : réponse incomplète.
-	if strings.Contains(body.Remark, "runtime error") {
-		return nil, fmt.Errorf("overpass: %s", body.Remark)
-	}
-	out := make([]Parking, 0, len(body.Elements))
-	for _, e := range body.Elements {
+	return fromElements(els), nil
+}
+
+func fromElements(els []overpass.Element) []Parking {
+	out := make([]Parking, 0, len(els))
+	for _, e := range els {
 		if p, ok := toParking(e); ok {
 			out = append(out, p)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // Accès qui excluent le grand public : propriétaires, abonnés, clients d'un commerce, livraisons.
 var closedAccess = map[string]bool{"private": true, "no": true, "permit": true, "customers": true, "delivery": true}
 
-func toParking(e element) (Parking, bool) {
+func toParking(e overpass.Element) (Parking, bool) {
 	t := e.Tags
 	if t["amenity"] != "parking" || closedAccess[t["access"]] {
 		return Parking{}, false

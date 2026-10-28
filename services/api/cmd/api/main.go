@@ -23,8 +23,10 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/httpapi"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
+	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
+	"github.com/cytrafps/zelo/services/api/internal/overpass"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
@@ -89,17 +91,24 @@ func run(log *slog.Logger, once bool) error {
 		}},
 	}
 
-	// Overpass ne sert qu'une zone limitée : sans IMPORT_BBOX, pas d'import de parkings.
+	// Overpass ne sert qu'une zone limitée : sans IMPORT_BBOX, pas d'import de parkings ni de feux.
 	if bbox != (irve.BBox{}) {
+		osmURL, zone := envOr("OVERPASS_URL", overpass.URL), overpass.BBox(bbox)
 		jobs = append(jobs, job{"parkings", 24 * time.Hour, func(ctx context.Context) (int, error) {
-			p, err := parking.Fetch(ctx, client, envOr("OVERPASS_URL", parking.OverpassURL), parking.BBox(bbox))
+			p, err := parking.Fetch(ctx, client, osmURL, zone)
 			if err != nil {
 				return 0, err
 			}
 			return len(p), db.SaveParkings(ctx, p)
+		}}, job{"feux_stops", 24 * time.Hour, func(ctx context.Context) (int, error) {
+			c, err := junction.Fetch(ctx, client, osmURL, zone)
+			if err != nil {
+				return 0, err
+			}
+			return len(c), db.SaveControls(ctx, c)
 		}})
 	} else {
-		log.Warn("IMPORT_BBOX vide : import des parkings désactivé")
+		log.Warn("IMPORT_BBOX vide : import des parkings et des feux désactivé")
 	}
 
 	if once {

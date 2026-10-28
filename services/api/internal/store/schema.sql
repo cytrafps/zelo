@@ -86,3 +86,11 @@ CREATE TABLE IF NOT EXISTS report_vote (
 -- Prix au kWh annoncé dans le champ libre « tarification » (null : non publié lisiblement).
 ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_kwh real;
 ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_from boolean NOT NULL DEFAULT false;
+
+-- Feux tricolores et stops (OSM), repères du guidage : « au feu, tournez à droite ».
+CREATE TABLE IF NOT EXISTS junction_control (
+    id    text PRIMARY KEY,
+    kind  text NOT NULL,
+    geom  geography(Point, 4326) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS junction_control_geom ON junction_control USING gist (geom);
