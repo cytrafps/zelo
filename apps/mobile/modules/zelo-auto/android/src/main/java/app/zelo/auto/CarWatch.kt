@@ -50,17 +50,18 @@ internal object CarWatch {
     return JSONObject(raw)
   }
 
-  private fun record(context: Context, event: JSONObject) {
+  fun record(context: Context, event: JSONObject) {
     // Seul le dernier compte : garé puis reparti avant d'ouvrir l'app, c'est « reparti ».
     context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(EVENT, event.toString()).apply()
     listener?.invoke(event)
   }
 
-  private fun departed() = JSONObject().put("kind", "departed").put("at", System.currentTimeMillis())
+  fun departed() = JSONObject().put("kind", "departed").put("at", System.currentTimeMillis())
 
-  private fun parked(context: Context): JSONObject {
+  /** Garée : `fix` si l'on vient de lire la position, sinon la dernière connue du système. */
+  fun parked(context: Context, fix: Location? = null): JSONObject {
     val e = JSONObject().put("kind", "parked").put("at", System.currentTimeMillis())
-    lastLocation(context)?.let {
+    (fix ?: lastLocation(context))?.let {
       e.put("lat", it.latitude).put("lon", it.longitude).put("accuracy", it.accuracy.toDouble()).put("fixAt", it.time)
     }
     return e
@@ -68,11 +69,13 @@ internal object CarWatch {
 
   /** La plus récente des positions connues du système ; null sans permission. */
   @SuppressLint("MissingPermission")
-  private fun lastLocation(context: Context): Location? {
-    val granted = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-      .any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-    if (!granted) return null
+  fun lastLocation(context: Context): Location? {
+    if (!canLocate(context)) return null
     val lm = context.getSystemService(LocationManager::class.java) ?: return null
     return lm.getProviders(true).mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time }
   }
+
+  fun canLocate(context: Context) =
+    listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+      .any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 }

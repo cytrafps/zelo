@@ -1,7 +1,8 @@
-import { BottomSheet, Button, Column, Host, Text } from '@expo/ui';
+import { BottomSheet, Button, Column, Host, List, ListItem, Switch, Text } from '@expo/ui';
 import { Linking, Platform } from 'react-native';
 
 import type { ParkedCar } from '@/hooks/use-parked-car';
+import { useParkingMemory } from '@/hooks/use-parking-memory';
 import { texte, useTheme } from '@/theme';
 import { formatAgo } from '@/utils/format';
 import { distance, formatDistance, walkingMinutes, type LatLon } from '@/utils/geo';
@@ -97,8 +98,37 @@ export function CarSheet({ isPresented, onDismiss, car, me, here, onPark, onForg
               />
             </>
           )}
+          <ParkingMemory />
         </Column>
       </BottomSheet>
     </Host>
+  );
+}
+
+/** Option « Retenir où je me gare » (Android) : la voiture est un appareil Bluetooth appairé. */
+function ParkingMemory() {
+  const { c } = useTheme();
+  const m = useParkingMemory();
+  if (!m.available) return null;
+  return (
+    <Column spacing={8}>
+      <Switch label="Retenir où je me gare" value={m.on} onValueChange={(on) => void (on ? m.enable() : m.disable())} />
+      <Text textStyle={{ ...texte.petit, color: m.error ? c.alerte.base : c.texte.tertiaire }}>
+        {m.error ??
+          (m.on
+            ? `Quand ton téléphone quitte le Bluetooth de « ${m.name} », Zelo note la place, même fermée. Elle reste sur ce téléphone.`
+            : "Quand ton téléphone quitte le Bluetooth de la voiture, Zelo note la place, même fermée. Il faut autoriser la position « Toujours » ; elle reste sur ce téléphone.")}
+      </Text>
+      {m.on && !m.choices && <Button label="Changer de voiture" variant="text" onPress={m.change} />}
+      {m.choices && (
+        <List>
+          {m.choices.map((d) => (
+            <ListItem key={d.address} onPress={() => m.choose(d)}>
+              <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>{d.name}</Text>
+            </ListItem>
+          ))}
+        </List>
+      )}
+    </Column>
   );
 }
