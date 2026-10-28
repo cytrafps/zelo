@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { Place } from '@/api/geocode';
-import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking } from '@/api/zelo';
+import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking, type Vehicle } from '@/api/zelo';
 import { useStored } from '@/hooks/use-stored';
 import type { Fix } from '@/utils/geo';
 import type { Route } from '@/utils/route';
@@ -28,7 +28,18 @@ export type Trip = {
   error: string | null;
 };
 
-type Request = { from: Fix; destination: Place; target: TripTarget; depart: number | null; avoid: readonly Avoid[] };
+type Request = {
+  from: Fix;
+  destination: Place;
+  target: TripTarget;
+  depart: number | null;
+  avoid: readonly Avoid[];
+  vehicle: Vehicle;
+};
+
+/** À vélo, on va jusqu'à la destination : pas de parking ni de borne à proposer. */
+const stopFor = (vehicle: Vehicle, options: TripTarget[]): TripTarget =>
+  vehicle === 'bike' ? { kind: 'dropoff' } : (options[0] ?? { kind: 'dropoff' });
 
 const message = (e: unknown) =>
   e instanceof ApiError && e.status === 422 ? e.message : 'Itinéraire indisponible, vérifie ta connexion.';
@@ -41,6 +52,8 @@ export function useTrip() {
   const [trip, setTrip] = useState<Trip | null>(null);
   /** Péages et autoroutes à éviter : gardés d'un trajet à l'autre, comme dans Plans. */
   const [avoid, setAvoidStored] = useStored<Avoid[]>('trajet.eviter', []);
+  /** Véhicule : gardé d'un trajet à l'autre. */
+  const [vehicle, setVehicleStored] = useStored<Vehicle>('trajet.vehicule', 'car');
   const request = useRef<AbortController | null>(null);
   /** Numéro du trajet demandé en dernier : une préparation plus ancienne (position, arrêts) est ignorée. */
   const seq = useRef(0);
@@ -52,13 +65,19 @@ export function useTrip() {
     return ctl;
   };
 
-  const load = useCallback(async ({ from, destination, target, depart, avoid }: Request, alternates: number) => {
+  const load = useCallback(async ({ from, destination, target, depart, avoid, vehicle }: Request, alternates: number) => {
     const ctl = abortable();
     setTrip((t) => (t ? { ...t, target, depart, loading: true, error: null } : t));
     try {
       const stop = targetPoint(target, destination);
       const [routes, walk] = await Promise.all([
-        getRoutes(from, stop, 'car', { alternates, heading: from.heading, depart, avoid }, ctl.signal),
+        getRoutes(
+          from,
+          stop,
+          vehicle,
+          { alternates, heading: from.heading, depart, avoid: vehicle === 'bike' ? [] : avoid },
+          ctl.signal,
+        ),
         !needsWalk(target)
           ? Promise.resolve(null)
           : getRoutes(stop, destination, 'walk', {}, ctl.signal).then((r) => r[0]),
@@ -84,30 +103,34 @@ export function useTrip() {
   const start = useCallback(
     (token: number, from: Fix, destination: Place, options: TripTarget[]) => {
       if (token !== seq.current) return; // fermé, ou une autre destination choisie entre-temps
-      const target = options[0] ?? { kind: 'dropoff' };
+      const target = stopFor(vehicle, options);
       setTrip({ destination, target, options, phase: 'preview', routes: [], selected: 0, walk: null, depart: null, loading: true, error: null });
-      void load({ from, destination, target, depart: null, avoid }, 2);
+      void load({ from, destination, target, depart: null, avoid, vehicle }, 2);
     },
-    [load, avoid],
+    [load, avoid, vehicle],
   );
 
-  /** En aperçu : change l'arrêt, l'heure de départ ou les évitements, puis recalcule. */
+  /** En aperçu : change l'arrêt, l'heure de départ, les évitements ou le véhicule, puis recalcule. */
   const update = useCallback(
-    (from: Fix, change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[] }) => {
+    (from: Fix, change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[]; vehicle?: Vehicle }) => {
       if (!trip) return;
       if (change.avoid) setAvoidStored(change.avoid);
+      if (change.vehicle) setVehicleStored(change.vehicle);
+      const v = change.vehicle ?? vehicle;
       void load(
         {
           from,
           destination: trip.destination,
-          target: change.target ?? trip.target,
+          // Changer de véhicule remet l'arrêt proposé pour lui (aucun à vélo).
+          target: change.target ?? (change.vehicle ? stopFor(v, trip.options) : trip.target),
           depart: change.depart !== undefined ? change.depart : trip.depart,
           avoid: change.avoid ?? avoid,
+          vehicle: v,
         },
         2,
       );
     },
-    [load, trip, avoid, setAvoidStored],
+    [load, trip, avoid, vehicle, setAvoidStored, setVehicleStored],
   );
 
   const select = useCallback((i: number) => setTrip((t) => (t ? { ...t, selected: i } : t)), []);
@@ -123,7 +146,7 @@ export function useTrip() {
   const reroute = useCallback(
     async (from: Fix) => {
       if (!trip) return;
-      if (trip.phase !== 'walk') return load({ from, destination: trip.destination, target: trip.target, depart: null, avoid }, 0);
+      if (trip.phase !== 'walk') return load({ from, destination: trip.destination, target: trip.target, depart: null, avoid, vehicle }, 0);
       const ctl = abortable();
       try {
         const [walk] = await getRoutes(from, trip.destination, 'walk', {}, ctl.signal);
@@ -133,7 +156,7 @@ export function useTrip() {
         // On garde l'ancien tracé : la position suivante relancera le calcul.
       }
     },
-    [load, trip, avoid],
+    [load, trip, avoid, vehicle],
   );
 
   /** Arrivé au point d'arrêt : la suite se fait à pied, s'il y a lieu. */
@@ -155,5 +178,5 @@ export function useTrip() {
     [end],
   );
 
-  return { trip, avoid, open, start, cancel, update, select, go, reroute, parked, end };
+  return { trip, avoid, vehicle, open, start, cancel, update, select, go, reroute, parked, end };
 }

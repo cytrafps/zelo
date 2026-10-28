@@ -21,13 +21,18 @@ import (
 	_ "time/tzdata" // l'image de l'API n'a pas de base de fuseaux horaires
 )
 
-// Mode de déplacement : en voiture jusqu'au parking, à pied jusqu'à la destination.
+// Mode de déplacement : en voiture, à moto ou à vélo jusqu'à l'arrêt, à pied jusqu'à la destination.
 type Mode string
 
 const (
-	Car  Mode = "auto"
-	Walk Mode = "pedestrian"
+	Car        Mode = "auto"
+	Motorcycle Mode = "motorcycle"
+	Bicycle    Mode = "bicycle"
+	Walk       Mode = "pedestrian"
 )
+
+// Motorized : modes sur la chaussée des voitures, autoroutes et péages compris.
+func (m Mode) Motorized() bool { return m == Car || m == Motorcycle }
 
 // SearchCutoff est la distance maximale (m) entre un point demandé et la route la plus proche.
 // Sans elle, Valhalla accroche en silence une destination hors des données au bord de la carte
@@ -202,7 +207,7 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 	if !opts.Depart.IsZero() {
 		req.DateTime = &dateTime{Type: 1, Value: opts.Depart.In(paris).Format("2006-01-02T15:04")}
 	}
-	if mode == Car && (opts.AvoidTolls || opts.AvoidHighways) {
+	if mode.Motorized() && (opts.AvoidTolls || opts.AvoidHighways) {
 		var a autoCosting
 		zero := 0.0
 		if opts.AvoidTolls {
@@ -211,7 +216,7 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 		if opts.AvoidHighways {
 			a.UseHighways = &zero
 		}
-		req.CostingOptions = map[Mode]autoCosting{Car: a}
+		req.CostingOptions = map[Mode]autoCosting{mode: a}
 	}
 	req.Format = "osrm"
 	req.Directions.Language = "fr-FR"
