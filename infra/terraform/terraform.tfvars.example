@@ -1,0 +1,13 @@
+# Copier en terraform.tfvars (ignoré par Git) et adapter.
+proxmox_endpoint  = "https://192.168.1.10:8006/"
+proxmox_api_token = "terraform@pve!zelo=00000000-0000-0000-0000-000000000000"
+
+node            = "pve"
+image_datastore = "local"
+disk_datastore  = "local-lvm"
+bridge          = "vmbr0"
+
+ip_cidr = "192.168.1.89/24"
+gateway = "192.168.1.1"
+
+ssh_public_key = "ssh-ed25519 AAAA... luka@pc"

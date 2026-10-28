@@ -1,0 +1,32 @@
+---
+- name: Espace de noms argocd
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl create namespace argocd --dry-run=client -o yaml | k3s kubectl apply -f -
+  args:
+    executable: /bin/bash
+  register: argocd_ns
+  changed_when: "'created' in argocd_ns.stdout"
+
+- name: Version d'Argo CD installée
+  ansible.builtin.command: >-
+    k3s kubectl -n argocd get deploy argocd-server
+    -o jsonpath={.spec.template.spec.containers[0].image}
+  register: argocd_image
+  changed_when: false
+  failed_when: false
+
+- name: Installer Argo CD {{ argocd_version }}
+  ansible.builtin.command: >-
+    k3s kubectl apply -n argocd --server-side --force-conflicts
+    -f https://raw.githubusercontent.com/argoproj/argo-cd/v{{ argocd_version }}/manifests/install.yaml
+  changed_when: true
+  when: ('v' ~ argocd_version) not in argocd_image.stdout | default('')
+
+- name: Attendre Argo CD
+  ansible.builtin.command: k3s kubectl -n argocd rollout status {{ item }} --timeout=300s
+  loop:
+    - deploy/argocd-server
+    - deploy/argocd-repo-server
+    - statefulset/argocd-application-controller
+  changed_when: false

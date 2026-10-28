@@ -1,0 +1,46 @@
+---
+- name: Espace de noms zelo
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl create namespace zelo --dry-run=client -o yaml | k3s kubectl apply -f -
+  args:
+    executable: /bin/bash
+  register: zelo_ns
+  changed_when: "'created' in zelo_ns.stdout"
+
+- name: Secret de la base existant
+  ansible.builtin.command: k3s kubectl -n zelo get secret zelo-db
+  register: zelo_db_secret
+  changed_when: false
+  failed_when: false
+
+# Créé une seule fois, jamais versionné ni affiché : le rejouer ne change pas le mot de passe.
+- name: Mot de passe de la base
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl -n zelo create secret generic zelo-db --from-literal=password="$(openssl rand -hex 24)"
+  args:
+    executable: /bin/bash
+  changed_when: true
+  no_log: true
+  when: zelo_db_secret.rc != 0
+
+# Supervision d'abord : ses CRD (ServiceMonitor, PrometheusRule) servent à l'application Zelo.
+- name: Applications Argo CD
+  ansible.builtin.command: k3s kubectl apply -f -
+  args:
+    stdin: "{{ lookup('ansible.builtin.file', repo_root ~ '/deploy/argocd/' ~ item) }}"
+  loop:
+    - monitoring.yaml
+    - zelo.yaml
+  register: zelo_argocd_apps
+  changed_when: "'unchanged' not in zelo_argocd_apps.stdout"
+
+# Argo CD tire les images de GHCR : les paquets zelo-api et zelo-valhalla doivent être publics.
+- name: Attendre l'API de Zelo (premier déploiement, jusqu'à 10 min)
+  ansible.builtin.command: k3s kubectl -n zelo rollout status deploy/api --timeout=30s
+  register: zelo_api
+  until: zelo_api.rc == 0
+  retries: 20
+  delay: 30
+  changed_when: false

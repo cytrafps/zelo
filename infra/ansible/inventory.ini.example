@@ -1,0 +1,3 @@
+# Écrit par Terraform (infra/terraform) ; à la main si la VM existe déjà.
+[k3s]
+zelo-k3s ansible_host=192.168.1.89 ansible_user=zelo
