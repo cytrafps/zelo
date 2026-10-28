@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -198,14 +199,14 @@ func TestVoterFallsBackToIP(t *testing.T) {
 }
 
 type fakeRouter struct {
-	err        error
-	got        []route.Point
-	mode       route.Mode
-	alternates int
+	err  error
+	got  []route.Point
+	mode route.Mode
+	opts route.Options
 }
 
-func (f *fakeRouter) Routes(_ context.Context, from, to route.Point, mode route.Mode, alternates int) ([]route.Route, error) {
-	f.got, f.mode, f.alternates = []route.Point{from, to}, mode, alternates
+func (f *fakeRouter) Routes(_ context.Context, from, to route.Point, mode route.Mode, opts route.Options) ([]route.Route, error) {
+	f.got, f.mode, f.opts = []route.Point{from, to}, mode, opts
 	return []route.Route{{Distance: 1875, Duration: 449, Coordinates: [][2]float64{{4.0245, 49.2591}, {4.0341, 49.2535}}}}, f.err
 }
 
@@ -227,7 +228,7 @@ func TestRoute(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `{"routes":[{"distance":1875`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	if r.mode != route.Car || r.alternates != 2 || r.got[0] != (route.Point{Lat: 49.2591, Lon: 4.0245}) {
+	if r.mode != route.Car || r.opts.Alternates != 2 || r.got[0] != (route.Point{Lat: 49.2591, Lon: 4.0245}) {
 		t.Errorf("relayé : %+v %v", r.got, r.mode)
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" {
@@ -237,6 +238,18 @@ func TestRoute(t *testing.T) {
 	for _, q := range []string{"", "from=49.2,4.0&to=49.3,4.1", "from=49.2,4.0&to=49.3,4.1&mode=velo", "from=NaN,4&to=49.3,4.1&mode=walk", "from=95,4&to=49.3,4.1&mode=walk"} {
 		if rec := call(Config{Router: r}, q); rec.Code != http.StatusBadRequest {
 			t.Errorf("%q : %d", q, rec.Code)
+		}
+	}
+
+	// Options : cap, heure de départ, évitements.
+	depart := time.Now().Add(time.Hour).Truncate(time.Second)
+	rec = call(Config{Router: r}, ok+"&heading=270.5&avoid=tolls,highways&depart="+strconv.FormatInt(depart.Unix(), 10))
+	if rec.Code != http.StatusOK || r.opts.Heading == nil || *r.opts.Heading != 270.5 || !r.opts.AvoidTolls || !r.opts.AvoidHighways || !r.opts.Depart.Equal(depart) {
+		t.Errorf("options : %d %+v", rec.Code, r.opts)
+	}
+	for _, bad := range []string{"&heading=361", "&heading=NaN", "&avoid=ferries", "&depart=12", "&depart=" + strconv.FormatInt(time.Now().Add(30*24*time.Hour).Unix(), 10)} {
+		if rec := call(Config{Router: r}, ok+bad); rec.Code != http.StatusBadRequest {
+			t.Errorf("%q : %d", bad, rec.Code)
 		}
 	}
 

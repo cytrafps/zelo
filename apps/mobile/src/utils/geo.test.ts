@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { distance, formatDistance, nearest, rankByProximity, walkingMinutes } from './geo.ts';
+import { course, distance, formatDistance, nearest, rankByProximity, walkingMinutes } from './geo.ts';
 
 const cathedrale = { lat: 49.2535, lon: 4.0341 };
 const gare = { lat: 49.2591, lon: 4.0245 };
@@ -50,4 +50,11 @@ test('rankByProximity favorise le proche à pertinence voisine, pas l’introuva
   ];
   const got = rankByProximity(items, reims, 4).map((x) => x.id);
   assert.deepEqual(got, ['commune à 25 km', 'lieu proche citant la commune', 'rue à Reims', 'homonyme à 39 km']);
+});
+
+test("course : le cap GPS seulement quand on roule", () => {
+  assert.equal(course({ heading: 87, speed: 12 }), 87);
+  assert.equal(course({ heading: 87, speed: 1.2 }), null); // à pied ou à l'arrêt
+  assert.equal(course({ heading: -1, speed: 12 }), null); // Android : cap inconnu
+  assert.equal(course({ heading: null, speed: null }), null);
 });
