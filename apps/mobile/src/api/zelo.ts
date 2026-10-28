@@ -138,6 +138,15 @@ export const getChargeStations = (b: BBox, s?: AbortSignal) => list<ChargeStatio
 export const getParkings = (b: BBox, s?: AbortSignal, vehicle: Vehicle = 'car') =>
   list<Parking>(vehicle === 'car' ? '/v1/parkings' : `/v1/parkings?vehicle=${vehicle}`, b, s);
 export const getReports = (b: BBox, s?: AbortSignal) => list<Report>('/v1/reports', b, s);
+/** Le temps à l'arrivée : pluie (plus de 0,2 mm en un quart d'heure), froid (1 °C ou moins). */
+export type Outlook = { rain: boolean; cold: boolean; temperature: number; rainMm: number };
+
+/** Météo à `at` vers l'heure `time` (ms) ; null sans prévision. */
+export const getWeather = (at: LatLon, time: number, signal?: AbortSignal) =>
+  request<{ outlook: Outlook | null }>(`/v1/weather?at=${at.lat},${at.lon}&time=${Math.round(time / 1000)}`, { signal }).then(
+    (r) => r.outlook,
+  );
+
 /** Zones à faibles émissions qui touchent la zone, en vigueur ou à venir. */
 export const getZones = (b: BBox, s?: AbortSignal) => list<Zone>('/v1/zfe', b, s);
 

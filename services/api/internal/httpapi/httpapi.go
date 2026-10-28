@@ -30,6 +30,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
+	"github.com/cytrafps/zelo/services/api/internal/weather"
 	"github.com/cytrafps/zelo/services/api/internal/zfe"
 )
 
@@ -81,6 +82,8 @@ type Config struct {
 	Closures func() []closure.Closure
 	// Zones : zones à faibles émissions de la base nationale (rechargées chaque jour) ; nil : aucune.
 	Zones func() []zfe.Zone
+	// Weather : prévision au quart d'heure (Open-Meteo, en cache) ; nil : pas de météo.
+	Weather *weather.Cache
 }
 
 type Router interface {
@@ -115,6 +118,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /v1/route", a.route)
 	mux.HandleFunc("GET /v1/park-ride", a.parkRide)
 	mux.HandleFunc("GET /v1/zfe", a.zfe)
+	mux.HandleFunc("GET /v1/weather", a.weather)
 	return instrument(mux)
 }
 
@@ -214,6 +218,39 @@ func (a *API) zfe(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// weather : GET /v1/weather?at=lat,lon[&time=<secondes Unix>] — pluie et froid à l'heure
+// d'arrivée (maintenant par défaut). La météo n'est qu'un conseil : sans prévision, outlook
+// vaut null plutôt qu'une erreur.
+func (a *API) weather(w http.ResponseWriter, r *http.Request) {
+	p, err := parsePoint(r.URL.Query().Get("at"))
+	if err != nil {
+		httpError(w, http.StatusBadRequest, "attendu : at=lat,lon")
+		return
+	}
+	at := time.Now()
+	if s := r.URL.Query().Get("time"); s != "" {
+		sec, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			httpError(w, http.StatusBadRequest, "time attendu en secondes Unix")
+			return
+		}
+		at = time.Unix(sec, 0)
+	}
+	var out *weather.Outlook
+	if a.cfg.Weather != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		defer cancel()
+		slots, err := a.cfg.Weather.Get(ctx, p.Lat, p.Lon)
+		if err != nil {
+			a.log.Warn("météo", "err", err)
+		} else if o, ok := weather.At(slots, at); ok {
+			out = &o
+		}
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	writeJSON(w, http.StatusOK, map[string]any{"outlook": out})
 }
 
 func zoneTouches(z zfe.Zone, b store.BBox) bool {

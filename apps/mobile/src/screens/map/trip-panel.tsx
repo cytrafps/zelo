@@ -1,9 +1,9 @@
 import { MenuView } from '@expo/ui/community/menu';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import type { Avoid, Parking, Report, Vehicle } from '@/api/zelo';
+import { getWeather, type Avoid, type Outlook, type Parking, type Report, type Vehicle } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import { useStored } from '@/hooks/use-stored';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
@@ -13,7 +13,7 @@ import { linesLabel, relayDuration, stopName } from '@/utils/transit';
 import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
-import { forVehicle, sameTarget, targetPoint } from '@/utils/targets';
+import { forVehicle, sameTarget, sheltered, targetPoint } from '@/utils/targets';
 import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
 
 const ios = Platform.OS === 'ios';
@@ -154,6 +154,15 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
       </ScrollView>
 
       {!choosing && (
+        <WeatherNotice
+          trip={trip}
+          options={options}
+          arrive={start + (trip.routes[trip.selected]?.duration ?? 0) * 1000}
+          c={c}
+          onPark={(target) => onChange({ target })}
+        />
+      )}
+      {!choosing && (
         <ZfeNotice
           zones={zones}
           trip={trip}
@@ -217,6 +226,42 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
           ))}
           <Areas areas={trip.routes[trip.selected]?.areas} c={c} />
         </ScrollView>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Pluie ou gel à l'arrivée (prévision Météo-France via Open-Meteo) : propose un parking à
+ * l'abri si l'arrêt choisi ne l'est pas. Sans prévision, rien.
+ */
+function WeatherNotice(props: { trip: Trip; options: TripTarget[]; arrive: number; c: Couleurs; onPark: (t: TripTarget) => void }) {
+  const { trip, options, arrive, c, onPark } = props;
+  const stop = targetPoint(trip.target, trip.destination);
+  // Une demande par quart d'heure d'arrivée et par arrêt, pas à chaque seconde du compte à rebours.
+  const slot = Math.round(arrive / 900_000);
+  const [outlook, setOutlook] = useState<Outlook | null>(null);
+  useEffect(() => {
+    const ctl = new AbortController();
+    getWeather(stop, slot * 900_000, ctl.signal).then(setOutlook, () => setOutlook(null));
+    return () => ctl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stop.lat, stop.lon, slot]);
+  if (!outlook || (!outlook.rain && !outlook.cold) || sheltered(trip.target)) return null;
+  const shelter = options.find(sheltered);
+  const label = outlook.rain ? "Pluie prévue à l'arrivée" : `Gel possible à l'arrivée (${Math.round(outlook.temperature)} °C)`;
+  return (
+    <View style={[styles.zfe, styles.zfeActions]}>
+      <SymbolView
+        name={outlook.rain ? { ios: 'cloud.rain.fill', android: 'rainy' } : { ios: 'snowflake', android: 'ac_unit' }}
+        tintColor={c.texte.secondaire}
+        size={18}
+      />
+      <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{label}</Text>
+      {shelter && (
+        <Pressable onPress={() => onPark(shelter)} accessibilityRole="button" style={[styles.chip, { borderColor: c.action }]}>
+          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`À l'abri : ${short(shelter)}`}</Text>
+        </Pressable>
       )}
     </View>
   );
