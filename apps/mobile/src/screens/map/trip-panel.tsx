@@ -64,18 +64,22 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsRow}>
-        <Pressable
-          onPress={() => setChoosing((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel="Choisir où se garer"
-          style={[styles.chip, { borderColor: c.fond.separateur }]}
-        >
-          <TargetIcon t={trip.target} c={c} size={16} />
-          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
-            {short(trip.target)}
-          </Text>
-          <Chevron c={c} />
-        </Pressable>
+        {/* Sans choix d'arrêt (« Y aller » vers une station), pas de puce. */}
+        {(trip.target.kind !== 'dropoff' || trip.options.length > 1) && (
+          <Pressable
+            onPress={() => setChoosing((v) => !v)}
+            disabled={trip.options.length < 2}
+            accessibilityRole="button"
+            accessibilityLabel="Choisir où se garer"
+            style={[styles.chip, { borderColor: c.fond.separateur }]}
+          >
+            <TargetIcon t={trip.target} c={c} size={16} />
+            <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
+              {short(trip.target)}
+            </Text>
+            {trip.options.length > 1 && <Chevron c={c} />}
+          </Pressable>
+        )}
 
         <MenuView
           title="Départ"
