@@ -49,12 +49,18 @@ export type Snap = {
   along: number;
 };
 
-/** Point du tracé le plus proche de `p`. */
-export function snap(coords: readonly [number, number][], cum: readonly number[], p: LatLon): Snap {
+/** Point du tracé le plus proche de `p`, parmi les segments `from` à `to` (exclu) ; tout le tracé par défaut. */
+export function snap(
+  coords: readonly [number, number][],
+  cum: readonly number[],
+  p: LatLon,
+  from = 0,
+  to = coords.length - 1,
+): Snap {
   const cos = Math.cos((p.lat * Math.PI) / 180);
   const P = toXY(p.lon, p.lat, cos);
   let best: Snap = { segment: 0, offRoute: Infinity, along: 0 };
-  for (let i = 0; i < coords.length - 1; i++) {
+  for (let i = Math.max(0, from); i < Math.min(to, coords.length - 1); i++) {
     const A = toXY(coords[i][0], coords[i][1], cos);
     const B = toXY(coords[i + 1][0], coords[i + 1][1], cos);
     const dx = B.x - A.x;
@@ -81,17 +87,44 @@ export type Progress = {
   /** Mètres jusqu'à cette manœuvre. */
   toNext: number;
   offRoute: number;
+  /** Segment où l'on se trouve : à repasser au calcul suivant (`hint`). */
+  segment: number;
 };
 
-export function progress(route: Route, cum: readonly number[], p: LatLon): Progress {
-  const s = snap(route.coordinates, cum, p);
+/** Fenêtre de recherche après la dernière position : de quoi couvrir quelques secondes de route. */
+const BEHIND_M = 50;
+const AHEAD_M = 600;
+/** Plus loin que ça de la fenêtre, on cherche sur tout le tracé (raccourci, saut GPS…). */
+const WINDOW_MAX_OFF_M = 30;
+
+/** Segments à moins de `behind` m en arrière et `ahead` m en avant du segment `at`. */
+function window(cum: readonly number[], at: number, behind: number, ahead: number): [number, number] {
+  let from = at;
+  while (from > 0 && cum[at] - cum[from] < behind) from--;
+  let to = at + 1;
+  while (to < cum.length - 1 && cum[to] - cum[at] < ahead) to++;
+  return [from, to];
+}
+
+/**
+ * Avancement sur l'itinéraire. Avec `hint` (le segment du calcul précédent), la position est
+ * cherchée d'abord juste devant : un tracé qui repasse par la même rue (aller-retour, boucle)
+ * ne fait pas sauter le guidage à l'autre passage.
+ */
+export function progress(route: Route, cum: readonly number[], p: LatLon, hint?: number): Progress {
+  let s: Snap | null = null;
+  if (hint !== undefined) {
+    const near = snap(route.coordinates, cum, p, ...window(cum, hint, BEHIND_M, AHEAD_M));
+    if (near.offRoute <= WINDOW_MAX_OFF_M) s = near;
+  }
+  s ??= snap(route.coordinates, cum, p);
   const total = cum[cum.length - 1] ?? 0;
   const remaining = Math.max(0, total - s.along);
   let next = route.steps.findIndex((st) => st.shape > s.segment);
   if (next === -1) next = route.steps.length - 1;
   const toNext = Math.max(0, (cum[route.steps[next]?.shape ?? cum.length - 1] ?? total) - s.along);
   const remainingTime = total > 0 ? route.duration * (remaining / total) : 0;
-  return { remaining, remainingTime, next, toNext, offRoute: s.offRoute };
+  return { remaining, remainingTime, next, toNext, offRoute: s.offRoute, segment: s.segment };
 }
 
 /**

@@ -274,6 +274,12 @@ func (a *API) voter(r *http.Request) string {
 	return hex.EncodeToString(sum[:16])
 }
 
+// heartbeat est envoyé toutes les heartbeatEvery : le client, qui ne voit pas les pings WebSocket,
+// sait ainsi que la connexion vit et la rouvre après un silence (réseau mobile changé, NAT expiré).
+var heartbeat = []byte(`{"type":"hb"}`)
+
+var heartbeatEvery = 25 * time.Second
+
 // liveFeed pousse chaque nouveau signalement aux clients connectés.
 func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: a.cfg.OriginPatterns})
@@ -285,7 +291,7 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 	defer unsubscribe()
 
 	ctx := c.CloseRead(r.Context()) // le client n'envoie rien ; on détecte seulement sa déconnexion
-	ping := time.NewTicker(30 * time.Second)
+	ping := time.NewTicker(heartbeatEvery)
 	defer ping.Stop()
 	for {
 		select {
@@ -303,8 +309,12 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-ping.C:
+			// Le battement garde le client informé ; le ping (qui attend la réponse) détecte un client parti.
 			pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := c.Ping(pctx)
+			err := c.Write(pctx, websocket.MessageText, heartbeat)
+			if err == nil {
+				err = c.Ping(pctx)
+			}
 			cancel()
 			if err != nil {
 				return

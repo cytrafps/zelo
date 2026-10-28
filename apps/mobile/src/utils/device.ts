@@ -7,12 +7,16 @@ const KEY = 'zelo.appareil';
  * Il sert seulement à compter un vote par appareil et par signalement (le serveur n'en garde
  * qu'une empreinte) ; il n'est lié à aucun compte ni à aucune donnée personnelle.
  */
+let cached: string | null = null;
+
 export function deviceId(): string {
+  if (cached) return cached;
   let id = Storage.getItemSync(KEY);
   if (!id) {
     // Pas besoin d'aléa cryptographique : l'identifiant n'est pas un secret.
     id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     Storage.setItemSync(KEY, id);
   }
+  cached = id;
   return id;
 }

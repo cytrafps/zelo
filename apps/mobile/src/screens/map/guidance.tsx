@@ -8,7 +8,7 @@ import { useNow } from '@/hooks/use-now';
 import type { Phase, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
-import { cumulative, formatClock, formatDuration, progress, type Route } from '@/utils/route';
+import { cumulative, formatClock, formatDuration, progress, type Progress, type Route } from '@/utils/route';
 
 import { maneuverIcon } from './maneuver';
 
@@ -28,7 +28,11 @@ function useNavigationFix() {
     let cancelled = false;
     Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, (l) =>
       setFix({ lat: l.coords.latitude, lon: l.coords.longitude, heading: course(l.coords) }),
-    ).then((s) => (cancelled ? s.remove() : (sub = s)));
+    )
+      .then((s) => (cancelled ? s.remove() : (sub = s)))
+      .catch(() => {
+        // Localisation coupée : le bandeau garde la dernière manœuvre connue.
+      });
     return () => {
       cancelled = true;
       sub?.remove();
@@ -56,7 +60,14 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
   const fix = useNavigationFix();
   const now = useNow(10_000);
   const cum = useMemo(() => cumulative(route.coordinates), [route]);
-  const p = fix ? progress(route, cum, fix) : null;
+  // Chaque position est placée en partant du segment de la précédente (même tracé seulement).
+  const [last, setLast] = useState<{ fix: Fix; route: Route; p: Progress } | null>(null);
+  const p = !fix
+    ? null
+    : last?.fix === fix && last.route === route
+      ? last.p
+      : progress(route, cum, fix, last?.route === route ? last.p.segment : undefined);
+  if (fix && p && (last?.fix !== fix || last.route !== route)) setLast({ fix, route, p });
 
   const offCount = useRef(0);
   const lastReroute = useRef(0);

@@ -109,11 +109,13 @@ export function MapScreen() {
   };
 
   /** Destination choisie : aperçu du trajet, avec les parkings et bornes autour d'elle. */
-  const goTo = async (place: Place) => {
+  const goTo = (place: Place) => {
     setRecents((list) => pushRecent(list, place));
     const box = around(place, 0.012);
-    const [parkings, charge] = await Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]);
-    await startTrip(place, targets(place, parkings, charge));
+    const options = Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]).then(
+      ([parkings, charge]) => targets(place, parkings, charge),
+    );
+    return startTrip(place, options);
   };
 
   /** « Y aller » depuis la fiche d'un lieu : on s'y arrête, sans proposer d'autre parking. */
@@ -129,11 +131,16 @@ export function MapScreen() {
     return startTrip({ ...place, name, label: name }, [stop]);
   };
 
-  const startTrip = async (place: Place, options: TripTarget[]) => {
+  /** L'aperçu s'ouvre aussitôt ; position et arrêts possibles sont cherchés en même temps. */
+  const startTrip = async (place: Place, options: TripTarget[] | Promise<TripTarget[]>) => {
     setHomeTracking(null);
-    const from = await location.locate().catch(() => null);
-    if (!from) return flash('Active la localisation pour calculer un itinéraire');
-    trips.start({ ...from, heading: location.heading() }, place, options);
+    const token = trips.open(place);
+    const [from, stops] = await Promise.all([location.locate().catch(() => null), options]);
+    if (!from) {
+      trips.cancel(token);
+      return flash('Position introuvable : vérifie que la localisation est activée');
+    }
+    trips.start(token, { ...from, heading: location.heading() }, place, stops);
   };
 
   // Aperçu : la carte cadre tous les itinéraires au-dessus de la feuille.
