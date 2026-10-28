@@ -28,6 +28,8 @@ services:
       # true derrière Cloudflare : l'IP du client (quota de signalements) est lue dans CF-Connecting-IP.
       TRUST_PROXY: ${TRUST_PROXY:-false}
       VALHALLA_URL: http://valhalla:8002
+      # Vigilances Météo-France (facultatif) : METEOFRANCE_API_KEY=… dans infra/.env, jamais commité.
+      METEOFRANCE_API_KEY: ${METEOFRANCE_API_KEY:-}
     ports: ["8080:8080"]
     restart: unless-stopped
     depends_on:

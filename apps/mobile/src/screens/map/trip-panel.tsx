@@ -3,7 +3,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import { getWeather, type Avoid, type Outlook, type Parking, type Report, type Vehicle } from '@/api/zelo';
+import { getWeather, type Avoid, type Outlook, type Parking, type Report, type Vehicle, type Vigilance } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import { useStored } from '@/hooks/use-stored';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
@@ -295,32 +295,47 @@ function WeatherNotice(props: { trip: Trip; options: TripTarget[]; arrive: numbe
   const stop = targetPoint(trip.target, trip.destination);
   // Une demande par quart d'heure d'arrivée et par arrêt, pas à chaque seconde du compte à rebours.
   const slot = Math.round(arrive / 900_000);
-  const [outlook, setOutlook] = useState<Outlook | null>(null);
+  const [weather, setWeather] = useState<{ outlook: Outlook | null; vigilance: Vigilance | null } | null>(null);
   useEffect(() => {
     const ctl = new AbortController();
-    getWeather(stop, slot * 900_000, ctl.signal).then(setOutlook, () => setOutlook(null));
+    getWeather(stop, slot * 900_000, ctl.signal).then(setWeather, () => setWeather(null));
     return () => ctl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stop.lat, stop.lon, slot]);
-  if (!outlook || (!outlook.rain && !outlook.cold) || sheltered(trip.target)) return null;
+  const outlook = weather?.outlook;
+  const vigilance = weather?.vigilance && (
+    <View style={[styles.notice, styles.noticeRow]} accessible accessibilityLabel={`Vigilance ${weather.vigilance.color} Météo-France`}>
+      <View style={[styles.dot, { backgroundColor: VIGILANCE_COLOR[weather.vigilance.color] }]} />
+      <Text style={[texte.corps, { color: c.texte.principal }]}>
+        {`Vigilance ${weather.vigilance.color} · ${weather.vigilance.phenomena.join(', ')}`}
+      </Text>
+    </View>
+  );
+  if (!outlook || (!outlook.rain && !outlook.cold) || sheltered(trip.target)) return vigilance ?? null;
   const shelter = options.find(sheltered);
   const label = outlook.rain ? "Pluie prévue à l'arrivée" : `Gel possible à l'arrivée (${Math.round(outlook.temperature)} °C)`;
   return (
-    <View style={[styles.notice, styles.noticeRow]}>
-      <SymbolView
-        name={outlook.rain ? { ios: 'cloud.rain.fill', android: 'rainy' } : { ios: 'snowflake', android: 'ac_unit' }}
-        tintColor={c.texte.secondaire}
-        size={18}
-      />
-      <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{label}</Text>
-      {shelter && (
-        <Pressable onPress={() => onPark(shelter)} accessibilityRole="button" style={[styles.chip, { borderColor: c.action }]}>
-          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`À l'abri : ${short(shelter)}`}</Text>
-        </Pressable>
-      )}
-    </View>
+    <>
+      {vigilance}
+      <View style={[styles.notice, styles.noticeRow]}>
+        <SymbolView
+          name={outlook.rain ? { ios: 'cloud.rain.fill', android: 'rainy' } : { ios: 'snowflake', android: 'ac_unit' }}
+          tintColor={c.texte.secondaire}
+          size={18}
+        />
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{label}</Text>
+        {shelter && (
+          <Pressable onPress={() => onPark(shelter)} accessibilityRole="button" style={[styles.chip, { borderColor: c.action }]}>
+            <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`À l'abri : ${short(shelter)}`}</Text>
+          </Pressable>
+        )}
+      </View>
+    </>
   );
 }
+
+/** Couleurs officielles de la carte de vigilance. */
+const VIGILANCE_COLOR = { jaune: '#FFE600', orange: '#FF8C00', rouge: '#E4002B' } as const;
 
 /**
  * ZFE : là où la voiture s'arrête (parking, borne, relais, ou la destination pour une dépose)

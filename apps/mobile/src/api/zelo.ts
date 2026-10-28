@@ -142,10 +142,14 @@ export const getReports = (b: BBox, s?: AbortSignal) => list<Report>('/v1/report
 /** Le temps à l'arrivée : pluie (plus de 0,2 mm en un quart d'heure), froid (1 °C ou moins). */
 export type Outlook = { rain: boolean; cold: boolean; temperature: number; rainMm: number };
 
-/** Météo à `at` vers l'heure `time` (ms) ; null sans prévision. */
+/** Vigilance Météo-France en cours dans le département (à partir du jaune). */
+export type Vigilance = { color: 'jaune' | 'orange' | 'rouge'; level: number; phenomena: string[]; department: string };
+
+/** Météo à `at` vers l'heure `time` (ms) : prévision (null sans) et vigilance (null si verte). */
 export const getWeather = (at: LatLon, time: number, signal?: AbortSignal) =>
-  request<{ outlook: Outlook | null }>(`/v1/weather?at=${at.lat},${at.lon}&time=${Math.round(time / 1000)}`, { signal }).then(
-    (r) => r.outlook,
+  request<{ outlook: Outlook | null; vigilance: Vigilance | null }>(
+    `/v1/weather?at=${at.lat},${at.lon}&time=${Math.round(time / 1000)}`,
+    { signal },
   );
 
 /** Voitures électriques (Open EV Data) : batterie et consommation, pour estimer l'autonomie. */

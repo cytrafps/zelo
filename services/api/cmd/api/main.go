@@ -35,6 +35,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
+	"github.com/cytrafps/zelo/services/api/internal/vigilance"
 	"github.com/cytrafps/zelo/services/api/internal/weather"
 	"github.com/cytrafps/zelo/services/api/internal/zfe"
 )
@@ -192,11 +193,19 @@ func run(log *slog.Logger, once bool) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 	weatherClient := &http.Client{Timeout: 4 * time.Second}
+	var vigil atomic.Pointer[vigilance.Map]
+	if key := os.Getenv("METEOFRANCE_API_KEY"); key != "" {
+		go loadVigilance(ctx, log, envOr("VIGILANCE_URL", vigilance.URL), key, &vigil)
+	} else {
+		log.Warn("METEOFRANCE_API_KEY vide : pas de vigilance Météo-France")
+	}
 	cfg := httpapi.Config{
-		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
-		TrustedProxies: trusted,
-		Transit:        timetable.Load,
-		Realtime:       realtime.Load,
+		TrustProxy:          os.Getenv("TRUST_PROXY") == "true",
+		TrustedProxies:      trusted,
+		Transit:             timetable.Load,
+		Realtime:            realtime.Load,
+		Vigilance:           vigil.Load,
+		VigilanceDepartment: envOr("VIGILANCE_DEPARTMENT", "51"),
 		Weather: &weather.Cache{TTL: 15 * time.Minute, Fetch: func(ctx context.Context, lat, lon float64) ([]weather.Slot, error) {
 			return weather.Fetch(ctx, weatherClient, envOr("WEATHER_URL", weather.BaseURL), lat, lon)
 		}},
@@ -372,6 +381,28 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
+		}
+	}
+}
+
+// loadVigilance lit la carte de vigilance toutes les 15 min (Météo-France la met à jour au
+// moins deux fois par jour, plus en cas d'évolution) ; une carte en échec garde la précédente.
+func loadVigilance(ctx context.Context, log *slog.Logger, url, key string, into *atomic.Pointer[vigilance.Map]) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	for {
+		m, err := vigilance.Fetch(ctx, client, url, key)
+		if err != nil {
+			log.Warn("vigilance Météo-France", "err", err)
+			metrics.IngestRuns.WithLabelValues("vigilance", "erreur").Inc()
+		} else {
+			into.Store(m)
+			metrics.IngestRuns.WithLabelValues("vigilance", "ok").Inc()
+			metrics.IngestLastSuccess.WithLabelValues("vigilance").SetToCurrentTime()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(15 * time.Minute):
 		}
 	}
 }
