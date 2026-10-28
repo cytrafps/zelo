@@ -1,0 +1,53 @@
+{
+  "checked": "2026-10-28",
+  "parkings": {
+    "way/31432939": {
+      "name": "Erlon",
+      "source": "https://www.cpa-champagneparcauto.com/parkings/parking-erlon/",
+      "free": 30,
+      "quarters": [[120, 60], [480, 50], [555, 20], [720, 10]],
+      "cap": 1700
+    },
+    "way/92305359": {
+      "name": "Buirette",
+      "source": "https://www.cpa-champagneparcauto.com/parkings/parking-buirette/",
+      "free": 30,
+      "quarters": [[120, 60], [480, 50], [555, 20], [720, 10]],
+      "cap": 1700
+    },
+    "way/93590965": {
+      "name": "Cathédrale",
+      "source": "https://www.cpa-champagneparcauto.com/parkings/parking-cathedrale/",
+      "free": 30,
+      "quarters": [[120, 60], [480, 50], [555, 20], [720, 10]],
+      "cap": 1700
+    },
+    "way/93593326": {
+      "name": "Gambetta",
+      "source": "https://www.cpa-champagneparcauto.com/parkings/parking-gambetta/",
+      "free": 30,
+      "quarters": [[120, 60], [480, 50], [555, 20], [720, 10]],
+      "cap": 1700
+    },
+    "way/93591709": {
+      "name": "Hôtel de Ville",
+      "source": "https://www.cpa-champagneparcauto.com/parkings/parking-hotel-de-ville/",
+      "free": 30,
+      "quarters": [[120, 60], [480, 50], [555, 20], [720, 10]],
+      "cap": 1700
+    },
+    "way/720964467": {
+      "name": "République",
+      "source": "https://www.cpa-champagneparcauto.com/parkings/parking-republique/",
+      "free": 30,
+      "quarters": [[180, 60], [480, 50], [540, 40], [720, 30]],
+      "cap": 2150
+    },
+    "way/87834494": {
+      "name": "Gare de Reims Clairmarais P1 (Effia)",
+      "source": "https://www.effia.com/en/parking/parking-gare-de-reims-clairmarais-effia",
+      "free": 30,
+      "points": [[60, 180], [180, 410], [360, 650], [720, 960], [1440, 1290]]
+    }
+  }
+}

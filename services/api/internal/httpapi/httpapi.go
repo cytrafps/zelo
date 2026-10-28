@@ -24,6 +24,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/tarif"
 )
 
 const (
@@ -113,8 +114,21 @@ func (a *API) chargeStations(w http.ResponseWriter, r *http.Request) {
 	list(a, w, r, a.store.ChargeStations, 60)
 }
 
+// parking : un parking OSM, avec ses tarifs quand ils ont été relevés.
+type parking struct {
+	store.Parking
+	Tariff *tarif.Summary `json:"tariff"`
+}
+
 func (a *API) parkings(w http.ResponseWriter, r *http.Request) {
-	list(a, w, r, a.store.Parkings, 300) // données OSM rafraîchies une fois par jour
+	list(a, w, r, func(ctx context.Context, b store.BBox, limit int) ([]parking, error) {
+		ps, err := a.store.Parkings(ctx, b, limit)
+		out := make([]parking, len(ps))
+		for i, p := range ps {
+			out[i] = parking{p, tarif.For(p.ID)}
+		}
+		return out, err
+	}, 300) // données OSM rafraîchies une fois par jour
 }
 
 func (a *API) reports(w http.ResponseWriter, r *http.Request) {

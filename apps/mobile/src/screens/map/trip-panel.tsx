@@ -6,6 +6,7 @@ import type { Report } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
+import { formatCents, formatStay } from '@/utils/format';
 import { walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Route } from '@/utils/route';
 import { sameTarget } from '@/utils/targets';
@@ -207,6 +208,8 @@ function detail(t: TripTarget) {
   if (t.kind === 'dropoff') return 'Pas de stationnement';
   const walk = `${walkingMinutes(t.walk)} min à pied`;
   if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
+  const first = t.item.tariff?.prices[0];
+  if (first) return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;
   return t.item.fee === false ? `Gratuit · ${walk}` : walk;
 }
 
