@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cytrafps/zelo/services/api/internal/irve"
 )
 
 // Tests d'intégration : ils demandent une vraie base PostGIS (ZELO_TEST_DATABASE_URL),
@@ -183,5 +185,40 @@ func TestReportReliability(t *testing.T) {
 	}
 	if _, _, err := s.Vote(ctx, r.ID, "frank", true, ttl); !errors.Is(err, ErrReportNotFound) {
 		t.Fatalf("vote sur un signalement retiré : %v", err)
+	}
+}
+
+// Prix d'une station : le moins cher de ses points, « dès » s'ils diffèrent ; gratuite si tous le sont.
+func TestChargeStationPrice(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	price := func(v float64) *float64 { return &v }
+	pt := func(id, station string, p *float64, free bool) irve.ChargePoint {
+		return irve.ChargePoint{ID: id, StationID: station, StationName: station, Lat: 49.2501, Lon: 4.0301, PowerKW: 22, PriceKWh: p, Free: free}
+	}
+	if err := s.SaveChargePoints(ctx, []irve.ChargePoint{
+		pt("T-PRIX-1", "T-PRIX-A", price(0.59), false),
+		pt("T-PRIX-2", "T-PRIX-A", price(0.36), false),
+		pt("T-PRIX-3", "T-PRIX-B", nil, false),
+		pt("T-PRIX-4", "T-PRIX-C", nil, true),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stations, err := s.ChargeStations(ctx, BBox{4.03, 49.25, 4.0302, 49.2502}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*ChargePrice{}
+	for _, c := range stations {
+		got[c.ID] = c.Price
+	}
+	if p := got["T-PRIX-A"]; p == nil || p.KWh < 0.3599 || p.KWh > 0.3601 || !p.From || p.Free {
+		t.Errorf("A : %+v", p)
+	}
+	if p := got["T-PRIX-B"]; p != nil {
+		t.Errorf("B sans prix publié : %+v", p)
+	}
+	if p := got["T-PRIX-C"]; p == nil || !p.Free {
+		t.Errorf("C gratuite : %+v", p)
 	}
 }

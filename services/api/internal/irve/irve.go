@@ -31,6 +31,10 @@ type ChargePoint struct {
 	Free        bool
 	CardPayment bool
 	Hours       string
+	// PriceKWh : prix annoncé en euros par kWh, nil s'il n'est pas publié lisiblement.
+	PriceKWh *float64
+	// PriceFrom : d'autres frais (minute, session) s'ajoutent au kWh.
+	PriceFrom bool
 }
 
 // Status est l'état d'un point de charge à un instant donné.
@@ -150,6 +154,11 @@ func ParseStatic(r io.Reader, bbox BBox) ([]ChargePoint, error) {
 		}
 		seen[id] = struct{}{}
 		power, _ := strconv.ParseFloat(cols.get(rec, "puissance_nominale"), 64)
+		var price *float64
+		v, from, ok := parsePrice(cols.get(rec, "tarification"))
+		if ok {
+			price = &v
+		}
 		out = append(out, ChargePoint{
 			ID:          id,
 			StationID:   cols.get(rec, "id_station_itinerance"),
@@ -163,6 +172,8 @@ func ParseStatic(r io.Reader, bbox BBox) ([]ChargePoint, error) {
 			Free:        isTrue(cols.get(rec, "gratuit")),
 			CardPayment: isTrue(cols.get(rec, "paiement_cb")),
 			Hours:       cols.get(rec, "horaires"),
+			PriceKWh:    price,
+			PriceFrom:   from,
 		})
 	}
 }

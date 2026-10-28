@@ -82,3 +82,7 @@ CREATE TABLE IF NOT EXISTS report_vote (
     voted_at   timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (report_id, voter)
 );
+
+-- Prix au kWh annoncé dans le champ libre « tarification » (null : non publié lisiblement).
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_kwh real;
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_from boolean NOT NULL DEFAULT false;

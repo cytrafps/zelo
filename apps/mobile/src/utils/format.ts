@@ -4,6 +4,14 @@ const euro = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 3, maximumF
 
 export const formatPrice = (value: number) => `${euro.format(value)} €`;
 
+const kwh = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
+/** Prix de recharge : « 0,59 €/kWh », « dès 0,36 €/kWh », « Gratuite ». */
+export function formatChargePrice(p: { free: boolean; kwh: number; from: boolean }) {
+  if (p.free) return 'Gratuite';
+  return `${p.from ? 'dès ' : ''}${kwh.format(p.kwh)} €/kWh`;
+}
+
 /** « il y a 5 min », « dans 2 h », « hier », « à l'instant »… */
 export function formatAgo(iso: string, now = Date.now()) {
   const minutes = Math.round((new Date(iso).getTime() - now) / 60_000);
