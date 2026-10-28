@@ -74,6 +74,11 @@ const schemaLock int64 = 0x7a656c6f + 1
 
 func migrate(ctx context.Context, db *pgxpool.Pool) error {
 	return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+		// Un ALTER TABLE attend que la table soit libre, et toutes les lectures attendent derrière lui :
+		// plutôt échouer (le pod redémarre et réessaie) que figer l'API derrière une collecte en cours.
+		if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaLock); err != nil {
 			return err
 		}
@@ -101,10 +106,17 @@ func pingRetry(ctx context.Context, db *pgxpool.Pool, max time.Duration) error {
 func (s *Store) Close()                         { s.db.Close() }
 func (s *Store) Ping(ctx context.Context) error { return s.db.Ping(ctx) }
 
+// PoolStat : état du pool de connexions, exposé à Prometheus.
+func (s *Store) PoolStat() *pgxpool.Stat { return s.db.Stat() }
+
 // BBox en degrés WGS84.
 type BBox struct{ MinLon, MinLat, MaxLon, MaxLat float64 }
 
 const envelope = `ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography`
+
+// center : centre de la zone demandée. Quand la limite coupe la liste, on garde les plus proches
+// du centre de l'écran plutôt qu'un échantillon arbitraire.
+const center = `ST_SetSRID(ST_MakePoint(($1 + $3) / 2, ($2 + $4) / 2), 4326)::geography`
 
 // --- Écritures : COPY dans une table temporaire puis upsert, en une transaction.
 
@@ -136,7 +148,13 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 			SELECT DISTINCT ON (id) id, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography, address, city, postcode, now()
 			FROM tmp_station
 			ON CONFLICT (id) DO UPDATE SET geom = EXCLUDED.geom, address = EXCLUDED.address,
-				city = EXCLUDED.city, postcode = EXCLUDED.postcode, seen_at = now();
+				city = EXCLUDED.city, postcode = EXCLUDED.postcode, seen_at = now()
+			-- Toutes les 10 min, ~10 000 stations inchangées : on ne réécrit une ligne que si elle change,
+			-- ou une fois par jour pour seen_at (la purge à 7 jours n'a pas besoin de plus de précision).
+			WHERE fuel_station.seen_at < now() - interval '1 day'
+				OR ST_AsBinary(fuel_station.geom) IS DISTINCT FROM ST_AsBinary(EXCLUDED.geom)
+				OR (fuel_station.address, fuel_station.city, fuel_station.postcode)
+					IS DISTINCT FROM (EXCLUDED.address, EXCLUDED.city, EXCLUDED.postcode);
 
 			DELETE FROM fuel_price p WHERE NOT EXISTS (
 				SELECT 1 FROM tmp_price t WHERE t.station_id = p.station_id AND t.fuel = p.fuel);
@@ -201,11 +219,19 @@ func (s *Store) SaveChargeStatus(ctx context.Context, statuses []irve.Status) er
 			})); err != nil {
 			return err
 		}
+		// Le flux est national (~90 000 points) : seuls les points connus (zone importée) sont gardés,
+		// et les états de points disparus ou figés depuis une semaine sont effacés.
 		_, err := tx.Exec(ctx, `
 			INSERT INTO charge_status (id, state, occupancy, observed_at)
-			SELECT id, state, occupancy, observed_at FROM tmp_cs
+			SELECT DISTINCT ON (t.id) t.id, t.state, t.occupancy, t.observed_at
+			FROM tmp_cs t JOIN charge_point c ON c.id = t.id
+			ORDER BY t.id, t.observed_at DESC
 			ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, occupancy = EXCLUDED.occupancy, observed_at = EXCLUDED.observed_at
-			WHERE charge_status.observed_at < EXCLUDED.observed_at`)
+			WHERE charge_status.observed_at < EXCLUDED.observed_at;
+
+			DELETE FROM charge_status s
+			WHERE s.observed_at < now() - interval '7 days'
+				OR NOT EXISTS (SELECT 1 FROM charge_point c WHERE c.id = s.id);`)
 		return err
 	})
 }
@@ -272,6 +298,7 @@ func (s *Store) FuelStations(ctx context.Context, b BBox, limit int) ([]FuelStat
 		FROM fuel_station s LEFT JOIN fuel_price p ON p.station_id = s.id
 		WHERE ST_Intersects(s.geom, `+envelope+`)
 		GROUP BY s.id
+		ORDER BY s.geom <-> `+center+`
 		LIMIT $5`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, limit)
 	if err != nil {
 		return nil, err
@@ -323,6 +350,7 @@ func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]Charge
 		LEFT JOIN charge_status st ON st.id = c.id
 		WHERE ST_Intersects(c.geom, `+envelope+`)
 		GROUP BY c.station_id
+		ORDER BY min(c.geom <-> `+center+`)
 		LIMIT $5`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, limit)
 	if err != nil {
 		return nil, err

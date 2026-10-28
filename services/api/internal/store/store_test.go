@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cytrafps/zelo/services/api/internal/fuel"
 	"github.com/cytrafps/zelo/services/api/internal/irve"
 )
 
@@ -67,7 +68,10 @@ func TestReportReachesEveryInstance(t *testing.T) {
 	go b.Listen(ctx, quiet, func(m []byte) { got <- m })
 	time.Sleep(500 * time.Millisecond) // le temps que les deux LISTEN soient actifs
 
-	r, _, err := a.AddReport(ctx, "bouchon", 49.25, 4.03, time.Minute, "test-a")
+	// Position propre à chaque exécution : sinon le signalement d'un essai précédent (base réutilisée
+	// en local) serait confirmé au lieu d'être créé.
+	lat := 49.2 + float64(time.Now().UnixNano()%1000)/10_000
+	r, _, err := a.AddReport(ctx, "bouchon", lat, 4.03, time.Minute, "test-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,5 +224,78 @@ func TestChargeStationPrice(t *testing.T) {
 	}
 	if p := got["T-PRIX-C"]; p == nil || !p.Free {
 		t.Errorf("C gratuite : %+v", p)
+	}
+}
+
+// Le flux dynamique est national : seuls les points connus gardent un état, le plus récent.
+func TestChargeStatusKeepsKnownPoints(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if err := s.SaveChargePoints(ctx, []irve.ChargePoint{{ID: "T-ST-1", StationID: "T-ST", Lat: 49.26, Lon: 4.04}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.SaveChargeStatus(ctx, []irve.Status{
+		{ID: "T-ST-1", State: "en_service", Occupancy: "occupe", ObservedAt: now.Add(-time.Minute)},
+		{ID: "T-ST-1", State: "en_service", Occupancy: "libre", ObservedAt: now}, // doublon du flux : le plus récent gagne
+		{ID: "T-ST-INCONNU", State: "en_service", Occupancy: "libre", ObservedAt: now},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var occupancy string
+	if err := s.db.QueryRow(ctx, `SELECT occupancy FROM charge_status WHERE id = 'T-ST-1'`).Scan(&occupancy); err != nil || occupancy != "libre" {
+		t.Fatalf("T-ST-1 : %q (%v), attendu libre", occupancy, err)
+	}
+	var unknown int
+	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM charge_status WHERE id = 'T-ST-INCONNU'`).Scan(&unknown); err != nil || unknown != 0 {
+		t.Fatalf("point inconnu enregistré (%d, %v)", unknown, err)
+	}
+}
+
+// Une station inchangée n'est pas réécrite à chaque collecte ; une adresse corrigée l'est.
+func TestFuelUpsertSkipsUnchanged(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	st := fuel.Station{ID: "T-FUEL-1", Lat: 49.27, Lon: 4.05, Address: "1 rue A", City: "Reims", Postcode: "51100"}
+	version := func() (x string) {
+		t.Helper()
+		if err := s.db.QueryRow(ctx, `SELECT xmin::text FROM fuel_station WHERE id = $1`, st.ID).Scan(&x); err != nil {
+			t.Fatal(err)
+		}
+		return x
+	}
+	if err := s.SaveFuel(ctx, []fuel.Station{st}); err != nil {
+		t.Fatal(err)
+	}
+	v1 := version()
+	if err := s.SaveFuel(ctx, []fuel.Station{st}); err != nil {
+		t.Fatal(err)
+	}
+	if v2 := version(); v2 != v1 {
+		t.Fatalf("station inchangée réécrite (xmin %s → %s)", v1, v2)
+	}
+	st.Address = "2 rue A"
+	if err := s.SaveFuel(ctx, []fuel.Station{st}); err != nil {
+		t.Fatal(err)
+	}
+	if v3 := version(); v3 == v1 {
+		t.Fatal("adresse corrigée non enregistrée")
+	}
+}
+
+// Liste coupée par la limite : on garde les stations les plus proches du centre de la zone.
+func TestFuelStationsNearestFirst(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	at := func(id string, lon float64) fuel.Station { return fuel.Station{ID: id, Lat: 49.30, Lon: lon} }
+	if err := s.SaveFuel(ctx, []fuel.Station{at("T-KNN-BORD", 4.100), at("T-KNN-CENTRE", 4.1101), at("T-KNN-AUTRE-BORD", 4.119)}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FuelStations(ctx, BBox{4.10, 49.29, 4.12, 49.31}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "T-KNN-CENTRE" {
+		t.Fatalf("limite 1 : %+v, attendu T-KNN-CENTRE", got)
 	}
 }
