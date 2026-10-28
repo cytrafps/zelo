@@ -35,6 +35,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
+	"github.com/cytrafps/zelo/services/api/internal/weather"
 	"github.com/cytrafps/zelo/services/api/internal/zfe"
 )
 
@@ -190,11 +191,15 @@ func run(log *slog.Logger, once bool) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	weatherClient := &http.Client{Timeout: 4 * time.Second}
 	cfg := httpapi.Config{
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
 		TrustedProxies: trusted,
 		Transit:        timetable.Load,
 		Realtime:       realtime.Load,
+		Weather: &weather.Cache{TTL: 15 * time.Minute, Fetch: func(ctx context.Context, lat, lon float64) ([]weather.Slot, error) {
+			return weather.Fetch(ctx, weatherClient, envOr("WEATHER_URL", weather.BaseURL), lat, lon)
+		}},
 		Zones: func() []zfe.Zone {
 			if z := zones.Load(); z != nil {
 				return *z

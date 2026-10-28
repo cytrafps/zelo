@@ -3,7 +3,7 @@ import { distance, type LatLon } from './geo.ts';
 
 type TwoOrFour = 'car' | 'moto' | 'bike';
 /** `vehicle` absent : parking voiture. */
-type Parking = LatLon & { id: string; name: string; fee: boolean | null; vehicle?: TwoOrFour };
+type Parking = LatLon & { id: string; name: string; fee: boolean | null; vehicle?: TwoOrFour; kind?: string; covered?: boolean };
 type Charge = LatLon & { id: string; name: string; maxPowerKw: number; available: number | null; twoWheels?: boolean };
 /** Parking relais et ses trajets en tram ou bus (voir l'API /v1/park-ride). */
 type Relay<P> = { parking: P; journeys: readonly { finalWalk: number }[] };
@@ -90,3 +90,8 @@ export const targetPoint = (t: Target, dest: LatLon): LatLon => (t.kind === 'dro
 
 export const sameTarget = (a: Target, b: Target) =>
   a.kind === b.kind && (a.kind === 'dropoff' || (b.kind !== 'dropoff' && a.item.id === b.item.id));
+
+/** À l'abri de la pluie et du gel : parking souterrain ou à étages, arceaux couverts. */
+export const sheltered = (t: Target) =>
+  (t.kind === 'parking' || t.kind === 'parkride') &&
+  (t.item.kind === 'underground' || t.item.kind === 'multi-storey' || t.item.covered === true);

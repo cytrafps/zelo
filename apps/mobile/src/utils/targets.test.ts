@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { forVehicle, sameTarget, targetPoint, targets, needsWalk } from './targets.ts';
+import { forVehicle, sameTarget, sheltered, targetPoint, targets, needsWalk } from './targets.ts';
 
 const cinema = { lat: 49.2556, lon: 4.0262 };
 const p = (id: string, dLat: number, fee: boolean | null = true) => ({ id, name: id, lat: cinema.lat + dLat, lon: cinema.lon, fee });
@@ -50,4 +50,13 @@ test('forVehicle : arceaux à vélo, places motos en tête à moto, parkings voi
   // À moto, la borne deux-roues plutôt que la plus proche.
   assert.deepEqual(ids('moto'), ['parking:motos', 'parking:erlon', 'charge:deux-roues', 'dropoff']);
   assert.ok(!ids('car').includes('parking:arceaux') && !ids('car').includes('parking:motos'));
+});
+
+test('à l’abri : souterrain, à étages ou couvert', () => {
+  const p = (kind: string, covered = false) => ({ kind: 'parking' as const, walk: 100, item: { id: kind, name: '', fee: null, lat: 0, lon: 0, kind, covered } });
+  assert.equal(sheltered(p('underground')), true);
+  assert.equal(sheltered(p('multi-storey')), true);
+  assert.equal(sheltered(p('surface')), false);
+  assert.equal(sheltered(p('surface', true)), true);
+  assert.equal(sheltered({ kind: 'dropoff' }), false);
 });
