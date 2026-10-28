@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
-import { getChargeStations, getParkings, getParkRides, type BBox, type ReportKind } from '@/api/zelo';
+import { getChargeStations, getParkings, getParkRides, getZones, type BBox, type ReportKind } from '@/api/zelo';
 import { Glass } from '@/components/glass';
 import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus, type Place as DataPlace } from '@/hooks/use-map-data';
@@ -18,6 +18,7 @@ import { useTrip, type TripTarget } from '@/hooks/use-trip';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
 import { FREED_FOR_MS } from '@/utils/car-events';
+import type { Zone } from '@/utils/zfe';
 import { distance, type LatLon } from '@/utils/geo';
 import { pushRecent } from '@/utils/recents';
 import { bounds } from '@/utils/route';
@@ -64,6 +65,15 @@ export function MapScreen() {
   /** Place quittée en se reconnectant à Android Auto : à signaler libre tant qu'elle est récente. */
   const [freed, setFreed] = useStored<(LatLon & { since: number }) | null>('zelo.place-liberee', null);
   const now = useNow(60_000);
+  /** Zones à faibles émissions autour de la destination du trajet en cours. */
+  const [zones, setZones] = useState<Zone[]>([]);
+  const destination = trip?.destination;
+  useEffect(() => {
+    if (!destination) return;
+    const ctl = new AbortController();
+    getZones(around(destination, 0.05), ctl.signal).then(setZones, () => setZones([]));
+    return () => ctl.abort();
+  }, [destination]);
   // Guidage sur la carte en voiture et à pied ; en tram, une carte d'horaires suffit.
   const guiding = trip !== null && (trip.phase === 'drive' || trip.phase === 'walk');
   // En voiture, le cap GPS (le téléphone est fixé n'importe comment) ; à pied, la boussole (le cap GPS est trop bruité à 5 km/h).
@@ -328,6 +338,7 @@ export function MapScreen() {
               bottomInset={insets.bottom}
               avoid={trips.avoid}
               vehicle={trips.vehicle}
+              zones={zones}
               onSelect={trips.select}
               onGo={(i) => {
                 setFollowing(true);

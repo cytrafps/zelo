@@ -3,6 +3,7 @@ import { deviceId } from '@/utils/device';
 import { fetchWithin } from '@/utils/net';
 import type { LatLon } from '@/utils/geo';
 import type { Route } from '@/utils/route';
+import type { Zone } from '@/utils/zfe';
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
 export const LIVE_URL = API_URL.replace(/^http/, 'ws') + '/v1/live';
@@ -137,6 +138,8 @@ export const getChargeStations = (b: BBox, s?: AbortSignal) => list<ChargeStatio
 export const getParkings = (b: BBox, s?: AbortSignal, vehicle: Vehicle = 'car') =>
   list<Parking>(vehicle === 'car' ? '/v1/parkings' : `/v1/parkings?vehicle=${vehicle}`, b, s);
 export const getReports = (b: BBox, s?: AbortSignal) => list<Report>('/v1/reports', b, s);
+/** Zones à faibles émissions qui touchent la zone, en vigueur ou à venir. */
+export const getZones = (b: BBox, s?: AbortSignal) => list<Zone>('/v1/zfe', b, s);
 
 /** Un signalement du même type à moins de 150 m n'est pas dupliqué : il est confirmé et renvoyé. */
 export const postReport = (kind: ReportKind, lat: number, lon: number) =>

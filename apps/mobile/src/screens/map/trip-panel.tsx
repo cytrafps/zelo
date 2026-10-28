@@ -1,10 +1,11 @@
 import { MenuView } from '@expo/ui/community/menu';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
 import type { Avoid, Parking, Report, Vehicle } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
+import { useStored } from '@/hooks/use-stored';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
 import { areaCharge, areaFuel, areaName, areaServices } from '@/utils/areas';
@@ -12,7 +13,8 @@ import { linesLabel, relayDuration, stopName } from '@/utils/transit';
 import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
-import { forVehicle, sameTarget } from '@/utils/targets';
+import { forVehicle, sameTarget, targetPoint } from '@/utils/targets';
+import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
 
 const ios = Platform.OS === 'ios';
 
@@ -28,6 +30,8 @@ type Props = {
   onGo: (i: number) => void;
   avoid: readonly Avoid[];
   vehicle: Vehicle;
+  /** Zones à faibles émissions autour de la destination. */
+  zones: readonly Zone[];
   onChange: (change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[]; vehicle?: Vehicle }) => void;
   onClose: () => void;
 };
@@ -36,7 +40,7 @@ type Props = {
 const DEPARTS = [0, 15, 30, 60, 120];
 
 /** Aperçu du trajet (maquettes 03 et 03b) : où se garer, puis les itinéraires et « Y aller ». */
-export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, vehicle, onChange, onClose }: Props) {
+export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, vehicle, zones, onChange, onClose }: Props) {
   const bike = vehicle === 'bike';
   // Les arrêts qui valent pour ce véhicule (arceaux à vélo, places motos d'abord à moto).
   const options = forVehicle(trip.options, vehicle);
@@ -149,6 +153,18 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
         )}
       </ScrollView>
 
+      {!choosing && (
+        <ZfeNotice
+          zones={zones}
+          trip={trip}
+          vehicle={vehicle}
+          options={options}
+          day={localDay(start)}
+          c={c}
+          onPark={(target) => onChange({ target })}
+        />
+      )}
+
       {choosing ? (
         <View style={styles.list}>
           <Text style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}>À l’arrivée</Text>
@@ -202,6 +218,80 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
           <Areas areas={trip.routes[trip.selected]?.areas} c={c} />
         </ScrollView>
       )}
+    </View>
+  );
+}
+
+/**
+ * ZFE : là où la voiture s'arrête (parking, borne, relais, ou la destination pour une dépose)
+ * est-il interdit à sa vignette ? On la demande une fois (elle reste sur le téléphone), puis on
+ * propose de se garer hors zone.
+ */
+function ZfeNotice(props: {
+  zones: readonly Zone[];
+  trip: Trip;
+  vehicle: Vehicle;
+  options: TripTarget[];
+  day: string;
+  c: Couleurs;
+  onPark: (t: TripTarget) => void;
+}) {
+  const { zones, trip, vehicle, options, day, c, onPark } = props;
+  const [vignette, setVignette] = useStored<Critair | null>('zelo.critair', null);
+  const [editing, setEditing] = useState(false);
+  if (vehicle === 'bike') return null;
+  const zone = zoneAt(zones, targetPoint(trip.target, trip.destination), day);
+  const rule = zone?.[vehicle === 'moto' ? 'moto' : 'car'];
+  if (!zone || !rule) return null;
+
+  if (!vignette || editing)
+    return (
+      <View style={styles.zfe}>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Ton arrêt est dans la ${zone.name}. Ta vignette Crit'Air ?`}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+          {CRITAIR.map((v) => (
+            <Pressable
+              key={v}
+              onPress={() => {
+                setVignette(v);
+                setEditing(false);
+              }}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: v === vignette }}
+              style={[styles.chip, { borderColor: v === vignette ? c.action : c.fond.separateur }]}
+            >
+              <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{v === 'EL' ? 'Électrique' : v === 'NC' ? 'Sans' : v.slice(1)}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    );
+
+  if (!refused(vignette, rule)) return null;
+  const inZone = (t: TripTarget) => zoneAt([zone], targetPoint(t, trip.destination), day) !== undefined;
+  // Hors zone : le parking relais d'abord (on finit en tram ou en bus), puis le plus proche.
+  const outside = [...options.filter((t) => t.kind === 'parkride'), ...options].find((t) => t.kind !== 'dropoff' && !inZone(t));
+  const hours = rule.hours && rule.hours !== '24/7' ? ` (${rule.hours})` : '';
+  return (
+    <View style={[styles.zfe, { backgroundColor: c.fond.attenue }]}>
+      <Text style={[texte.corps, { color: c.alerte.base }]}>
+        {`${critairLabel(vignette)} : interdite dans la ${zone.name}${hours}.`}
+      </Text>
+      <View style={styles.zfeActions}>
+        {outside && (
+          <Pressable onPress={() => onPark(outside)} accessibilityRole="button" style={[styles.chip, { borderColor: c.action }]}>
+            <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`Me garer hors zone : ${short(outside)}`}</Text>
+          </Pressable>
+        )}
+        {zone.url && (
+          <Pressable onPress={() => void Linking.openURL(zone.url!)} accessibilityRole="link" hitSlop={8}>
+            <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>Dérogations</Text>
+          </Pressable>
+        )}
+        <Pressable onPress={() => setEditing(true)} accessibilityRole="button" hitSlop={8}>
+          <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>Changer de vignette</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -386,6 +476,8 @@ function detail(t: TripTarget) {
 const shadow = { shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -2 }, elevation: 8 };
 
 const styles = StyleSheet.create({
+  zfe: { marginHorizontal: espace[4], marginBottom: espace[2], padding: espace[3], borderRadius: rayon.s, gap: espace[2] },
+  zfeActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: espace[3] },
   cardIos: { marginHorizontal: espace[2], borderRadius: 34, paddingHorizontal: espace[4], ...shadow },
   cardAndroid: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: espace[4], ...shadow },
   handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginTop: espace[2], marginBottom: espace[3] },
