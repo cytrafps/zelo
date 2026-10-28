@@ -6,7 +6,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, 
 import type { Avoid, Report } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
-import { espace, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
+import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
 import { formatCents, formatStay } from '@/utils/format';
 import { walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Route } from '@/utils/route';
@@ -258,7 +258,7 @@ function RoundButton(props: { c: Couleurs; label: string; icon: { ios: 'xmark' |
 }
 
 function TargetIcon({ t, c, size }: { t: TripTarget; c: Couleurs; size: number }) {
-  if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontSize: size, fontWeight: '700' }}>P</Text>;
+  if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontFamily: police, fontSize: size, fontWeight: '700' }}>P</Text>;
   if (t.kind === 'charge') return <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.recharge.base} size={size} />;
   return <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.secondaire} size={size} />;
 }
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
   routes: { maxHeight: 300, marginTop: espace[2] },
   route: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingVertical: espace[3] },
   flex: { flex: 1 },
-  duration: { fontSize: 22, lineHeight: 28, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  duration: { fontFamily: police, fontSize: 22, lineHeight: 28, fontWeight: '600', fontVariant: ['tabular-nums'] },
   report: { flexDirection: 'row', alignItems: 'center', gap: espace[2], marginTop: 2 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   go: { height: 44, paddingHorizontal: espace[5], borderRadius: rayon.pilule, alignItems: 'center', justifyContent: 'center' },

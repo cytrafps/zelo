@@ -6,7 +6,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useNow } from '@/hooks/use-now';
 import type { Phase, TripTarget } from '@/hooks/use-trip';
-import { espace, rayon, type Couleurs } from '@/theme';
+import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
 import { cumulative, formatClock, formatDuration, progress, type Route } from '@/utils/route';
 
@@ -169,8 +169,8 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   bannerRow: { flexDirection: 'row', alignItems: 'center', gap: espace[4] },
-  distance: { color: '#FFFFFF', fontSize: 36, lineHeight: 42, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  street: { color: '#FFFFFF', fontSize: 20, lineHeight: 26, fontWeight: '500' },
+  distance: { color: '#FFFFFF', fontFamily: police, fontSize: 36, lineHeight: 42, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  street: { color: '#FFFFFF', fontFamily: police, fontSize: 20, lineHeight: 26, fontWeight: '500' },
   then: {
     position: 'absolute',
     left: espace[2],
@@ -183,8 +183,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: espace[3],
     paddingVertical: espace[2],
   },
-  thenLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
-  thenStreet: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  thenLabel: { color: 'rgba(255,255,255,0.7)', fontFamily: police, fontSize: 14 },
+  thenStreet: { color: '#FFFFFF', fontFamily: police, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   bar: {
     position: 'absolute',
     left: espace[2],
@@ -198,12 +198,12 @@ const styles = StyleSheet.create({
     gap: espace[3],
     ...shadow,
   },
-  remaining: { fontSize: 24, lineHeight: 30, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  eta: { fontSize: 13, fontVariant: ['tabular-nums'] },
+  remaining: { fontFamily: police, fontSize: 24, lineHeight: 30, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  eta: { fontFamily: police, fontSize: 13, fontVariant: ['tabular-nums'] },
   sep: { width: StyleSheet.hairlineWidth, height: 36 },
   stop: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 140 },
-  stopText: { fontSize: 17, fontWeight: '600', flexShrink: 1 },
+  stopText: { fontFamily: police, fontSize: 17, fontWeight: '600', flexShrink: 1 },
   tile: { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  tileLetter: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  tileLetter: { color: '#FFFFFF', fontFamily: police, fontSize: 14, fontWeight: '700' },
   close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 });

@@ -1,7 +1,9 @@
 import { SymbolView } from 'expo-symbols';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { rayon, type Couleurs } from '@/theme';
+import { Glass } from '@/components/glass';
+
+import { police, rayon, type Couleurs } from '@/theme';
 
 import { CATEGORY_ICON, type Category } from './pins';
 
@@ -16,7 +18,7 @@ type Props = { value: Category; onChange: (c: Category) => void; c: Couleurs; to
 /** Colonne de filtres en haut à droite : une catégorie à la fois, comme dans les maquettes. */
 export function Filters({ value, onChange, c, top }: Props) {
   return (
-    <View style={[styles.column, { top, backgroundColor: c.fond.surface }]} accessibilityRole="radiogroup">
+    <Glass style={[styles.column, { top }]} accessibilityRole="radiogroup">
       {ORDER.map(({ key, label }) => {
         const on = key === value;
         const tone = c[key];
@@ -37,7 +39,7 @@ export function Filters({ value, onChange, c, top }: Props) {
           </Pressable>
         );
       })}
-    </View>
+    </Glass>
   );
 }
 
@@ -48,12 +50,7 @@ const styles = StyleSheet.create({
     padding: 4,
     gap: 4,
     borderRadius: rayon.pilule,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
   },
   button: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  letter: { fontSize: 22, fontWeight: '700' },
+  letter: { fontFamily: police, fontSize: 22, fontWeight: '700' },
 });

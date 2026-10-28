@@ -2,7 +2,7 @@ import { GeoJSONSource, Layer, ViewAnnotation } from '@maplibre/maplibre-react-n
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-import type { Couleurs } from '@/theme';
+import { police, type Couleurs } from '@/theme';
 import { cumulative, formatDuration, pointAt, type Route } from '@/utils/route';
 
 const line = (coords: [number, number][], props: Record<string, unknown>): GeoJSON.Feature => ({
@@ -103,6 +103,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  time: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  hint: { fontSize: 11, fontWeight: '500' },
+  time: { fontFamily: police, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  hint: { fontFamily: police, fontSize: 11, fontWeight: '500' },
 });
