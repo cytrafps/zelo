@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.170.0/build/three.module.js"}}</script></head><body>
+<script type="module">
+import * as THREE from 'three';
+const p = new URLSearchParams(location.search);
+const N = +p.get('px'), top = p.get('top'), rim = p.get('rim'), elev = +p.get('elev');
+const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+r.setSize(N, N); r.setClearColor(0, 0); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.NeutralToneMapping;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+// Flèche dans le plan XZ, pointe vers -Z (l'avant, vers le haut de l'écran).
+const s = new THREE.Shape();
+s.moveTo(0, 1); s.lineTo(0.66, -0.66); s.quadraticCurveTo(0.7, -0.78, 0.58, -0.74); s.lineTo(0, -0.38); s.lineTo(-0.58, -0.74); s.quadraticCurveTo(-0.7, -0.78, -0.66, -0.66); s.closePath();
+const geo = new THREE.ExtrudeGeometry(s, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.06, bevelSegments: 8, curveSegments: 24 });
+geo.rotateX(-Math.PI / 2); geo.translate(0, 0.07, 0.05);
+// Deux matériaux : faces (dessus/dessous) et flancs biseautés.
+const face = new THREE.MeshPhysicalMaterial({ color: top, roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.18 });
+const side = new THREE.MeshPhysicalMaterial({ color: rim, roughness: 0.4, clearcoat: 0.5 });
+const mesh = new THREE.Mesh(geo, [face, side]); mesh.castShadow = true; scene.add(mesh);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.ShadowMaterial({ opacity: 0.32 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f99, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-1.2, 4, 1.6); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 8; Object.assign(sun.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2 }); scene.add(sun);
+const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(2, 2, -2); scene.add(key);
+const a = elev * Math.PI / 180, d = 10, h = 1.15;
+const cam = new THREE.OrthographicCamera(-h, h, h, -h, 0.1, 50);
+cam.position.set(0, d * Math.sin(a), d * Math.cos(a)); cam.lookAt(0, 0, 0.08);
+r.render(scene, cam);
+document.title = 'ready';
+</script></body></html>

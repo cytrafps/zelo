@@ -1,5 +1,5 @@
-import { GeoJSONSource, Layer, ViewAnnotation } from '@maplibre/maplibre-react-native';
-import { useMemo } from 'react';
+import { GeoJSONSource, Layer, LayerAnnotation, useCurrentPosition, ViewAnnotation } from '@maplibre/maplibre-react-native';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { police, type Couleurs } from '@/theme';
@@ -139,5 +139,41 @@ export function ControlLayer({ controls }: { controls: Control[] }) {
         }}
       />
     </GeoJSONSource>
+  );
+}
+
+/** En dessous (m/s, ~5 km/h), le cap GPS ne veut rien dire : la voiture garde le dernier. */
+const MOVING_MS = 1.5;
+
+/**
+ * Flèche de navigation en 3D, tournée selon le cap GPS ; sa position glisse d'un relevé à l'autre.
+ * L'image est un rendu vu de derrière et d'au-dessus (scripts/nav-arrow), affiché face à l'écran :
+ * la caméra du guidage étant derrière la voiture, le relief est juste. Avant de rouler, elle suit
+ * le sens du tracé (initialCourse).
+ */
+export function DrivingPuck({ initialCourse }: { initialCourse: number }) {
+  const position = useCurrentPosition();
+  const [course, setCourse] = useState(initialCourse);
+  const heading = position?.coords.heading;
+  if (heading != null && heading >= 0 && (position?.coords.speed ?? 0) > MOVING_MS && heading !== course) {
+    setCourse(heading);
+  }
+  if (!position) return null;
+  return (
+    <LayerAnnotation id="voiture-position" animated animationDuration={900} lngLat={[position.coords.longitude, position.coords.latitude]}>
+      <Layer
+        id="voiture-position-icone"
+        type="symbol"
+        layout={{
+          'icon-image': 'puck-arrow',
+          'icon-rotate': course,
+          'icon-rotation-alignment': 'map',
+          'icon-pitch-alignment': 'viewport',
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.85, 17, 1.25, 19, 1.4] as never,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        }}
+      />
+    </LayerAnnotation>
   );
 }
