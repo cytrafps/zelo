@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // URL est l'instance publique ; à remplacer par une instance dédiée en production.
@@ -36,25 +37,58 @@ type Element struct {
 	Geometry []struct{ Lat, Lon float64 } `json:"geometry"`
 }
 
-// Fetch envoie la requête Overpass QL et renvoie ses éléments.
+// slot : une requête à la fois par processus. L'instance publique n'accorde que deux créneaux par
+// adresse IP et répond 429 ou 502 au-delà ; les imports (parkings, feux, aires) partent ensemble
+// au démarrage.
+var slot = make(chan struct{}, 1)
+
+// backoff : attentes entre les essais quand Overpass est saturé (429, 502, 503, 504) ou injoignable.
+var backoff = []time.Duration{30 * time.Second, 2 * time.Minute, 5 * time.Minute}
+
+// Fetch envoie la requête Overpass QL et renvoie ses éléments. Une saturation passagère est
+// retentée plus tard (dans la limite du contexte) ; une autre erreur est renvoyée tout de suite.
 func Fetch(ctx context.Context, client *http.Client, endpoint, query string) ([]Element, error) {
+	for attempt := 0; ; attempt++ {
+		els, retry, err := fetchOnce(ctx, client, endpoint, query)
+		if err == nil || !retry || attempt == len(backoff) {
+			return els, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w (abandon : %v)", err, ctx.Err())
+		case <-time.After(backoff[attempt]):
+		}
+	}
+}
+
+func fetchOnce(ctx context.Context, client *http.Client, endpoint, query string) (els []Element, retry bool, err error) {
+	select {
+	case slot <- struct{}{}:
+		defer func() { <-slot }()
+	case <-ctx.Done():
+		return nil, false, ctx.Err()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
 		strings.NewReader(url.Values{"data": {query}}.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, ctx.Err() == nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-		return nil, fmt.Errorf("overpass: HTTP %d", resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		els, err = Parse(resp.Body)
+		return els, false, err
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		retry = true
 	}
-	return Parse(resp.Body)
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	return nil, retry, fmt.Errorf("overpass: HTTP %d", resp.StatusCode)
 }
 
 // Parse lit une réponse Overpass JSON.
