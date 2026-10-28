@@ -60,6 +60,8 @@ kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argop
 # 3. Mot de passe de la base (hexadécimal : sûr dans une URL de connexion)
 kubectl create namespace zelo
 kubectl -n zelo create secret generic zelo-db --from-literal=password="$(openssl rand -hex 24)"
+# Facultatif : vigilances Météo-France (clé « API Key » de DonneesPubliquesVigilance sur portail-api.meteofrance.fr)
+kubectl -n zelo create secret generic zelo-meteofrance --from-literal=api-key='…'
 
 # 4. Applications (monitoring d'abord : ses CRD servent à Zelo)
 kubectl apply -f deploy/argocd/monitoring.yaml

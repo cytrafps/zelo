@@ -59,6 +59,13 @@ spec:
                   key: password
             - name: DATABASE_URL
               value: postgres://zelo:$(DB_PASSWORD)@db:5432/zelo?sslmode=disable
+            # Clé de l'API Vigilance de Météo-France (portail-api.meteofrance.fr) ; sans elle, pas de vigilance.
+            - name: METEOFRANCE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: zelo-meteofrance
+                  key: api-key
+                  optional: true
             - name: TRUST_PROXY
               value: "false"
             - name: VALHALLA_URL

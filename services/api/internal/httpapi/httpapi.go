@@ -31,6 +31,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
+	"github.com/cytrafps/zelo/services/api/internal/vigilance"
 	"github.com/cytrafps/zelo/services/api/internal/weather"
 	"github.com/cytrafps/zelo/services/api/internal/zfe"
 )
@@ -85,6 +86,10 @@ type Config struct {
 	Zones func() []zfe.Zone
 	// Weather : prévision au quart d'heure (Open-Meteo, en cache) ; nil : pas de météo.
 	Weather *weather.Cache
+	// Vigilance : dernière carte de Météo-France, et le département de la zone couverte (« 51 ») ;
+	// nil : pas de clé, pas de vigilance.
+	Vigilance           func() *vigilance.Map
+	VigilanceDepartment string
 }
 
 type Router interface {
@@ -223,7 +228,8 @@ func (a *API) zfe(w http.ResponseWriter, r *http.Request) {
 }
 
 // weather : GET /v1/weather?at=lat,lon[&time=<secondes Unix>] — pluie et froid à l'heure
-// d'arrivée (maintenant par défaut). La météo n'est qu'un conseil : sans prévision, outlook
+// d'arrivée (maintenant par défaut), et la vigilance Météo-France du département couvert
+// (Zelo couvre la Marne : un seul département). La météo n'est qu'un conseil : sans prévision, outlook
 // vaut null plutôt qu'une erreur.
 func (a *API) weather(w http.ResponseWriter, r *http.Request) {
 	p, err := parsePoint(r.URL.Query().Get("at"))
@@ -251,8 +257,12 @@ func (a *API) weather(w http.ResponseWriter, r *http.Request) {
 			out = &o
 		}
 	}
+	var alert *vigilance.Alert
+	if a.cfg.Vigilance != nil {
+		alert = a.cfg.Vigilance().At(a.cfg.VigilanceDepartment, at)
+	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
-	writeJSON(w, http.StatusOK, map[string]any{"outlook": out})
+	writeJSON(w, http.StatusOK, map[string]any{"outlook": out, "vigilance": alert})
 }
 
 // evModels : GET /v1/ev-models — voitures électriques (Open EV Data), une liste figée à chaque
