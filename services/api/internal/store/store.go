@@ -2,6 +2,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"errors"
@@ -258,11 +259,11 @@ func (s *Store) SaveParkings(ctx context.Context, parkings []parking.Parking) er
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_pk (
 			id text, name text, operator text, kind text, lon float8, lat float8, capacity int, disabled int,
-			charging int, fee boolean, max_height real, opening_hours text, park_ride boolean) ON COMMIT DROP`); err != nil {
+			charging int, fee boolean, max_height real, opening_hours text, park_ride boolean, vehicle text, covered boolean) ON COMMIT DROP`); err != nil {
 			return err
 		}
 		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_pk"},
-			[]string{"id", "name", "operator", "kind", "lon", "lat", "capacity", "disabled", "charging", "fee", "max_height", "opening_hours", "park_ride"},
+			[]string{"id", "name", "operator", "kind", "lon", "lat", "capacity", "disabled", "charging", "fee", "max_height", "opening_hours", "park_ride", "vehicle", "covered"},
 			pgx.CopyFromSlice(len(parkings), func(i int) ([]any, error) {
 				p := parkings[i]
 				var h *float32
@@ -271,20 +272,20 @@ func (s *Store) SaveParkings(ctx context.Context, parkings []parking.Parking) er
 					h = &v
 				}
 				return []any{p.ID, p.Name, p.Operator, p.Kind, p.Lon, p.Lat, p.Capacity, p.Disabled, p.Charging,
-					p.Fee, h, p.OpeningHours, p.ParkRide}, nil
+					p.Fee, h, p.OpeningHours, p.ParkRide, cmp.Or(p.Vehicle, "car"), p.Covered}, nil
 			})); err != nil {
 			return err
 		}
 		// now() vaut l'heure de début de la transaction : tout ce qui n'a pas été vu dans cet import est supprimé.
 		_, err := tx.Exec(ctx, `
-			INSERT INTO parking (id, name, operator, kind, geom, capacity, disabled, charging, fee, max_height, opening_hours, park_ride, seen_at)
+			INSERT INTO parking (id, name, operator, kind, geom, capacity, disabled, charging, fee, max_height, opening_hours, park_ride, vehicle, covered, seen_at)
 			SELECT DISTINCT ON (id) id, name, operator, kind, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography,
-				capacity, disabled, charging, fee, max_height, opening_hours, park_ride, now()
+				capacity, disabled, charging, fee, max_height, opening_hours, park_ride, vehicle, covered, now()
 			FROM tmp_pk
 			ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, operator = EXCLUDED.operator, kind = EXCLUDED.kind,
 				geom = EXCLUDED.geom, capacity = EXCLUDED.capacity, disabled = EXCLUDED.disabled, charging = EXCLUDED.charging,
 				fee = EXCLUDED.fee, max_height = EXCLUDED.max_height, opening_hours = EXCLUDED.opening_hours,
-				park_ride = EXCLUDED.park_ride, seen_at = now();
+				park_ride = EXCLUDED.park_ride, vehicle = EXCLUDED.vehicle, covered = EXCLUDED.covered, seen_at = now();
 
 			DELETE FROM parking WHERE seen_at < now();`)
 		return err
@@ -558,17 +559,20 @@ type Parking struct {
 	MaxHeight    *float32 `json:"maxHeight"`
 	OpeningHours string   `json:"openingHours"`
 	ParkRide     bool     `json:"parkRide"`
+	Vehicle      string   `json:"vehicle"` // car, moto, bike
+	Covered      bool     `json:"covered"`
 }
 
-// Parkings renvoie les plus grands d'abord, pour qu'une limite atteinte coupe les petits.
-func (s *Store) Parkings(ctx context.Context, b BBox, limit int) ([]Parking, error) {
+// Parkings renvoie les parkings du véhicule (car, moto, bike), les plus grands d'abord, pour
+// qu'une limite atteinte coupe les petits.
+func (s *Store) Parkings(ctx context.Context, b BBox, limit int, vehicle string) ([]Parking, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, name, operator, kind, ST_Y(geom::geometry), ST_X(geom::geometry),
-			capacity, disabled, charging, fee, max_height, opening_hours, park_ride
+			capacity, disabled, charging, fee, max_height, opening_hours, park_ride, vehicle, covered
 		FROM parking
-		WHERE ST_Intersects(geom, `+envelope+`)
+		WHERE ST_Intersects(geom, `+envelope+`) AND vehicle = $6
 		ORDER BY capacity DESC NULLS LAST
-		LIMIT $5`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, limit)
+		LIMIT $5`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, limit, vehicle)
 	if err != nil {
 		return nil, err
 	}

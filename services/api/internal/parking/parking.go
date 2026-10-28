@@ -35,11 +35,14 @@ type Parking struct {
 	MaxHeight    *float64 // en mètres
 	OpeningHours string
 	ParkRide     bool
+	// Vehicle : « car » (parking), « moto » (places deux-roues motorisés), « bike » (vélos).
+	Vehicle string
+	Covered bool // abrité (vélos, motos)
 }
 
 // Query renvoie la requête Overpass QL des parkings de la zone.
 func Query(b BBox) string {
-	return `[out:json][timeout:90];nwr["amenity"="parking"]` + b.Filter() + `;out center tags;`
+	return `[out:json][timeout:90];nwr["amenity"~"^(parking|motorcycle_parking|bicycle_parking)$"]` + b.Filter() + `;out center tags;`
 }
 
 // Fetch interroge Overpass pour la zone donnée.
@@ -78,7 +81,8 @@ var closedAccess = map[string]bool{"private": true, "no": true, "permit": true, 
 
 func toParking(e overpass.Element) (Parking, bool) {
 	t := e.Tags
-	if t["amenity"] != "parking" || closedAccess[t["access"]] {
+	vehicle, ok := map[string]string{"parking": "car", "motorcycle_parking": "moto", "bicycle_parking": "bike"}[t["amenity"]]
+	if !ok || closedAccess[t["access"]] {
 		return Parking{}, false
 	}
 	lat, lon := e.Lat, e.Lon
@@ -102,6 +106,12 @@ func toParking(e overpass.Element) (Parking, bool) {
 		MaxHeight:    meters(t["maxheight"]),
 		OpeningHours: t["opening_hours"],
 		ParkRide:     t["park_ride"] != "" && t["park_ride"] != "no",
+		Vehicle:      vehicle,
+		Covered:      t["covered"] == "yes",
+	}
+	if vehicle != "car" {
+		// Arceaux et places deux-roues : petits et rarement nommés, mais c'est ce qu'on cherche à moto ou à vélo.
+		return p, true
 	}
 	// Les petites aires sans nom (cours d'immeuble, bas-côtés) noient la carte sans aider.
 	big := p.Capacity != nil && *p.Capacity >= 20

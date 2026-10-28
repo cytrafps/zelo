@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { sameTarget, targetPoint, targets, needsWalk } from './targets.ts';
+import { forVehicle, sameTarget, targetPoint, targets, needsWalk } from './targets.ts';
 
 const cinema = { lat: 49.2556, lon: 4.0262 };
 const p = (id: string, dLat: number, fee: boolean | null = true) => ({ id, name: id, lat: cinema.lat + dLat, lon: cinema.lon, fee });
@@ -36,4 +36,18 @@ test("needsWalk : pas de trajet à pied quand on se gare à destination", () => 
   assert.equal(needsWalk({ kind: 'parking', item: p, walk: 0 }), false);
   assert.equal(needsWalk({ kind: 'parking', item: p, walk: 210 }), true);
   assert.equal(needsWalk({ kind: 'dropoff' }), false);
+});
+
+test('forVehicle : arceaux à vélo, places motos en tête à moto, parkings voiture sinon', () => {
+  const car = p('erlon', 0.002);
+  const rack = { ...p('arceaux', 0.0005), vehicle: 'bike' as const };
+  const moto = { ...p('motos', 0.001), vehicle: 'moto' as const };
+  const far = { ...p('arceaux-loin', 0.004), vehicle: 'bike' as const }; // 440 m : trop loin à vélo
+  const deux = { ...b('deux-roues', 0.001, 2), twoWheels: true };
+  const t = targets(cinema, [car, rack, moto, far], [b('auto', 0.001, 2), deux]);
+  const ids = (v: 'car' | 'moto' | 'bike') => forVehicle(t, v).map((x) => (x.kind === 'dropoff' ? 'dropoff' : `${x.kind}:${x.item.id}`));
+  assert.deepEqual(ids('bike'), ['parking:arceaux', 'dropoff']);
+  // À moto, la borne deux-roues plutôt que la plus proche.
+  assert.deepEqual(ids('moto'), ['parking:motos', 'parking:erlon', 'charge:deux-roues', 'dropoff']);
+  assert.ok(!ids('car').includes('parking:arceaux') && !ids('car').includes('parking:motos'));
 });

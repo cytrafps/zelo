@@ -114,13 +114,16 @@ export function MapScreen() {
   const goTo = (place: Place) => {
     setRecents((list) => pushRecent(list, place));
     const box = around(place, 0.012);
+    // Tous véhicules : changer de véhicule dans l'aperçu ne relance pas la recherche des arrêts.
     const options = Promise.all([
       getParkings(box).catch(() => []),
+      getParkings(box, undefined, 'moto').catch(() => []),
+      getParkings(box, undefined, 'bike').catch(() => []),
       getChargeStations(box).catch(() => []),
       getParkRides(place, location.position).catch(() => []),
-    ]).then(([parkings, charge, relays]) =>
-      // Une borne réservée aux clients n'est pas un arrêt à proposer ; à moto, seules les bornes deux-roues.
-      targets(place, parkings, charge.filter((b) => !b.reserved && (trips.vehicle !== 'moto' || b.twoWheels)), relays),
+    ]).then(([cars, motos, bikes, charge, relays]) =>
+      // Une borne réservée aux clients n'est pas un arrêt à proposer.
+      targets(place, [...cars, ...motos, ...bikes], charge.filter((b) => !b.reserved), relays),
     );
     return startTrip(place, options);
   };

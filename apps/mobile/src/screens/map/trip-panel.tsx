@@ -3,7 +3,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import type { Avoid, Report, Vehicle } from '@/api/zelo';
+import type { Avoid, Parking, Report, Vehicle } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
@@ -12,7 +12,7 @@ import { linesLabel, relayDuration, stopName } from '@/utils/transit';
 import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
-import { sameTarget } from '@/utils/targets';
+import { forVehicle, sameTarget } from '@/utils/targets';
 
 const ios = Platform.OS === 'ios';
 
@@ -38,6 +38,8 @@ const DEPARTS = [0, 15, 30, 60, 120];
 /** Aperçu du trajet (maquettes 03 et 03b) : où se garer, puis les itinéraires et « Y aller ». */
 export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, vehicle, onChange, onClose }: Props) {
   const bike = vehicle === 'bike';
+  // Les arrêts qui valent pour ce véhicule (arceaux à vélo, places motos d'abord à moto).
+  const options = forVehicle(trip.options, vehicle);
   const [choosing, setChoosing] = useState(false);
   const now = useNow();
   // Heure de départ : choisie, ou maintenant.
@@ -90,11 +92,11 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
           </View>
         </MenuView>
 
-        {/* Sans choix d'arrêt (« Y aller » vers une station, ou à vélo), pas de puce. */}
-        {!bike && (trip.target.kind !== 'dropoff' || trip.options.length > 1) && (
+        {/* Sans choix d'arrêt (« Y aller » vers une station, ou rien à proposer), pas de puce. */}
+        {(trip.target.kind !== 'dropoff' || options.length > 1) && (
           <Pressable
             onPress={() => setChoosing((v) => !v)}
-            disabled={trip.options.length < 2}
+            disabled={options.length < 2}
             accessibilityRole="button"
             accessibilityLabel="Choisir où se garer"
             style={[styles.chip, { borderColor: c.fond.separateur }]}
@@ -103,7 +105,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
             <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
               {short(trip.target)}
             </Text>
-            {trip.options.length > 1 && <Chevron c={c} />}
+            {options.length > 1 && <Chevron c={c} />}
           </Pressable>
         )}
 
@@ -150,7 +152,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
       {choosing ? (
         <View style={styles.list}>
           <Text style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}>À l’arrivée</Text>
-          {trip.options.map((t) => {
+          {options.map((t) => {
             const on = sameTarget(t, trip.target);
             return (
               <Pressable
@@ -336,19 +338,30 @@ function TargetIcon({ t, c, size }: { t: TripTarget; c: Couleurs; size: number }
     const icon = first?.mode === 'bus' ? ({ ios: 'bus.fill', android: 'directions_bus' } as const) : ({ ios: 'tram.fill', android: 'tram' } as const);
     return <SymbolView name={icon} tintColor={first ? `#${first.color}` : c.texte.secondaire} size={size} />;
   }
+  if (t.kind === 'parking' && t.item.vehicle === 'bike') return <SymbolView name={{ ios: 'bicycle', android: 'pedal_bike' }} tintColor={c.stationnement.base} size={size} />;
+  if (t.kind === 'parking' && t.item.vehicle === 'moto') return <SymbolView name={{ ios: 'motorcycle', android: 'two_wheeler' }} tintColor={c.stationnement.base} size={size} />;
   if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontFamily: police, fontSize: size, fontWeight: '700' }}>P</Text>;
   if (t.kind === 'charge') return <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.recharge.base} size={size} />;
   return <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.secondaire} size={size} />;
 }
 
+/** Nom d'un parking, ou de ce qu'il est quand OSM ne le nomme pas (arceaux, places motos). */
+const parkingName = (p: Parking) => p.name || (p.vehicle === 'bike' ? 'Arceaux vélo' : p.vehicle === 'moto' ? 'Places motos' : 'Parking');
+
 const short = (t: TripTarget) =>
-  t.kind === 'dropoff' ? 'Dépose' : t.kind === 'parkride' ? 'Relais + tram' : t.item.name || (t.kind === 'parking' ? 'Parking' : 'Borne');
+  t.kind === 'dropoff'
+    ? 'Dépose'
+    : t.kind === 'parkride'
+      ? 'Relais + transports'
+      : t.kind === 'parking'
+        ? parkingName(t.item)
+        : t.item.name || 'Borne';
 
 const title = (t: TripTarget) =>
   t.kind === 'dropoff'
     ? 'Me déposer à l’entrée'
     : t.kind === 'parking'
-      ? t.item.name || 'Parking'
+      ? parkingName(t.item)
       : t.kind === 'parkride'
         ? `${t.item.name || 'Parking relais'} + ${t.relay.journeys[0] ? linesLabel(t.relay.journeys[0]).toLowerCase() : 'transports'}`
         : `${t.item.name || 'Borne'} · ${Math.round(t.item.maxPowerKw)} kW`;
@@ -361,6 +374,10 @@ function detail(t: TripTarget) {
     return j ? `${linesLabel(j)} jusqu'à ${stopName(j.legs.at(-1)!.to.name)}, puis ${walk}` : walk;
   }
   if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
+  if (t.kind === 'parking' && t.item.vehicle !== 'car') {
+    const places = t.item.capacity ? `${t.item.capacity} places` : null;
+    return [places, t.item.covered ? 'Abrité' : null, walk].filter(Boolean).join(' · ');
+  }
   const first = t.item.tariff?.prices[0];
   if (first) return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;
   return t.item.fee === false ? `Gratuit · ${walk}` : walk;
