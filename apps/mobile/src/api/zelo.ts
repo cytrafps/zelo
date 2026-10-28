@@ -47,6 +47,18 @@ export type Parking = {
   maxHeight: number | null;
   openingHours: string;
   parkRide: boolean;
+  /** Tarifs relevés sur le site de l'exploitant ; null si non relevés. */
+  tariff: Tariff | null;
+};
+
+export type Tariff = {
+  /** Minutes offertes. */
+  free: number;
+  /** Prix (centimes) pour 1 h, 3 h, 24 h. */
+  prices: { minutes: number; cents: number }[];
+  source: string;
+  /** Date du relevé (AAAA-MM-JJ). */
+  checked: string;
 };
 
 export const REPORT_KINDS = [

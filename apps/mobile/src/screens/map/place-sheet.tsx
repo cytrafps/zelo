@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import type { ChargeStation, FuelStation, Parking } from '@/api/zelo';
 import { texte, useTheme, type Couleurs } from '@/theme';
-import { formatAgo, formatPrice, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
+import { formatAgo, formatCents, formatPrice, formatStay, FUEL_ORDER, SOCKET_LABEL } from '@/utils/format';
 
 export type Selection =
   | { kind: 'fuel'; item: FuelStation }
@@ -114,8 +114,11 @@ const meters = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximu
 function ParkingDetails({ p, c, onGo }: { p: Parking; c: Couleurs; onGo: () => void }) {
   const rows: [label: string, value: string][] = [
     ['Places', p.capacity === null ? 'Non renseigné' : String(p.capacity)],
-    ['Tarif', p.fee === null ? 'Non renseigné' : p.fee ? 'Payant' : 'Gratuit'],
   ];
+  if (p.tariff) {
+    if (p.tariff.free > 0) rows.push([formatStay(p.tariff.free), 'Offertes']);
+    for (const { minutes, cents } of p.tariff.prices) rows.push([formatStay(minutes), formatCents(cents)]);
+  } else rows.push(['Tarif', p.fee === null ? 'Non renseigné' : p.fee ? 'Payant' : 'Gratuit']);
   if (p.maxHeight !== null) rows.push(['Hauteur max.', `${meters.format(p.maxHeight)} m`]);
   if (p.disabled !== null) rows.push(['Places PMR', String(p.disabled)]);
   if (p.charging !== null) rows.push(['Places avec recharge', String(p.charging)]);
@@ -135,11 +138,18 @@ function ParkingDetails({ p, c, onGo }: { p: Parking; c: Couleurs; onGo: () => v
         ))}
       </List>
       <Column style={{ paddingHorizontal: 20, paddingVertical: 12 }}>
-        <Text textStyle={{ ...texte.petit, color: c.texte.tertiaire }}>Données © contributeurs OpenStreetMap</Text>
+        <Text textStyle={{ ...texte.petit, color: c.texte.tertiaire }}>
+          {p.tariff
+            ? `Tarifs relevés le ${checkedDate(p.tariff.checked)} sur le site de l'exploitant ; seuls ceux affichés sur place font foi. Données © contributeurs OpenStreetMap`
+            : 'Données © contributeurs OpenStreetMap'}
+        </Text>
       </Column>
     </>
   );
 }
+
+const day = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+const checkedDate = (iso: string) => day.format(new Date(`${iso}T12:00:00`));
 
 const rank = (fuel: string) => {
   const i = FUEL_ORDER.indexOf(fuel);

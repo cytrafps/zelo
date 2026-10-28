@@ -5,7 +5,7 @@ import { test } from 'node:test';
 // AVANT de charger le module, pour reproduire le téléphone (un appel au chargement planterait).
 const intl = Intl as unknown as Record<string, unknown>;
 delete intl.RelativeTimeFormat;
-const { formatAgo, formatPrice } = await import('./format.ts');
+const { formatAgo, formatCents, formatPrice, formatStay } = await import('./format.ts');
 
 const now = Date.parse('2026-10-26T20:00:00Z');
 const at = (min: number) => new Date(now + min * 60_000).toISOString();
@@ -22,4 +22,11 @@ test('formatAgo sans Intl.RelativeTimeFormat', () => {
 
 test('formatPrice', () => {
   assert.match(formatPrice(1.789), /^1,789\s€$/);
+});
+
+test('formatCents et formatStay', () => {
+  assert.equal(formatCents(120).replace(/\u202f|\u00a0/g, ' '), '1,20 €');
+  assert.equal(formatCents(0), 'Gratuit');
+  assert.equal(formatStay(30), '30 min');
+  assert.equal(formatStay(1440), '24 h');
 });
