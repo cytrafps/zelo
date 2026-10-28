@@ -5,12 +5,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
-import { getChargeStations, getParkings, getParkRides, postReport, type BBox } from '@/api/zelo';
+import { getChargeStations, getParkings, getParkRides, type BBox, type ReportKind } from '@/api/zelo';
 import { Glass } from '@/components/glass';
 import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus, type Place as DataPlace } from '@/hooks/use-map-data';
 import { useCarEvents } from '@/hooks/use-car-events';
 import { useNow } from '@/hooks/use-now';
+import { useOutbox } from '@/hooks/use-outbox';
 import { useParkedCar } from '@/hooks/use-parked-car';
 import { useStored } from '@/hooks/use-stored';
 import { useTrip, type TripTarget } from '@/hooks/use-trip';
@@ -133,14 +134,22 @@ export function MapScreen() {
     }
   });
 
+  const outbox = useOutbox(data.upsertReport);
+  /** Signalement envoyé, ou gardé jusqu'au retour du réseau. */
+  const sendReport = async (kind: ReportKind, lat: number, lon: number) => {
+    const r = await outbox.send(kind, lat, lon);
+    if (r) data.upsertReport(r);
+    else flash('Pas de réseau : ton signalement partira dès que possible.');
+    return r;
+  };
+
   const reportFreed = (at: LatLon) =>
-    postReport('place_liberee', at.lat, at.lon).then(
+    sendReport('place_liberee', at.lat, at.lon).then(
       (r) => {
-        data.upsertReport(r);
         setFreed(null);
-        flash('Merci, ta place est signalée libre.');
+        if (r) flash('Merci, ta place est signalée libre.');
       },
-      () => flash('Signalement impossible, réessaie dans un instant.'),
+      () => flash('Signalement refusé, réessaie dans un instant.'),
     );
 
   /** Destination choisie : aperçu du trajet, avec les parkings et bornes autour d'elle. */
@@ -360,7 +369,7 @@ export function MapScreen() {
           camera.current?.flyTo({ center: [car.lon, car.lat], zoom: 17, duration: 800 });
         }}
       />
-      <ReportSheet isPresented={reporting} onDismiss={() => setReporting(false)} position={here} onCreated={data.upsertReport} />
+      <ReportSheet isPresented={reporting} onDismiss={() => setReporting(false)} position={here} send={sendReport} />
       <ReportDetailSheet
         report={openReport}
         onDismiss={() => setReportId(null)}
