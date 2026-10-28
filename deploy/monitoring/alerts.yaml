@@ -54,3 +54,18 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "La collecte « {{ $labels.source }} » a échoué {{ $value }} fois en une heure."
+        # Valhalla injoignable ou en panne : les calculs d'itinéraire répondent 502.
+        - alert: ZeloItinerairesEnErreur
+          expr: |
+            sum(rate(zelo_routes_total{result="erreur"}[10m])) / sum(rate(zelo_routes_total[10m])) > 0.2
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{ $value | humanizePercentage }} des calculs d'itinéraire échouent : vérifier Valhalla."
+        - alert: ZeloErreursServeur
+          expr: |
+            sum(rate(zelo_http_requests_total{code=~"5.."}[10m])) / sum(rate(zelo_http_requests_total[10m])) > 0.05
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $value | humanizePercentage }} des requêtes de l'API répondent une erreur serveur."

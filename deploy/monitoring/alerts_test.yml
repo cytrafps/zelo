@@ -55,3 +55,27 @@ tests:
           - exp_labels: { severity: critical }
             exp_annotations:
               summary: "2 répliques collectent en même temps : le verrou PostgreSQL ne joue plus son rôle."
+  # 1 itinéraire sur 2 en erreur pendant 20 min : alerte après 5 min. 1 sur 50 : rien.
+  - interval: 1m
+    input_series:
+      - series: 'zelo_routes_total{mode="car", result="ok"}'
+        values: '0+10x30'
+      - series: 'zelo_routes_total{mode="car", result="erreur"}'
+        values: '0x9 0+10x20'
+      - series: 'zelo_http_requests_total{route="GET /v1/parkings", code="200"}'
+        values: '0+50x30'
+      - series: 'zelo_http_requests_total{route="GET /v1/route", code="502"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ZeloItinerairesEnErreur
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ZeloItinerairesEnErreur
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "50% des calculs d'itinéraire échouent : vérifier Valhalla."
+      - eval_time: 25m
+        alertname: ZeloErreursServeur
+        exp_alerts: []

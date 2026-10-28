@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/cytrafps/zelo/services/api/internal/live"
+	"github.com/cytrafps/zelo/services/api/internal/metrics"
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
@@ -267,5 +270,25 @@ func TestParkingsTariff(t *testing.T) {
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, `"name":"Erlon"`) || !strings.Contains(body, `"tariff":{"free":30,"prices":[{"minutes":60,"cents":120}`) || !strings.Contains(body, `"name":"Sans relevé","operator":"","kind":"","lat":0,"lon":0,"capacity":null,"disabled":null,"charging":null,"fee":null,"maxHeight":null,"openingHours":"","parkRide":false,"tariff":null`) {
 		t.Fatalf("%d %s", rec.Code, body)
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(&fakeStore{}, live.NewHub(), quiet, Config{Router: &fakeRouter{}})
+	count := func(route, code string) float64 {
+		return testutil.ToFloat64(metrics.HTTPRequests.WithLabelValues(route, code))
+	}
+	okBefore, unknownBefore := count("GET /v1/route", "200"), count("autre", "404")
+	routesBefore := testutil.ToFloat64(metrics.Routes.WithLabelValues("car", "ok"))
+
+	for _, path := range []string{"/v1/route?from=49.2591,4.0245&to=49.2535,4.0341&mode=car", "/wp-login.php"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", path, nil))
+	}
+	if count("GET /v1/route", "200") != okBefore+1 || count("autre", "404") != unknownBefore+1 {
+		t.Errorf("requêtes : %v %v", count("GET /v1/route", "200"), count("autre", "404"))
+	}
+	if testutil.ToFloat64(metrics.Routes.WithLabelValues("car", "ok")) != routesBefore+1 {
+		t.Error("itinéraire non compté")
 	}
 }
