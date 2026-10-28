@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
@@ -126,7 +127,15 @@ func run(log *slog.Logger, once bool) error {
 		log.Info("collectes", "meneur", leader)
 	})
 
-	hub := live.NewHub()
+	maxLive, err := strconv.Atoi(envOr("LIVE_MAX_CLIENTS", "5000"))
+	if err != nil {
+		return fmt.Errorf("LIVE_MAX_CLIENTS: %w", err)
+	}
+	trusted, err := parsePrefixes(os.Getenv("TRUSTED_PROXIES"))
+	if err != nil {
+		return fmt.Errorf("TRUSTED_PROXIES: %w", err)
+	}
+	hub := live.NewHub(maxLive)
 	go db.Listen(ctx, log, hub.Broadcast)
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "zelo_live_clients", Help: "Clients connectés au flux temps réel.",
@@ -136,6 +145,7 @@ func run(log *slog.Logger, once bool) error {
 	mux.Handle("/metrics", promhttp.Handler())
 	cfg := httpapi.Config{
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
+		TrustedProxies: trusted,
 		OriginPatterns: splitList(os.Getenv("WS_ORIGINS")),
 	}
 	if u := os.Getenv("VALHALLA_URL"); u != "" {
@@ -150,9 +160,13 @@ func run(log *slog.Logger, once bool) error {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		// Pas de WriteTimeout : il couperait les connexions WebSocket.
+		// Les délais ne s'appliquent plus aux connexions passées en WebSocket (testé dans httpapi).
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  2 * time.Minute,
 	}
+	// Shutdown n'attend pas les WebSocket (connexions détournées) : on les ferme proprement
+	// (« going away ») pour que les clients rejoignent tout de suite une autre réplique.
+	srv.RegisterOnShutdown(hub.Close)
 	errc := make(chan error, 1)
 	go func() {
 		log.Info("écoute", "addr", srv.Addr)
@@ -224,6 +238,27 @@ func parseBBox(s string) (irve.BBox, error) {
 		v[i] = f
 	}
 	return irve.BBox{MinLon: v[0], MinLat: v[1], MaxLon: v[2], MaxLat: v[3]}, nil
+}
+
+// parsePrefixes lit « 10.42.0.0/16, 10.43.0.0/16 » ; une adresse seule vaut pour elle-même.
+func parsePrefixes(s string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, x := range splitList(s) {
+		if !strings.Contains(x, "/") {
+			a, err := netip.ParseAddr(x)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, netip.PrefixFrom(a, a.BitLen()))
+			continue
+		}
+		p, err := netip.ParsePrefix(x)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 func splitList(s string) []string {

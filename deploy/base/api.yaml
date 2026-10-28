@@ -63,6 +63,9 @@ spec:
               value: "false"
             - name: VALHALLA_URL
               value: http://valhalla:8002
+            # Le ramasse-miettes de Go travaille plus tôt à l'approche de la limite plutôt que de la dépasser (OOM).
+            - name: GOMEMLIMIT
+              value: 460MiB
           envFrom:
             - configMapRef:
                 name: api-config
@@ -70,6 +73,11 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # Pod retiré des points d'accès avant l'arrêt : 5 s pour que Traefik cesse de lui envoyer
+          # des requêtes, puis SIGTERM (requêtes en cours terminées, flux temps réel fermés proprement).
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
           # /livez ne dépend pas de la base : une panne PostgreSQL ne doit pas faire redémarrer l'API en boucle.
           livenessProbe:
             httpGet: { path: /livez, port: http }
@@ -82,7 +90,7 @@ spec:
             periodSeconds: 2
             failureThreshold: 30
           resources:
-            requests: { cpu: 50m, memory: 64Mi }
+            requests: { cpu: 100m, memory: 64Mi }
             limits: { memory: 512Mi } # l'import IRVE dynamique lit ~90 000 lignes
           securityContext:
             allowPrivilegeEscalation: false

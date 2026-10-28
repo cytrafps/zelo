@@ -4,4 +4,5 @@ FROM ghcr.io/valhalla/valhalla-scripted@sha256:d5382587f4ca9171caade2d1ab1212f26
 COPY data/valhalla.json data/valhalla_tiles.tar data/admins.sqlite data/timezones.sqlite data/default_speeds.json data/marne.state.txt /custom_files/
 USER 65534:65534
 EXPOSE 8002
-ENTRYPOINT ["valhalla_service", "/custom_files/valhalla.json", "1"]
+# Deux fils de calcul : un trajet long ne bloque pas les autres.
+ENTRYPOINT ["valhalla_service", "/custom_files/valhalla.json", "2"]

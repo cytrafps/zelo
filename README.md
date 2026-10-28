@@ -179,6 +179,9 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | `ADDR` | `:8080` | Adresse d'écoute |
 | `IMPORT_BBOX` | vide (France entière) | Zone d'import des bornes et des parkings (obligatoire pour les parkings) |
 | `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
+| `TRUSTED_PROXIES` | vide | Réseaux des proxys de confiance (ex. `10.42.0.0/16`, Traefik sur K3s) : l'IP cliente est lue dans `X-Forwarded-For` |
+| `LIVE_MAX_CLIENTS` | `5000` | Clients du flux temps réel par instance, au-delà refusés (le client réessaie) |
+| `GOMEMLIMIT` | vide | Limite mémoire visée par Go, à ~90 % de la limite du conteneur |
 | `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Instance Overpass pour l'import des parkings (exige `IMPORT_BBOX`) |
 | `WS_ORIGINS` | vide | Origines web autorisées pour le WebSocket (ex. `dashboard.zelo.app`) |
 | `VALHALLA_URL` | vide (itinéraires désactivés) | Service Valhalla, ex. `http://valhalla:8002` ; jamais exposé directement |

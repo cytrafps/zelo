@@ -49,6 +49,7 @@ export function useLive(onReport: (r: Report) => void, onRemoved: (id: number) =
           const ev = JSON.parse(String(e.data)) as LiveEvent;
           if (ev.type === 'report') report(ev.report);
           else if (ev.type === 'report_removed') removed(ev.id);
+          else if (ev.type === 'resync') resync();
         } catch {
           // message illisible : ignoré
         }

@@ -60,7 +60,11 @@ type Client struct {
 }
 
 func New(baseURL string) *Client {
-	return &Client{base: baseURL, http: &http.Client{Timeout: 5 * time.Second}}
+	// Toutes les requêtes vont au même hôte : sans ce réglage, Go ne garde que 2 connexions au repos
+	// et en rouvre une à chaque pic de calculs simultanés.
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConnsPerHost = 32
+	return &Client{base: baseURL, http: &http.Client{Timeout: 5 * time.Second, Transport: t}}
 }
 
 // Options d'un calcul d'itinéraire ; la valeur zéro donne le plus rapide, en partant maintenant.

@@ -6,17 +6,24 @@ kind: Kustomization
 resources:
   - ../../base
   - ../../monitoring
+  - compress.yaml
 configMapGenerator:
   - name: api-config
     namespace: zelo
     literals:
       - IMPORT_BBOX=3.85,49.15,4.25,49.35 # Grand Reims
+      # Réseau des pods K3s : Traefik y est, l'IP cliente est lue dans X-Forwarded-For.
+      - TRUSTED_PROXIES=10.42.0.0/16
 patches:
   - target: { kind: Ingress, name: api }
     patch: |-
       - op: replace
         path: /spec/rules/0/host
         value: api.zelo.lan
+      - op: add
+        path: /metadata/annotations
+        value:
+          traefik.ingress.kubernetes.io/router.middlewares: zelo-compress@kubernetescrd
 images:
   - name: ghcr.io/cytrafps/zelo-api
     newTag: sha-4482b4b
