@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { Place } from '@/api/geocode';
-import { ApiError, getRoutes, type ChargeStation, type Parking } from '@/api/zelo';
-import type { LatLon } from '@/utils/geo';
+import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking } from '@/api/zelo';
+import { useStored } from '@/hooks/use-stored';
+import type { Fix } from '@/utils/geo';
 import type { Route } from '@/utils/route';
 import { needsWalk, targetPoint, type Target } from '@/utils/targets';
 
@@ -21,9 +22,13 @@ export type Trip = {
   selected: number;
   /** Du point d'arrêt à la destination ; null pour une dépose. */
   walk: Route | null;
+  /** Heure de départ choisie (ms) ; null : maintenant. */
+  depart: number | null;
   loading: boolean;
   error: string | null;
 };
+
+type Request = { from: Fix; destination: Place; target: TripTarget; depart: number | null; avoid: readonly Avoid[] };
 
 const message = (e: unknown) =>
   e instanceof ApiError && e.status === 422 ? e.message : 'Itinéraire indisponible, vérifie ta connexion.';
@@ -34,18 +39,22 @@ const message = (e: unknown) =>
  */
 export function useTrip() {
   const [trip, setTrip] = useState<Trip | null>(null);
+  /** Péages et autoroutes à éviter : gardés d'un trajet à l'autre, comme dans Plans. */
+  const [avoid, setAvoidStored] = useStored<Avoid[]>('trajet.eviter', []);
   const request = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (from: LatLon, destination: Place, target: TripTarget, alternates: number) => {
+  const load = useCallback(async ({ from, destination, target, depart, avoid }: Request, alternates: number) => {
     request.current?.abort();
     const ctl = new AbortController();
     request.current = ctl;
-    setTrip((t) => (t ? { ...t, target, loading: true, error: null } : t));
+    setTrip((t) => (t ? { ...t, target, depart, loading: true, error: null } : t));
     try {
       const stop = targetPoint(target, destination);
       const [routes, walk] = await Promise.all([
-        getRoutes(from, stop, 'car', alternates, ctl.signal),
-        !needsWalk(target) ? Promise.resolve(null) : getRoutes(stop, destination, 'walk', 0, ctl.signal).then((r) => r[0]),
+        getRoutes(from, stop, 'car', { alternates, heading: from.heading, depart, avoid }, ctl.signal),
+        !needsWalk(target)
+          ? Promise.resolve(null)
+          : getRoutes(stop, destination, 'walk', {}, ctl.signal).then((r) => r[0]),
       ]);
       if (ctl.signal.aborted) return;
       setTrip((t) => (t ? { ...t, routes, selected: 0, walk, loading: false } : t));
@@ -56,34 +65,47 @@ export function useTrip() {
 
   /** Ouvre l'aperçu vers `destination` ; `options[0]` est l'arrêt proposé par défaut. */
   const start = useCallback(
-    (from: LatLon, destination: Place, options: TripTarget[]) => {
+    (from: Fix, destination: Place, options: TripTarget[]) => {
       const target = options[0] ?? { kind: 'dropoff' };
-      setTrip({ destination, target, options, phase: 'preview', routes: [], selected: 0, walk: null, loading: true, error: null });
-      void load(from, destination, target, 2);
+      setTrip({ destination, target, options, phase: 'preview', routes: [], selected: 0, walk: null, depart: null, loading: true, error: null });
+      void load({ from, destination, target, depart: null, avoid }, 2);
     },
-    [load],
+    [load, avoid],
   );
 
-  const setTarget = useCallback(
-    (from: LatLon, target: TripTarget) => {
-      if (trip) void load(from, trip.destination, target, 2);
+  /** En aperçu : change l'arrêt, l'heure de départ ou les évitements, puis recalcule. */
+  const update = useCallback(
+    (from: Fix, change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[] }) => {
+      if (!trip) return;
+      if (change.avoid) setAvoidStored(change.avoid);
+      void load(
+        {
+          from,
+          destination: trip.destination,
+          target: change.target ?? trip.target,
+          depart: change.depart !== undefined ? change.depart : trip.depart,
+          avoid: change.avoid ?? avoid,
+        },
+        2,
+      );
     },
-    [load, trip],
+    [load, trip, avoid, setAvoidStored],
   );
 
   const select = useCallback((i: number) => setTrip((t) => (t ? { ...t, selected: i } : t)), []);
 
-  /** Lance le guidage sur l'itinéraire choisi. */
+  /** Lance le guidage sur l'itinéraire choisi : on part maintenant. */
   const go = useCallback(
-    (i: number) => setTrip((t) => (t && t.routes[i] ? { ...t, phase: 'drive', routes: [t.routes[i]], selected: 0 } : t)),
+    (i: number) =>
+      setTrip((t) => (t && t.routes[i] ? { ...t, phase: 'drive', routes: [t.routes[i]], selected: 0, depart: null } : t)),
     [],
   );
 
   /** Hors itinéraire : nouveau calcul depuis la position actuelle, sans alternatives. */
   const reroute = useCallback(
-    async (from: LatLon) => {
+    async (from: Fix) => {
       if (!trip) return;
-      if (trip.phase !== 'walk') return load(from, trip.destination, trip.target, 0);
+      if (trip.phase !== 'walk') return load({ from, destination: trip.destination, target: trip.target, depart: null, avoid }, 0);
       try {
         const [walk] = await getRoutes(from, trip.destination, 'walk');
         setTrip((t) => (t && t.phase === 'walk' ? { ...t, routes: [walk], walk } : t));
@@ -91,7 +113,7 @@ export function useTrip() {
         // On garde l'ancien tracé : la position suivante relancera le calcul.
       }
     },
-    [load, trip],
+    [load, trip, avoid],
   );
 
   /** Arrivé au point d'arrêt : la suite se fait à pied, s'il y a lieu. */
@@ -104,5 +126,5 @@ export function useTrip() {
     setTrip(null);
   }, []);
 
-  return { trip, start, setTarget, select, go, reroute, parked, end };
+  return { trip, avoid, start, update, select, go, reroute, parked, end };
 }

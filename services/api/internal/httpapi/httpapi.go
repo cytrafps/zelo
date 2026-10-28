@@ -12,6 +12,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,7 +64,7 @@ type Config struct {
 }
 
 type Router interface {
-	Routes(ctx context.Context, from, to route.Point, mode route.Mode, alternates int) ([]route.Route, error)
+	Routes(ctx context.Context, from, to route.Point, mode route.Mode, opts route.Options) ([]route.Route, error)
 }
 
 type API struct {
@@ -268,7 +269,8 @@ func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
 
 var routeModes = map[string]route.Mode{"car": route.Car, "walk": route.Walk}
 
-// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|walk[&alternates=0..2]
+// route : GET /v1/route?from=lat,lon&to=lat,lon&mode=car|walk
+// [&alternates=0..2][&heading=0..360][&depart=<secondes Unix>][&avoid=tolls,highways]
 func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.Router == nil {
 		httpError(w, http.StatusServiceUnavailable, "itinéraires indisponibles")
@@ -286,10 +288,14 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, `attendu : from=lat,lon&to=lat,lon&mode=car|walk`)
 		return
 	}
-	alternates, _ := strconv.Atoi(q.Get("alternates")) // borné par le client Valhalla
+	opts, err := routeOptions(q, time.Now())
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	res, err := a.cfg.Router.Routes(ctx, from, to, mode, alternates)
+	res, err := a.cfg.Router.Routes(ctx, from, to, mode, opts)
 	switch {
 	case errors.Is(err, route.ErrOutOfArea):
 		httpError(w, http.StatusUnprocessableEntity, "cette adresse est hors de la zone couverte par Zelo")
@@ -302,6 +308,45 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"routes": res})
 	}
+}
+
+// Départ accepté : de quelques minutes dans le passé (horloge du téléphone) à une semaine.
+const (
+	departPast = 15 * time.Minute
+	departMax  = 7 * 24 * time.Hour
+)
+
+func routeOptions(q url.Values, now time.Time) (route.Options, error) {
+	var o route.Options
+	o.Alternates, _ = strconv.Atoi(q.Get("alternates")) // borné par le client Valhalla
+	if s := q.Get("heading"); s != "" {
+		h, err := strconv.ParseFloat(s, 64)
+		if err != nil || !(h >= 0 && h <= 360) {
+			return o, errors.New("heading attendu entre 0 et 360")
+		}
+		o.Heading = &h
+	}
+	if s := q.Get("depart"); s != "" {
+		sec, err := strconv.ParseInt(s, 10, 64)
+		t := time.Unix(sec, 0)
+		if err != nil || t.Before(now.Add(-departPast)) || t.After(now.Add(departMax)) {
+			return o, errors.New("depart attendu : heure Unix dans les 7 prochains jours")
+		}
+		o.Depart = t
+	}
+	if s := q.Get("avoid"); s != "" {
+		for _, v := range strings.Split(s, ",") {
+			switch v {
+			case "tolls":
+				o.AvoidTolls = true
+			case "highways":
+				o.AvoidHighways = true
+			default:
+				return o, errors.New("avoid attendu : tolls, highways")
+			}
+		}
+	}
+	return o, nil
 }
 
 // --- utilitaires

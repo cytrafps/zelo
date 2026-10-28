@@ -132,7 +132,7 @@ export function MapScreen() {
     setHomeTracking(null);
     const from = await location.locate().catch(() => null);
     if (!from) return flash('Active la localisation pour calculer un itinéraire');
-    trips.start(from, place, options);
+    trips.start({ ...from, heading: location.heading() }, place, options);
   };
 
   // Aperçu : la carte cadre tous les itinéraires au-dessus de la feuille.
@@ -261,14 +261,15 @@ export function MapScreen() {
               reports={data.reports}
               c={c}
               bottomInset={insets.bottom}
+              avoid={trips.avoid}
               onSelect={trips.select}
               onGo={(i) => {
                 setFollowing(true);
                 trips.go(i);
               }}
-              onTarget={async (t) => {
+              onChange={async (change) => {
                 const from = await location.locate().catch(() => null);
-                if (from) trips.setTarget(from, t);
+                if (from) trips.update({ ...from, heading: location.heading() }, change);
               }}
               onClose={trips.end}
             />
