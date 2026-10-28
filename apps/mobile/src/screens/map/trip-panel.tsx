@@ -1,8 +1,9 @@
+import { MenuView } from '@expo/ui/community/menu';
 import { SymbolView } from 'expo-symbols';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import type { Report } from '@/api/zelo';
+import type { Avoid, Report } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
@@ -22,20 +23,26 @@ type Props = {
   bottomInset: number;
   onSelect: (i: number) => void;
   onGo: (i: number) => void;
-  onTarget: (t: TripTarget) => void;
+  avoid: readonly Avoid[];
+  onChange: (change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[] }) => void;
   onClose: () => void;
 };
 
+/** Départs proposés, en minutes à partir de maintenant (0 : maintenant). */
+const DEPARTS = [0, 15, 30, 60, 120];
+
 /** Aperçu du trajet (maquettes 03 et 03b) : où se garer, puis les itinéraires et « Y aller ». */
-export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, onTarget, onClose }: Props) {
+export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, onChange, onClose }: Props) {
   const [choosing, setChoosing] = useState(false);
   const now = useNow();
+  // Heure de départ : choisie, ou maintenant.
+  const start = trip.depart ?? now;
   const walkTime = trip.walk?.duration ?? 0;
 
   const share = () => {
     const route = trip.routes[trip.selected];
     if (!route) return;
-    const eta = formatClock(new Date(Date.now() + (route.duration + walkTime) * 1000));
+    const eta = formatClock(new Date((trip.depart ?? Date.now()) + (route.duration + walkTime) * 1000));
     void Share.share({ message: `J'arrive à ${trip.destination.name} vers ${eta}.` });
   };
 
@@ -56,18 +63,57 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, onTar
         <RoundButton c={c} label="Fermer" icon={{ ios: 'xmark', android: 'close' }} onPress={onClose} />
       </View>
 
-      <Pressable
-        onPress={() => setChoosing((v) => !v)}
-        accessibilityRole="button"
-        accessibilityLabel="Choisir où se garer"
-        style={[styles.chip, { borderColor: c.fond.separateur }]}
-      >
-        <TargetIcon t={trip.target} c={c} size={16} />
-        <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
-          {short(trip.target)}
-        </Text>
-        <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />
-      </Pressable>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsRow}>
+        <Pressable
+          onPress={() => setChoosing((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel="Choisir où se garer"
+          style={[styles.chip, { borderColor: c.fond.separateur }]}
+        >
+          <TargetIcon t={trip.target} c={c} size={16} />
+          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
+            {short(trip.target)}
+          </Text>
+          <Chevron c={c} />
+        </Pressable>
+
+        <MenuView
+          title="Départ"
+          actions={DEPARTS.map((m) => ({
+            id: String(m),
+            title: m === 0 ? 'Maintenant' : `Dans ${m < 60 ? `${m} min` : `${m / 60} h`}`,
+          }))}
+          onPressAction={(e) => {
+            const m = Number(e.nativeEvent.event);
+            onChange({ depart: m === 0 ? null : Date.now() + m * 60_000 });
+          }}
+        >
+          <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Heure de départ">
+            <Text style={[texte.corpsFort, { color: c.texte.principal }]}>
+              {trip.depart === null ? 'Maintenant' : `Départ ${formatClock(new Date(trip.depart))}`}
+            </Text>
+            <Chevron c={c} />
+          </View>
+        </MenuView>
+
+        <MenuView
+          title="Éviter"
+          actions={AVOID.map(([id, title]) => ({ id, title, state: avoid.includes(id) ? 'on' : 'off' }))}
+          onPressAction={(e) => {
+            const id = e.nativeEvent.event as Avoid;
+            onChange({ avoid: avoid.includes(id) ? avoid.filter((a) => a !== id) : [...avoid, id] });
+          }}
+        >
+          <View
+            style={[styles.chip, { borderColor: avoid.length ? c.action : c.fond.separateur }]}
+            accessibilityRole="button"
+            accessibilityLabel="Éviter les péages ou les autoroutes"
+          >
+            <Text style={[texte.corpsFort, { color: avoid.length ? c.action : c.texte.principal }]}>{avoidLabel(avoid)}</Text>
+            <Chevron c={c} />
+          </View>
+        </MenuView>
+      </ScrollView>
 
       {choosing ? (
         <View style={styles.list}>
@@ -79,7 +125,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, onTar
                 key={t.kind === 'dropoff' ? 'dropoff' : `${t.kind}-${t.item.id}`}
                 onPress={() => {
                   setChoosing(false);
-                  if (!on) onTarget(t);
+                  if (!on) onChange({ target: t });
                 }}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
@@ -110,7 +156,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, onTar
               key={i}
               route={r}
               walk={walkTime}
-              now={now}
+              now={start}
               reports={reports}
               selected={i === trip.selected}
               first={i === 0}
@@ -174,6 +220,24 @@ function RouteRow(props: {
   );
 }
 
+function Chevron({ c }: { c: Couleurs }) {
+  return <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />;
+}
+
+const AVOID: [Avoid, string][] = [
+  ['tolls', 'Péages'],
+  ['highways', 'Autoroutes'],
+];
+
+function avoidLabel(avoid: readonly Avoid[]) {
+  const tolls = avoid.includes('tolls');
+  const highways = avoid.includes('highways');
+  if (tolls && highways) return 'Sans péage ni autoroute';
+  if (tolls) return 'Sans péage';
+  if (highways) return 'Sans autoroute';
+  return 'Éviter';
+}
+
 function RoundButton(props: { c: Couleurs; label: string; icon: { ios: 'xmark' | 'square.and.arrow.up'; android: 'close' | 'share' }; onPress: () => void }) {
   return (
     <Pressable
@@ -219,8 +283,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: espace[2] },
   title: { flex: 1 },
   round: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  chips: { marginTop: espace[3], marginHorizontal: -espace[4], flexGrow: 0 },
+  chipsRow: { gap: espace[2], paddingHorizontal: espace[4] },
   chip: {
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: espace[2],
@@ -228,10 +293,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: espace[3],
     borderRadius: rayon.s,
     borderWidth: 1,
-    marginTop: espace[3],
-    maxWidth: '100%',
   },
-  chipText: { flexShrink: 1 },
+  chipText: { maxWidth: 200 },
   list: { marginTop: espace[3] },
   caption: { marginBottom: espace[1] },
   option: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingHorizontal: espace[3], paddingVertical: espace[2], borderRadius: rayon.s },
