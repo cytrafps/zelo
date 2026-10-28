@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { Journey } from '../api/zelo.ts';
-import { linesLabel, nextJourney, relayDuration, titleCase } from './transit.ts';
+import { linesLabel, nextJourney, relayDuration, stopName, titleCase } from './transit.ts';
 
 const at = (hhmm: string) => `2026-11-03T${hhmm}:00+01:00`;
 const stop = (name: string) => ({ id: name, name, lat: 49.25, lon: 4.03 });
@@ -43,4 +43,9 @@ test('linesLabel : tram, puis bus', () => {
 test('titleCase', () => {
   assert.equal(titleCase('OPERA-CATHEDRALE'), 'Opera-Cathedrale');
   assert.equal(titleCase('GARE CHAMP. TGV'), 'Gare Champ. TGV');
+});
+
+test("stopName : garde le nom accentué d'OSM, met en forme le nom Citura", () => {
+  assert.equal(stopName('Opéra-Cathédrale'), 'Opéra-Cathédrale');
+  assert.equal(stopName('ST THOMAS'), 'St Thomas');
 });

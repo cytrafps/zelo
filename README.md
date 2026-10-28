@@ -181,6 +181,7 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | `IMPORT_BBOX` | vide (France entière) | Zone d'import des bornes, des parkings, des feux et des stops (obligatoire pour ces deux derniers) |
 | `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
 | `GTFS_URL` | GTFS Grand Reims Mobilités (transport.data.gouv.fr) | Horaires du tram et des bus, rechargés chaque jour par chaque réplique |
+| `GTFS_RT_URL` | GTFS-RT Grand Reims Mobilités (transport.data.gouv.fr) | Temps réel du tram et des bus (heures prévues, courses supprimées), lu toutes les 30 s |
 | `AREAS_BBOX` | `IMPORT_BBOX` | Zone d'import des aires d'autoroute (OSM), à caler sur celle du graphe routier |
 | `TRUSTED_PROXIES` | vide | Réseaux des proxys de confiance (ex. `10.42.0.0/16`, Traefik sur K3s) : l'IP cliente est lue dans `X-Forwarded-For` |
 | `LIVE_MAX_CLIENTS` | `5000` | Clients du flux temps réel par instance, au-delà refusés (le client réessaie) |
@@ -197,6 +198,7 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | [OpenStreetMap, extrait de la Marne](https://download.openstreetmap.fr/extracts/europe/france/champagne_ardenne/) (itinéraires) | 7 j | ODbL |
 | [Bornes IRVE statiques](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) | 24 h | Licence Ouverte 2.0 |
 | [Horaires du réseau Grand Reims Mobilités](https://transport.data.gouv.fr/datasets/offre-de-transport-du-reseau-grand-reims-mobilites-communaute-urbaine-du-grand-reims) (GTFS, tram et bus) | 24 h | Licence Ouverte 2.0 |
-| [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings, feux et stops, aires d'autoroute) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
+| [Temps réel du réseau Grand Reims Mobilités](https://transport.data.gouv.fr/datasets/offre-de-transport-du-reseau-grand-reims-mobilites-communaute-urbaine-du-grand-reims) (GTFS-RT) | 30 s | Licence Ouverte 2.0 |
+| [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings, feux et stops, aires d'autoroute, noms des arrêts) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |
 | Tarifs des parkings du centre, relevés sur les sites de [Champagne Parc Auto](https://www.cpa-champagneparcauto.com/parkings/) et d'[Effia](https://www.effia.com/) | À la main, datés | Seul le tarif affiché sur place fait foi |

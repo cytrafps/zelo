@@ -28,6 +28,12 @@ export function linesLabel(j: Journey) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+/**
+ * Nom d'arrêt affichable. L'API reprend le nom accentué d'OSM quand elle le trouve
+ * (« Opéra-Cathédrale ») ; sinon le nom Citura, en capitales, est mis en minuscules.
+ */
+export const stopName = (s: string) => (s === s.toUpperCase() ? titleCase(s) : s);
+
 /** « OPERA-CATHEDRALE » (le GTFS Citura est en capitales) devient « Opera-Cathedrale ». */
 export function titleCase(s: string) {
   const title = s.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, sep: string, l: string) => sep + l.toUpperCase());

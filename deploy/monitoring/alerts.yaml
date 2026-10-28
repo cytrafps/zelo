@@ -46,6 +46,7 @@ spec:
               or label_replace(vector(259200), "source", "feux_stops",         "", "")
               or label_replace(vector(259200), "source", "aires",              "", "")
               or label_replace(vector(259200), "source", "transports",         "", "")
+              or label_replace(vector(600),    "source", "temps_reel",         "", "")
               or label_replace(vector(10800),  "source", "purge_signalements", "", "")
             )
           for: 5m
@@ -53,7 +54,8 @@ spec:
           annotations:
             summary: "Données « {{ $labels.source }} » non rafraîchies depuis {{ $value | humanizeDuration }}."
         - alert: ZeloCollecteEnEchec
-          expr: increase(zelo_ingest_runs_total{result="erreur"}[1h]) >= 3
+          # Le temps réel, lu toutes les 30 s, a son propre seuil de fraîcheur (10 min) au lieu de celui-ci.
+          expr: increase(zelo_ingest_runs_total{result="erreur", source!="temps_reel"}[1h]) >= 3
           labels: { severity: warning }
           annotations:
             summary: "La collecte « {{ $labels.source }} » a échoué {{ $value }} fois en une heure."

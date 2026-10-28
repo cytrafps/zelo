@@ -8,7 +8,7 @@ import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
 import { areaCharge, areaFuel, areaName, areaServices } from '@/utils/areas';
-import { linesLabel, relayDuration, titleCase } from '@/utils/transit';
+import { linesLabel, relayDuration, stopName } from '@/utils/transit';
 import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
@@ -358,7 +358,7 @@ function detail(t: TripTarget) {
   const walk = `${walkingMinutes(t.walk)} min à pied`;
   if (t.kind === 'parkride') {
     const j = t.relay.journeys[0];
-    return j ? `${linesLabel(j)} jusqu'à ${titleCase(j.legs.at(-1)!.to.name)}, puis ${walk}` : walk;
+    return j ? `${linesLabel(j)} jusqu'à ${stopName(j.legs.at(-1)!.to.name)}, puis ${walk}` : walk;
   }
   if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
   const first = t.item.tariff?.prices[0];

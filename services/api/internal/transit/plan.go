@@ -45,6 +45,8 @@ type Leg struct {
 	Depart   time.Time `json:"depart"`
 	Arrive   time.Time `json:"arrive"`
 	Stops    int       `json:"stops,omitempty"` // arrêts parcourus
+	// Realtime : heures données par le temps réel (sinon : horaires théoriques).
+	Realtime bool `json:"realtime,omitempty"`
 }
 
 // Journey : de la station de montée à la station de descente.
@@ -134,12 +136,16 @@ func (t *Timetable) dayTrips(day time.Time) []dayTrip {
 // Plan : jusqu'à n trajets successifs des origines vers les cibles, partant entre after et
 // after+within, du premier arrivé au dernier. Chaque trajet est le plus rapide pour son heure de
 // départ (Connection Scan, arrivée au plus tôt) ; le suivant part strictement après lui.
-func (t *Timetable) Plan(origins, targets []Access, after time.Time, within time.Duration, n int) []Journey {
-	conns, trips := t.connections(after.In(Paris))
+// rt : temps réel à appliquer (nil, ou trop ancien : horaires théoriques).
+func (t *Timetable) Plan(origins, targets []Access, after time.Time, within time.Duration, n int, rt *Realtime) []Journey {
+	if !rt.Fresh(time.Now()) {
+		rt = nil
+	}
+	conns, trips, live := t.effective(after.In(Paris), rt)
 	limit := after.Add(within)
 	var out []Journey
 	for len(out) < n {
-		j, ok := t.earliest(conns, trips, origins, targets, after)
+		j, ok := t.earliest(conns, trips, live, origins, targets, after)
 		if !ok || j.Legs[0].Depart.After(limit) {
 			break
 		}
@@ -163,7 +169,7 @@ type label struct {
 	rides int8
 }
 
-func (t *Timetable) earliest(conns []conn, trips []dayTrip, origins, targets []Access, after time.Time) (Journey, bool) {
+func (t *Timetable) earliest(conns []conn, trips []dayTrip, live []int32, origins, targets []Access, after time.Time) (Journey, bool) {
 	const inf = math.MaxInt64
 	best := make([]label, len(t.Stops))
 	for i := range best {
@@ -241,6 +247,7 @@ func (t *Timetable) earliest(conns []conn, trips []dayTrip, origins, targets []A
 		legs = append(legs, Leg{
 			Line: &line, Headsign: tr.headsign, From: t.Stops[in.from], To: t.Stops[outC.to],
 			Depart: time.Unix(in.dep, 0).In(Paris), Arrive: time.Unix(outC.arr, 0).In(Paris), Stops: int(outC.call-in.call) + 1,
+			Realtime: live != nil && live[in.trip] == 1,
 		})
 		s = in.from
 	}

@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/cytrafps/zelo/services/api/internal/overpass"
 )
 
 const (
@@ -62,7 +64,7 @@ func TestParseKeepsTramAndBus(t *testing.T) {
 func TestPlanDirect(t *testing.T) {
 	tt := citura(t)
 	at := time.Date(2026, 11, 3, 8, 0, 0, 0, Paris)
-	js := tt.Plan([]Access{{neufchatel, 2 * time.Minute}}, []Access{{opera, 3 * time.Minute}}, at, time.Hour, 3)
+	js := tt.Plan([]Access{{neufchatel, 2 * time.Minute}}, []Access{{opera, 3 * time.Minute}}, at, time.Hour, 3, nil)
 	if len(js) != 3 {
 		t.Fatalf("%d trajets", len(js))
 	}
@@ -84,7 +86,7 @@ func TestPlanDirect(t *testing.T) {
 func TestPlanTransfer(t *testing.T) {
 	tt := citura(t)
 	at := time.Date(2026, 11, 3, 8, 0, 0, 0, Paris)
-	js := tt.Plan([]Access{{neufchatel, 2 * time.Minute}}, []Access{{stopID(t, tt, "WILSON"), 0}}, at, time.Hour, 2)
+	js := tt.Plan([]Access{{neufchatel, 2 * time.Minute}}, []Access{{stopID(t, tt, "WILSON"), 0}}, at, time.Hour, 2, nil)
 	if len(js) == 0 {
 		t.Fatal("aucun trajet")
 	}
@@ -106,7 +108,38 @@ func TestPlanTransfer(t *testing.T) {
 func TestPlanNothingAtNight(t *testing.T) {
 	tt := citura(t)
 	at := time.Date(2026, 11, 4, 1, 0, 0, 0, Paris) // premier tram à 5 h 30, hors des deux heures
-	if js := tt.Plan([]Access{{neufchatel, 0}}, []Access{{opera, 0}}, at, 2*time.Hour, 2); len(js) != 0 {
+	if js := tt.Plan([]Access{{neufchatel, 0}}, []Access{{opera, 0}}, at, 2*time.Hour, 2, nil); len(js) != 0 {
 		t.Fatalf("%+v", js)
+	}
+}
+
+// Noms accentués repris d'OSM : « OPERA-CATHEDRALE » devient « Opéra-Cathédrale ».
+func TestRename(t *testing.T) {
+	tt := citura(t)
+	f, err := os.Open("testdata/osm-arrets-reims.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	osm, err := overpass.Parse(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := tt.Rename(osm)
+	names := map[string]string{}
+	for _, s := range tt.Stops {
+		names[s.ID] = s.Name
+	}
+	if names[opera] != "Opéra-Cathédrale" {
+		t.Errorf("Opéra : %q", names[opera])
+	}
+	if names[neufchatel] != "Neufchâtel" {
+		t.Errorf("Neufchâtel : %q", names[neufchatel])
+	}
+	if n < len(tt.Stops)/2 {
+		t.Errorf("%d stations renommées sur %d", n, len(tt.Stops))
+	}
+	if normalize("ST THOMAS") != normalize("Saint-Thomas") {
+		t.Error("abréviation ST non développée")
 	}
 }

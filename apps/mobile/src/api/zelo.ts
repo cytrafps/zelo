@@ -144,6 +144,8 @@ export type TransitLeg = {
   depart: string;
   arrive: string;
   stops?: number;
+  /** Heures du temps réel (sinon : horaires théoriques). */
+  realtime?: boolean;
 };
 
 /** Du parking relais à la destination ; `arrive` compte la marche finale (à vol d'oiseau). */

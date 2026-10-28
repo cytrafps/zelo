@@ -7,7 +7,7 @@ import { useNow } from '@/hooks/use-now';
 import { espace, police, rayon, texte, type Couleurs } from '@/theme';
 import { formatDistance } from '@/utils/geo';
 import { formatClock } from '@/utils/route';
-import { nextJourney, rides, titleCase } from '@/utils/transit';
+import { nextJourney, rides, stopName, titleCase } from '@/utils/transit';
 
 const ios = Platform.OS === 'ios';
 const clock = (iso: string) => formatClock(new Date(iso));
@@ -52,8 +52,11 @@ export function TransitCard({ relay, c, bottomInset, onAlighted, onClose }: Prop
             {clock(first.depart)}
             <Text style={[styles.wait, { color: `#${first.line.color}` }]}>{wait === 0 ? '  à quai' : `  dans ${wait} min`}</Text>
           </Text>
+          <Text style={[texte.petit, { color: first.realtime ? c.recharge.base : c.texte.secondaire }]}>
+            {first.realtime ? '● Temps réel' : 'Horaire théorique'}
+          </Text>
           <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>
-            {`Arrêt ${titleCase(first.from.name)} · ${formatDistance(journey.boardWalk)} à pied`}
+            {`Arrêt ${stopName(first.from.name)} · ${formatDistance(journey.boardWalk)} à pied`}
             {next ? ` · suivant ${clock(rides(next)[0]?.depart ?? next.legs[0].depart)}` : ''}
           </Text>
 
@@ -64,7 +67,7 @@ export function TransitCard({ relay, c, bottomInset, onAlighted, onClose }: Prop
                   <View style={styles.leg}>
                     <Badge line={l.line} />
                     <Text numberOfLines={2} style={[texte.secondaire, styles.flex, { color: c.texte.principal }]}>
-                      {`${titleCase(l.from.name)} → ${titleCase(l.to.name)}`}
+                      {`${stopName(l.from.name)} → ${stopName(l.to.name)}`}
                       <Text style={{ color: c.texte.secondaire }}>{` · ${l.stops} arrêts · ${clock(l.depart)}–${clock(l.arrive)}`}</Text>
                     </Text>
                   </View>
@@ -72,7 +75,7 @@ export function TransitCard({ relay, c, bottomInset, onAlighted, onClose }: Prop
                   <View style={styles.leg}>
                     <SymbolView name={{ ios: 'figure.walk', android: 'directions_walk' }} tintColor={c.texte.secondaire} size={18} />
                     <Text numberOfLines={1} style={[texte.secondaire, styles.flex, { color: c.texte.secondaire }]}>
-                      {`Correspondance à pied jusqu'à ${titleCase(l.to.name)}`}
+                      {`Correspondance à pied jusqu'à ${stopName(l.to.name)}`}
                     </Text>
                   </View>
                 )}
