@@ -39,10 +39,20 @@ const DARK: typeof LIGHT = {
   'pin-ev-l-off': require('../../../assets/map/pin-ev-l-off-dark.png'),
 };
 
+/** Feux, stops et cédez-le-passage sur le tracé : les mêmes en clair et en sombre (panneaux routiers). */
+const CONTROLS = {
+  'control-feu': require('../../../assets/map/control-feu.png'),
+  'control-stop': require('../../../assets/map/control-stop.png'),
+  'control-cédez': require('../../../assets/map/control-cedez.png'),
+};
+
 export type PinImage = keyof typeof LIGHT;
 
+const LIGHT_ALL = { ...LIGHT, ...CONTROLS };
+const DARK_ALL = { ...DARK, ...CONTROLS };
+
 export function PinImages({ dark }: { dark: boolean }) {
-  return <Images images={dark ? DARK : LIGHT} />;
+  return <Images images={dark ? DARK_ALL : LIGHT_ALL} />;
 }
 
 /**

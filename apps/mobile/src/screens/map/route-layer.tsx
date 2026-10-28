@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { police, type Couleurs } from '@/theme';
-import { cumulative, formatDuration, pointAt, type Route } from '@/utils/route';
+import { cumulative, formatDuration, pointAt, type Control, type Route } from '@/utils/route';
 
 const line = (coords: [number, number][], props: Record<string, unknown>): GeoJSON.Feature => ({
   type: 'Feature',
@@ -106,3 +106,38 @@ const styles = StyleSheet.create({
   time: { fontFamily: police, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
   hint: { fontFamily: police, fontSize: 11, fontWeight: '500' },
 });
+
+/**
+ * Feux, stops et cédez-le-passage du trajet, debout face à l'écran même carte inclinée. Ils ne
+ * s'effacent pas devant les libellés : à un carrefour, le panneau compte plus que le nom de la rue.
+ */
+export function ControlLayer({ controls }: { controls: Control[] }) {
+  const data = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: controls.map((k) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [k.lon, k.lat] },
+        properties: { icon: `control-${k.kind}` },
+      })),
+    }),
+    [controls],
+  );
+  return (
+    <GeoJSONSource id="trajet-controles" data={data}>
+      <Layer
+        id="trajet-controles-icones"
+        type="symbol"
+        minzoom={13}
+        layout={{
+          'icon-image': ['get', 'icon'] as never,
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.55, 16, 0.85, 18, 1] as never,
+          'icon-anchor': 'bottom',
+          'icon-pitch-alignment': 'viewport',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        }}
+      />
+    </GeoJSONSource>
+  );
+}

@@ -1,7 +1,7 @@
 import { Camera, Map, UserLocation, type CameraRef, type GeoJSONSourceProps, type TrackUserLocation } from '@maplibre/maplibre-react-native';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
@@ -36,7 +36,7 @@ import { PlaceSheet, type Selection } from './place-sheet';
 import { ReportDetailSheet } from './report-detail-sheet';
 import { ReportSheet } from './report-sheet';
 import { TransitCard } from './transit-card';
-import { RouteLayer } from './route-layer';
+import { ControlLayer, RouteLayer } from './route-layer';
 import { TripPanel } from './trip-panel';
 
 const REIMS: [number, number] = [4.0317, 49.2583];
@@ -219,10 +219,20 @@ export function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routesKey]);
 
-  // Guidage : vue inclinée qui suit la voiture.
+  // Guidage : vue inclinée prise derrière la voiture, qui se trouve aux trois quarts bas de l'écran
+  // pour montrer la route devant ; la marge haute décale le point suivi vers le bas.
+  // En sortant du guidage, la marge est retirée (l'aperçu cadre avec la sienne).
+  const { height } = useWindowDimensions();
+  const wasGuiding = useRef(false);
   useEffect(() => {
-    if (guiding) void camera.current?.setStop({ zoom: 17, pitch: 55, duration: 600 });
-  }, [guiding, trip?.phase]);
+    if (guiding) {
+      const zoom = trip?.phase === 'walk' ? 18 : 17.5;
+      void camera.current?.setStop({ zoom, pitch: 60, padding: { ...NO_PADDING, top: Math.round(height * 0.45) }, duration: 600 });
+    } else if (wasGuiding.current) {
+      void camera.current?.setStop({ padding: NO_PADDING, duration: 300 });
+    }
+    wasGuiding.current = guiding;
+  }, [guiding, trip?.phase, height]);
 
   const arrive = (at: LatLon) => {
     if (!trip) return;
@@ -280,6 +290,7 @@ export function MapScreen() {
             onSelect={trip.phase === 'preview' ? trips.select : undefined}
           />
         )}
+        {trip && route?.controls && (trip.phase === 'preview' || trip.phase === 'drive') && <ControlLayer controls={route.controls} />}
         <ReportLayer
           reports={data.reports}
           onPress={(e) => {
@@ -448,6 +459,8 @@ function MapButton(props: { c: Couleurs; label: string; onPress: () => void; chi
     </Pressable>
   );
 }
+
+const NO_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },

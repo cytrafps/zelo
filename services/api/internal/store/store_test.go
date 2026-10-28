@@ -303,8 +303,8 @@ func TestFuelStationsNearestFirst(t *testing.T) {
 	}
 }
 
-// Feux et stops : remplacés à chaque import, cherchés autour des points de manœuvre seulement.
-func TestControlsNearManeuvers(t *testing.T) {
+// Feux et stops : remplacés à chaque import, cherchés le long du tracé.
+func TestControlsAlong(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	if err := s.SaveControls(ctx, []junction.Control{
@@ -313,7 +313,7 @@ func TestControlsNearManeuvers(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Controls(ctx, [][2]float64{{4.0500, 49.2801}}, 45)
+	got, err := s.ControlsAlong(ctx, [][2]float64{{4.0490, 49.2800}, {4.0510, 49.2800}}, 10)
 	if err != nil || len(got) != 1 || got[0].ID != "node/T1" || got[0].Kind != "feu" {
 		t.Fatalf("%+v %v", got, err)
 	}
@@ -321,7 +321,7 @@ func TestControlsNearManeuvers(t *testing.T) {
 	if err := s.SaveControls(ctx, []junction.Control{{ID: "node/T2", Kind: "stop", Lat: 49.2810, Lon: 4.0500}}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.Controls(ctx, [][2]float64{{4.0500, 49.2801}}, 45); len(got) != 0 {
+	if got, _ := s.ControlsAlong(ctx, [][2]float64{{4.0490, 49.2800}, {4.0510, 49.2800}}, 10); len(got) != 0 {
 		t.Fatalf("feu supprimé d'OSM encore là : %+v", got)
 	}
 }

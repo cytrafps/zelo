@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"math"
 	"net/http"
@@ -412,5 +413,47 @@ func TestVoice(t *testing.T) {
 		if got := r.Steps[3].Voice[i].Text; got != w {
 			t.Errorf("annonce %d : %q, attendu %q", i, got, w)
 		}
+	}
+}
+
+// Sur la carte : un repère par carrefour du trajet, posé sur le tracé, dans l'ordre de passage ;
+// le stop de la manœuvre de Rue Damide y est, pas ceux des rues transversales.
+func TestPlaceControls(t *testing.T) {
+	body, err := os.ReadFile("testdata/gare-saint-remi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var controls []Control
+	raw, _ := os.ReadFile("testdata/controles-saint-remi.json")
+	if err := json.Unmarshal(raw, &controls); err != nil {
+		t.Fatal(err)
+	}
+	r := routes[0]
+	Annotate(&r, controls)
+	Place(&r, controls)
+	cum := make([]float64, len(r.Coordinates))
+	for i := 1; i < len(cum); i++ {
+		cum[i] = cum[i-1] + meters(r.Coordinates[i-1], r.Coordinates[i])
+	}
+	var got []string
+	prev := -1.0
+	for _, c := range r.Controls {
+		along, off := project(r.Coordinates, cum, [2]float64{c.Lon, c.Lat}, 0, cum[len(cum)-1])
+		if off > 0.5 || along <= prev {
+			t.Fatalf("%+v : écart %.1f m, abscisse %.0f après %.0f", c, off, along, prev)
+		}
+		prev = along
+		got = append(got, fmt.Sprintf("%s@%.0f", c.Kind, along))
+	}
+	// Les deux feux de la gare (184 et 227 m, deux carrefours), un par carrefour à 4 704 et 5 495 m
+	// (les feux de chaque branche fusionnés), 6 118 m, et le stop de Rue Damide (7 744 m). Écartés :
+	// le stop à 12 m du tracé (rue transversale) et le feu à 11 m de 402 m.
+	want := []string{"feu@184", "feu@227", "feu@4704", "feu@5495", "feu@6118", "stop@7744"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("repères %v, attendu %v", got, want)
 	}
 }

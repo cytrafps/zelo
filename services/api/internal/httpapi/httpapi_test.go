@@ -47,7 +47,7 @@ func (f *fakeStore) Parkings(_ context.Context, _ store.BBox, _ int, vehicle str
 	}
 	return []store.Parking{{ID: "way/31432939", Name: "Erlon"}, {ID: "way/1", Name: "Sans relevé"}}, nil
 }
-func (f *fakeStore) Controls(context.Context, [][2]float64, float64) ([]junction.Control, error) {
+func (f *fakeStore) ControlsAlong(context.Context, [][2]float64, float64) ([]junction.Control, error) {
 	return f.controls, nil
 }
 func (f *fakeStore) AreasAlong(context.Context, [][2]float64, float64) ([]store.AreaOnRoute, error) {

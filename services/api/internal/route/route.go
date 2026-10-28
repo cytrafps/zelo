@@ -84,6 +84,8 @@ type Route struct {
 	Steps       []Step       `json:"steps"`
 	// Areas : aires d'autoroute desservies par le trajet, dans l'ordre de passage (voir PlaceAreas).
 	Areas []Area `json:"areas,omitempty"`
+	// Controls : feux, stops et cédez-le-passage de la route suivie, dans l'ordre (voir Place).
+	Controls []Control `json:"controls,omitempty"`
 
 	// motorway[i] : le segment i → i+1 du tracé est sur autoroute.
 	motorway []bool

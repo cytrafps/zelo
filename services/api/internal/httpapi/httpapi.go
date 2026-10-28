@@ -58,7 +58,7 @@ type Store interface {
 	FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error)
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(ctx context.Context, b store.BBox, limit int, vehicle string) ([]store.Parking, error)
-	Controls(ctx context.Context, points [][2]float64, radius float64) ([]junction.Control, error)
+	ControlsAlong(ctx context.Context, line [][2]float64, within float64) ([]junction.Control, error)
 	AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]store.AreaOnRoute, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
 	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
@@ -535,25 +535,18 @@ func (a *API) annotate(ctx context.Context, routes []route.Route, areas bool) {
 		}
 		route.PlaceAreas(&routes[i], toAreas(found))
 	}
-	var points [][2]float64
-	for _, r := range routes {
-		for _, s := range r.Steps {
-			if s.Shape < len(r.Coordinates) {
-				points = append(points, r.Coordinates[s.Shape])
-			}
-		}
-	}
-	found, err := a.store.Controls(ctx, points, route.ControlRadius)
-	if err != nil {
-		a.log.Warn("feux et stops", "err", err)
-		return
-	}
-	controls := make([]route.Control, len(found))
-	for i, c := range found {
-		controls[i] = route.Control{Kind: c.Kind, Lat: c.Lat, Lon: c.Lon}
-	}
 	for i := range routes {
+		found, err := a.store.ControlsAlong(ctx, routes[i].Coordinates, route.ControlOffset)
+		if err != nil {
+			a.log.Warn("feux et stops", "err", err)
+			return
+		}
+		controls := make([]route.Control, len(found))
+		for k, c := range found {
+			controls[k] = route.Control{Kind: c.Kind, Lat: c.Lat, Lon: c.Lon}
+		}
 		route.Annotate(&routes[i], controls)
+		route.Place(&routes[i], controls)
 	}
 }
 
