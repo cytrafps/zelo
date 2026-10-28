@@ -15,6 +15,8 @@
 L'app de la fin du trajet : se garer, recharger, faire le plein, retrouver sa voiture.
 Projet annuel B3, ESGI Reims (spécialité Systèmes, Réseaux et Cloud).
 
+**Le parcours** : choisir une destination, ou toucher un parking, une borne, une station. Zelo propose où s'arrêter, avec le prix et la marche jusqu'à destination. L'aperçu montre jusqu'à trois itinéraires, l'heure d'arrivée marche comprise et les signalements sur le chemin. Le guidage suit la voiture, recalcule l'itinéraire si on s'écarte, puis enregistre la voiture au parking et continue à pied.
+
 ## Architecture
 
 ```mermaid
@@ -29,6 +31,7 @@ flowchart LR
     A["API REST"]
     W["WebSocket /v1/live"]
   end
+  V["Valhalla<br/>itinéraires, graphe de la Marne"]
   DB[("PostgreSQL + PostGIS")]
   App["App mobile<br/>Expo + MapLibre"]
 
@@ -39,6 +42,8 @@ flowchart LR
   A <--> DB
   App -- "GET stations, bornes, parkings" --> A
   App -- "POST signalement" --> A
+  App -- "GET itinéraire" --> A
+  A -- "calcul" --> V
   A -- "diffusion" --> W
   W -- "temps réel" --> App
 ```
@@ -50,7 +55,7 @@ flowchart LR
 | `services/api` | API en Go : collecte des données ouvertes, API REST, signalements en temps réel (WebSocket), métriques Prometheus |
 | `services/valhalla` | Image Valhalla (itinéraires) avec le graphe routier de la Marne, reconstruite chaque semaine par la CI |
 | `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, parkings, signalements en temps réel |
-| `infra` | Environnement de développement (Docker Compose) |
+| `infra` | Développement (Docker Compose) et homelab décrit en code : VM Proxmox en Terraform, cluster K3s en Ansible ([guide](infra/README.md)) |
 | `deploy` | Production sur K3s en GitOps : Kustomize, Argo CD, Prometheus et Grafana ([guide](deploy/README.md)) |
 | `tests/charge` | Test de charge k6 et résultats, bascule d'une réplique comprise ([résultats](tests/charge/README.md)) |
 | `docs` | [Décisions d'architecture](docs/adr/README.md) et visuels |
@@ -149,14 +154,14 @@ npx eas-cli@latest build -p android --profile preview
 | Méthode et route | Description |
 |---|---|
 | `GET /v1/fuel-stations?bbox=minLon,minLat,maxLon,maxLat` | Stations et prix par carburant (zone de 1° de côté maximum, 500 résultats) |
-| `GET /v1/charge-stations?bbox=…` | Stations de recharge : puissance max, prises, points de charge, nombre de points libres (`null` si aucun état publié depuis 24 h) |
-| `GET /v1/parkings?bbox=…` | Parkings publics : places, payant ou gratuit, hauteur max, places PMR et recharge, horaires (plus grands d'abord) |
+| `GET /v1/charge-stations?bbox=…` | Stations de recharge : puissance max, prises, points de charge, nombre de points libres (`null` si aucun état publié depuis 24 h), prix au kWh quand l'opérateur le publie |
+| `GET /v1/parkings?bbox=…` | Parkings publics : places, payant ou gratuit, hauteur max, places PMR et recharge, horaires, tarifs pour 1 h, 3 h et 24 h quand ils ont été relevés (plus grands d'abord) |
 | `GET /v1/reports?bbox=…` | Signalements encore actifs |
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
 | `POST /v1/reports/{id}/votes` | `{"up": true}` (toujours là) ou `false` (plus là) ; un vote par appareil (`X-Zelo-Device`), modifiable ; jamais sur son propre signalement (409) |
-| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk&alternates=0..2` | `{"routes": […]}`, du plus rapide au plus lent : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
+| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk` | `{"routes": […]}`, du plus rapide au plus lent : distance (m), durée (s), tracé `[lon, lat]`, étapes en français. Options : `alternates=0..2`, `heading` (cap au départ, en °), `depart` (heure Unix, 7 jours au plus), `avoid=tolls,highways`. 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
 | `GET /v1/live` | WebSocket : `report` (nouveau ou mis à jour) et `report_removed` sont poussés à tous les clients, quelle que soit l'instance |
-| `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus |
+| `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus (collectes, trafic par route, calculs d'itinéraire) |
 
 Fiabilité des signalements, comme sur Waze :
 - un signalement du même type à moins de 150 m d'un signalement actif n'en crée pas un second, il le confirme ;
@@ -187,3 +192,4 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | [Bornes IRVE statiques](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) | 24 h | Licence Ouverte 2.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |
+| Tarifs des parkings du centre, relevés sur les sites de [Champagne Parc Auto](https://www.cpa-champagneparcauto.com/parkings/) et d'[Effia](https://www.effia.com/) | À la main, datés | Seul le tarif affiché sur place fait foi |
