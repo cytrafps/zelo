@@ -32,6 +32,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 	"github.com/cytrafps/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
 )
 
@@ -175,6 +176,7 @@ func run(log *slog.Logger, once bool) error {
 	var realtime atomic.Pointer[transit.Realtime]
 	go loadTimetable(ctx, log, client, envOr("GTFS_URL", transit.FeedURL), envOr("OVERPASS_URL", overpass.URL), &timetable)
 	go loadRealtime(ctx, log, envOr("GTFS_RT_URL", transit.RealtimeURL), &realtime)
+	go loadTariffs(ctx, log, client)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
@@ -338,6 +340,33 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 			metrics.IngestRows.WithLabelValues("transports").Set(float64(len(tt.Stops)))
 			metrics.IngestLastSuccess.WithLabelValues("transports").SetToCurrentTime()
 			log.Info("horaires tram et bus", "arrets", len(tt.Stops), "duree", time.Since(start).Round(time.Millisecond).String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// loadTariffs relit chaque jour les tarifs des parkings sur le site des exploitants, sur chaque
+// réplique (ils sont gardés en mémoire). Une page illisible garde la grille précédente et
+// réessaie dans 1 h : un exploitant qui refond son site se voit à l'alerte de fraîcheur.
+func loadTariffs(ctx context.Context, log *slog.Logger, client *http.Client) {
+	for {
+		wait := 24 * time.Hour
+		n, changed, err := tarif.Refresh(ctx, client)
+		if len(changed) > 0 {
+			log.Info("tarifs des parkings modifiés", "parkings", changed)
+		}
+		metrics.IngestRows.WithLabelValues("tarifs").Set(float64(n))
+		if err != nil {
+			log.Warn("tarifs des parkings", "err", err, "a_jour", n)
+			metrics.IngestRuns.WithLabelValues("tarifs", "erreur").Inc()
+			wait = time.Hour
+		} else {
+			metrics.IngestRuns.WithLabelValues("tarifs", "ok").Inc()
+			metrics.IngestLastSuccess.WithLabelValues("tarifs").SetToCurrentTime()
 		}
 		select {
 		case <-ctx.Done():
