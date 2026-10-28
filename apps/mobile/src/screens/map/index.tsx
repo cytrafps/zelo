@@ -5,15 +5,18 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
-import { getChargeStations, getParkings, getParkRides, type BBox } from '@/api/zelo';
+import { getChargeStations, getParkings, getParkRides, postReport, type BBox } from '@/api/zelo';
 import { Glass } from '@/components/glass';
 import { useLive } from '@/hooks/use-live';
 import { useMapData, type DataStatus, type Place as DataPlace } from '@/hooks/use-map-data';
+import { useCarEvents } from '@/hooks/use-car-events';
+import { useNow } from '@/hooks/use-now';
 import { useParkedCar } from '@/hooks/use-parked-car';
 import { useStored } from '@/hooks/use-stored';
 import { useTrip, type TripTarget } from '@/hooks/use-trip';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
+import { FREED_FOR_MS } from '@/utils/car-events';
 import { distance, type LatLon } from '@/utils/geo';
 import { pushRecent } from '@/utils/recents';
 import { bounds } from '@/utils/route';
@@ -57,6 +60,9 @@ export function MapScreen() {
   const parked = useParkedCar();
   const trips = useTrip();
   const trip = trips.trip;
+  /** Place quittée en se reconnectant à Android Auto : à signaler libre tant qu'elle est récente. */
+  const [freed, setFreed] = useStored<(LatLon & { since: number }) | null>('zelo.place-liberee', null);
+  const now = useNow(60_000);
   // Guidage sur la carte en voiture et à pied ; en tram, une carte d'horaires suffit.
   const guiding = trip !== null && (trip.phase === 'drive' || trip.phase === 'walk');
   // En voiture, le cap GPS (le téléphone est fixé n'importe comment) ; à pied, la boussole (le cap GPS est trop bruité à 5 km/h).
@@ -109,6 +115,33 @@ export function MapScreen() {
     setNotice(message);
     setTimeout(() => setNotice((n) => (n === message ? null : n)), 4000);
   };
+
+  useCarEvents(parked.car, (a) => {
+    if (a.kind === 'freed') {
+      parked.forget();
+      setFreed({ ...a.at, since: a.since });
+      return;
+    }
+    // En fin de guidage, l'arrivée a déjà enregistré la voiture au bon endroit.
+    if (trips.trip?.phase === 'drive') return;
+    if (a.kind === 'park') {
+      parked.park(a.at);
+      flash('Android Auto déconnecté : ta voiture est enregistrée ici.');
+    } else {
+      flash('Android Auto déconnecté : où es-tu garé ?');
+      setCarOpen(true);
+    }
+  });
+
+  const reportFreed = (at: LatLon) =>
+    postReport('place_liberee', at.lat, at.lon).then(
+      (r) => {
+        data.upsertReport(r);
+        setFreed(null);
+        flash('Merci, ta place est signalée libre.');
+      },
+      () => flash('Signalement impossible, réessaie dans un instant.'),
+    );
 
   /** Destination choisie : aperçu du trajet, avec les parkings et bornes autour d'elle. */
   const goTo = (place: Place) => {
@@ -320,6 +353,8 @@ export function MapScreen() {
         here={here}
         onPark={parked.park}
         onForget={parked.forget}
+        freed={freed && now - freed.since < FREED_FOR_MS ? freed : null}
+        onReportFreed={reportFreed}
         onShow={(car) => {
           setCarOpen(false);
           camera.current?.flyTo({ center: [car.lon, car.lat], zoom: 17, duration: 800 });
