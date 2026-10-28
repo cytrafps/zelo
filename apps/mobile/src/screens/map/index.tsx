@@ -1,4 +1,4 @@
-import { Camera, Map, UserLocation, type CameraRef, type GeoJSONSourceProps, type TrackUserLocation } from '@maplibre/maplibre-react-native';
+import { Camera, Map, NativeUserLocation, UserLocation, type CameraRef, type GeoJSONSourceProps, type TrackUserLocation } from '@maplibre/maplibre-react-native';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -300,7 +300,10 @@ export function MapScreen() {
           }}
         />
         <PinImages dark={dark} />
-        {location.granted && <UserLocation accuracy heading={trip?.phase !== 'drive'} />}
+        {/* En voiture : la flèche de navigation du moteur natif, orientée par le cap GPS et animée au même
+            rythme que la caméra qui la suit (iOS montre le point avec son cap). Sinon le point bleu. */}
+        {location.granted &&
+          (trip?.phase === 'drive' ? <NativeUserLocation mode="course" /> : <UserLocation accuracy heading />)}
         {trip && trip.target.kind !== 'dropoff' && (trip.phase === 'preview' || trip.phase === 'drive') && (
           <StopMarker target={trip.target} c={c} />
         )}
