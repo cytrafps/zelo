@@ -1,51 +1,22 @@
-import { MenuView } from "@expo/ui/community/menu";
-import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { MenuView } from '@expo/ui/community/menu';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 
-import type { Avoid, Report, Vehicle } from "@/api/zelo";
-import { useNow } from "@/hooks/use-now";
-import type { Trip, TripTarget } from "@/hooks/use-trip";
-import {
-  espace,
-  police,
-  rayon,
-  REPORT_META,
-  texte,
-  type Couleurs,
-} from "@/theme";
-import { areaCharge, areaFuel, areaName, areaServices } from "@/utils/areas";
-import { formatCents, formatStay } from "@/utils/format";
-import { formatDistance, walkingMinutes } from "@/utils/geo";
-import {
-  along,
-  cumulative,
-  formatClock,
-  formatDuration,
-  type Area,
-  type Route,
-} from "@/utils/route";
-import { sameTarget } from "@/utils/targets";
+import type { Avoid, Report, Vehicle } from '@/api/zelo';
+import { useNow } from '@/hooks/use-now';
+import type { Trip, TripTarget } from '@/hooks/use-trip';
+import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
+import { areaCharge, areaFuel, areaName, areaServices } from '@/utils/areas';
+import { formatCents, formatStay } from '@/utils/format';
+import { formatDistance, walkingMinutes } from '@/utils/geo';
+import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
+import { sameTarget } from '@/utils/targets';
 
-const ios = Platform.OS === "ios";
+const ios = Platform.OS === 'ios';
 
 /** Signalements qui comptent pour choisir un itinéraire. */
-const BLOCKING = new Set<Report["kind"]>([
-  "accident",
-  "bouchon",
-  "travaux",
-  "obstacle",
-  "route_fermee",
-]);
+const BLOCKING = new Set<Report['kind']>(['accident', 'bouchon', 'travaux', 'obstacle', 'route_fermee']);
 
 type Props = {
   trip: Trip;
@@ -56,12 +27,7 @@ type Props = {
   onGo: (i: number) => void;
   avoid: readonly Avoid[];
   vehicle: Vehicle;
-  onChange: (change: {
-    target?: TripTarget;
-    depart?: number | null;
-    avoid?: Avoid[];
-    vehicle?: Vehicle;
-  }) => void;
+  onChange: (change: { target?: TripTarget; depart?: number | null; avoid?: Avoid[]; vehicle?: Vehicle }) => void;
   onClose: () => void;
 };
 
@@ -69,19 +35,8 @@ type Props = {
 const DEPARTS = [0, 15, 30, 60, 120];
 
 /** Aperçu du trajet (maquettes 03 et 03b) : où se garer, puis les itinéraires et « Y aller ». */
-export function TripPanel({
-  trip,
-  reports,
-  c,
-  bottomInset,
-  onSelect,
-  onGo,
-  avoid,
-  vehicle,
-  onChange,
-  onClose,
-}: Props) {
-  const bike = vehicle === "bike";
+export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid, vehicle, onChange, onClose }: Props) {
+  const bike = vehicle === 'bike';
   const [choosing, setChoosing] = useState(false);
   const now = useNow();
   // Heure de départ : choisie, ou maintenant.
@@ -91,132 +46,74 @@ export function TripPanel({
   const share = () => {
     const route = trip.routes[trip.selected];
     if (!route) return;
-    const eta = formatClock(
-      new Date(
-        (trip.depart ?? Date.now()) + (route.duration + walkTime) * 1000,
-      ),
-    );
-    void Share.share({
-      message: `J'arrive à ${trip.destination.name} vers ${eta}.`,
-    });
+    const eta = formatClock(new Date((trip.depart ?? Date.now()) + (route.duration + walkTime) * 1000));
+    void Share.share({ message: `J'arrive à ${trip.destination.name} vers ${eta}.` });
   };
 
   return (
     <View
       style={[
         ios ? styles.cardIos : styles.cardAndroid,
-        {
-          backgroundColor: c.fond.surface,
-          paddingBottom: espace[4] + (ios ? 0 : bottomInset),
-        },
+        { backgroundColor: c.fond.surface, paddingBottom: espace[4] + (ios ? 0 : bottomInset) },
         ios && { marginBottom: Math.max(espace[2], bottomInset - espace[3]) },
       ]}
     >
       <View style={[styles.handle, { backgroundColor: c.fond.separateur }]} />
       <View style={styles.header}>
-        <Text
-          numberOfLines={1}
-          style={[texte.titre, styles.title, { color: c.texte.principal }]}
-        >
+        <Text numberOfLines={1} style={[texte.titre, styles.title, { color: c.texte.principal }]}>
           {trip.destination.name}
         </Text>
-        <RoundButton
-          c={c}
-          label="Partager mon heure d'arrivée"
-          icon={{ ios: "square.and.arrow.up", android: "share" }}
-          onPress={share}
-        />
-        <RoundButton
-          c={c}
-          label="Fermer"
-          icon={{ ios: "xmark", android: "close" }}
-          onPress={onClose}
-        />
+        <RoundButton c={c} label="Partager mon heure d'arrivée" icon={{ ios: 'square.and.arrow.up', android: 'share' }} onPress={share} />
+        <RoundButton c={c} label="Fermer" icon={{ ios: 'xmark', android: 'close' }} onPress={onClose} />
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chips}
-        contentContainerStyle={styles.chipsRow}
-      >
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsRow}>
         <MenuView
           title="Véhicule"
-          actions={VEHICLES.map(([id, title]) => ({
-            id,
-            title,
-            state: id === vehicle ? "on" : "off",
-          }))}
+          actions={VEHICLES.map(([id, title]) => ({ id, title, state: id === vehicle ? 'on' : 'off' }))}
           onPressAction={(e) => {
             const id = e.nativeEvent.event as Vehicle;
             if (id !== vehicle) onChange({ vehicle: id });
           }}
         >
-          <View
-            style={[styles.chip, { borderColor: c.fond.separateur }]}
-            accessibilityRole="button"
-            accessibilityLabel="Véhicule"
-          >
-            <SymbolView
-              name={VEHICLE_ICON[vehicle]}
-              tintColor={c.texte.principal}
-              size={16}
-            />
-            <Text style={[texte.corpsFort, { color: c.texte.principal }]}>
-              {VEHICLES.find(([id]) => id === vehicle)?.[1]}
-            </Text>
+          <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Véhicule">
+            <SymbolView name={VEHICLE_ICON[vehicle]} tintColor={c.texte.principal} size={16} />
+            <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{VEHICLES.find(([id]) => id === vehicle)?.[1]}</Text>
             <Chevron c={c} />
           </View>
         </MenuView>
 
         {/* Sans choix d'arrêt (« Y aller » vers une station, ou à vélo), pas de puce. */}
-        {!bike &&
-          (trip.target.kind !== "dropoff" || trip.options.length > 1) && (
-            <Pressable
-              onPress={() => setChoosing((v) => !v)}
-              disabled={trip.options.length < 2}
-              accessibilityRole="button"
-              accessibilityLabel="Choisir où se garer"
-              style={[styles.chip, { borderColor: c.fond.separateur }]}
-            >
-              <TargetIcon t={trip.target} c={c} size={16} />
-              <Text
-                numberOfLines={1}
-                style={[
-                  texte.corpsFort,
-                  styles.chipText,
-                  { color: c.texte.principal },
-                ]}
-              >
-                {short(trip.target)}
-              </Text>
-              {trip.options.length > 1 && <Chevron c={c} />}
-            </Pressable>
-          )}
+        {!bike && (trip.target.kind !== 'dropoff' || trip.options.length > 1) && (
+          <Pressable
+            onPress={() => setChoosing((v) => !v)}
+            disabled={trip.options.length < 2}
+            accessibilityRole="button"
+            accessibilityLabel="Choisir où se garer"
+            style={[styles.chip, { borderColor: c.fond.separateur }]}
+          >
+            <TargetIcon t={trip.target} c={c} size={16} />
+            <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
+              {short(trip.target)}
+            </Text>
+            {trip.options.length > 1 && <Chevron c={c} />}
+          </Pressable>
+        )}
 
         <MenuView
           title="Départ"
           actions={DEPARTS.map((m) => ({
             id: String(m),
-            title:
-              m === 0
-                ? "Maintenant"
-                : `Dans ${m < 60 ? `${m} min` : `${m / 60} h`}`,
+            title: m === 0 ? 'Maintenant' : `Dans ${m < 60 ? `${m} min` : `${m / 60} h`}`,
           }))}
           onPressAction={(e) => {
             const m = Number(e.nativeEvent.event);
             onChange({ depart: m === 0 ? null : Date.now() + m * 60_000 });
           }}
         >
-          <View
-            style={[styles.chip, { borderColor: c.fond.separateur }]}
-            accessibilityRole="button"
-            accessibilityLabel="Heure de départ"
-          >
+          <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Heure de départ">
             <Text style={[texte.corpsFort, { color: c.texte.principal }]}>
-              {trip.depart === null
-                ? "Maintenant"
-                : `Départ ${formatClock(new Date(trip.depart))}`}
+              {trip.depart === null ? 'Maintenant' : `Départ ${formatClock(new Date(trip.depart))}`}
             </Text>
             <Chevron c={c} />
           </View>
@@ -225,36 +122,18 @@ export function TripPanel({
         {!bike && (
           <MenuView
             title="Éviter"
-            actions={AVOID.map(([id, title]) => ({
-              id,
-              title,
-              state: avoid.includes(id) ? "on" : "off",
-            }))}
+            actions={AVOID.map(([id, title]) => ({ id, title, state: avoid.includes(id) ? 'on' : 'off' }))}
             onPressAction={(e) => {
               const id = e.nativeEvent.event as Avoid;
-              onChange({
-                avoid: avoid.includes(id)
-                  ? avoid.filter((a) => a !== id)
-                  : [...avoid, id],
-              });
+              onChange({ avoid: avoid.includes(id) ? avoid.filter((a) => a !== id) : [...avoid, id] });
             }}
           >
             <View
-              style={[
-                styles.chip,
-                { borderColor: avoid.length ? c.action : c.fond.separateur },
-              ]}
+              style={[styles.chip, { borderColor: avoid.length ? c.action : c.fond.separateur }]}
               accessibilityRole="button"
               accessibilityLabel="Éviter les péages ou les autoroutes"
             >
-              <Text
-                style={[
-                  texte.corpsFort,
-                  { color: avoid.length ? c.action : c.texte.principal },
-                ]}
-              >
-                {avoidLabel(avoid)}
-              </Text>
+              <Text style={[texte.corpsFort, { color: avoid.length ? c.action : c.texte.principal }]}>{avoidLabel(avoid)}</Text>
               <Chevron c={c} />
             </View>
           </MenuView>
@@ -263,59 +142,36 @@ export function TripPanel({
 
       {choosing ? (
         <View style={styles.list}>
-          <Text
-            style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}
-          >
-            À l’arrivée
-          </Text>
+          <Text style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}>À l’arrivée</Text>
           {trip.options.map((t) => {
             const on = sameTarget(t, trip.target);
             return (
               <Pressable
-                key={
-                  t.kind === "dropoff" ? "dropoff" : `${t.kind}-${t.item.id}`
-                }
+                key={t.kind === 'dropoff' ? 'dropoff' : `${t.kind}-${t.item.id}`}
                 onPress={() => {
                   setChoosing(false);
                   if (!on) onChange({ target: t });
                 }}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
-                style={({ pressed }) => [
-                  styles.option,
-                  (on || pressed) && { backgroundColor: c.fond.attenue },
-                ]}
+                style={({ pressed }) => [styles.option, (on || pressed) && { backgroundColor: c.fond.attenue }]}
               >
                 <TargetIcon t={t} c={c} size={20} />
                 <View style={styles.flex}>
-                  <Text
-                    numberOfLines={1}
-                    style={[texte.corps, { color: c.texte.principal }]}
-                  >
+                  <Text numberOfLines={1} style={[texte.corps, { color: c.texte.principal }]}>
                     {title(t)}
                   </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[texte.secondaire, { color: c.texte.secondaire }]}
-                  >
+                  <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
                     {detail(t)}
                   </Text>
                 </View>
-                {on && (
-                  <SymbolView
-                    name={{ ios: "checkmark", android: "check" }}
-                    tintColor={c.texte.principal}
-                    size={18}
-                  />
-                )}
+                {on && <SymbolView name={{ ios: 'checkmark', android: 'check' }} tintColor={c.texte.principal} size={18} />}
               </Pressable>
             );
           })}
         </View>
       ) : trip.error ? (
-        <Text style={[texte.corps, styles.message, { color: c.alerte.base }]}>
-          {trip.error}
-        </Text>
+        <Text style={[texte.corps, styles.message, { color: c.alerte.base }]}>{trip.error}</Text>
       ) : trip.loading && trip.routes.length === 0 ? (
         <ActivityIndicator style={styles.message} color={c.texte.tertiaire} />
       ) : (
@@ -352,62 +208,30 @@ function RouteRow(props: {
   onPress: () => void;
   onGo: () => void;
 }) {
-  const { route, walk, now, reports, selected, first, c, onPress, onGo } =
-    props;
+  const { route, walk, now, reports, selected, first, c, onPress, onGo } = props;
   // Le premier signalement gênant rencontré sur ce trajet.
   const hit = useMemo(() => {
     const cum = cumulative(route.coordinates);
-    return along(
-      route,
-      cum,
-      reports.filter((r) => BLOCKING.has(r.kind)),
-    ).sort((a, b) => a.along - b.along)[0];
+    return along(route, cum, reports.filter((r) => BLOCKING.has(r.kind))).sort((a, b) => a.along - b.along)[0];
   }, [route, reports]);
   const eta = formatClock(new Date(now + (route.duration + walk) * 1000));
-  const km = (route.distance / 1000).toFixed(1).replace(".", ",");
+  const km = (route.distance / 1000).toFixed(1).replace('.', ',');
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      style={[
-        styles.route,
-        !first && {
-          borderTopColor: c.fond.separateur,
-          borderTopWidth: StyleSheet.hairlineWidth,
-        },
-      ]}
-    >
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }} style={[styles.route, !first && { borderTopColor: c.fond.separateur, borderTopWidth: StyleSheet.hairlineWidth }]}>
       <View style={styles.flex}>
-        <Text style={[styles.duration, { color: c.texte.principal }]}>
-          {formatDuration(route.duration + walk)}
-        </Text>
-        <Text
-          style={[texte.secondaire, { color: c.texte.secondaire }]}
-        >{`Arrivée ${eta} · ${km} km`}</Text>
+        <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + walk)}</Text>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Arrivée ${eta} · ${km} km`}</Text>
         {!!route.areas?.length && (
-          <Text
-            numberOfLines={1}
-            style={[texte.secondaire, { color: c.texte.secondaire }]}
-          >
-            {`${route.areas.length} aire${route.areas.length > 1 ? "s" : ""} · première à ${formatDistance(route.areas[0].along)}`}
+          <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
+            {`${route.areas.length} aire${route.areas.length > 1 ? 's' : ''} · première à ${formatDistance(route.areas[0].along)}`}
           </Text>
         )}
         {hit && (
           <View style={styles.report}>
-            <View
-              style={[
-                styles.dot,
-                { backgroundColor: REPORT_META[hit.item.kind].couleur },
-              ]}
-            />
-            <Text
-              numberOfLines={1}
-              style={[texte.secondaire, { color: c.texte.secondaire }]}
-            >
-              {REPORT_META[hit.item.kind].label +
-                (hit.street ? ` · ${hit.street}` : "")}
+            <View style={[styles.dot, { backgroundColor: REPORT_META[hit.item.kind].couleur }]} />
+            <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
+              {REPORT_META[hit.item.kind].label + (hit.street ? ` · ${hit.street}` : '')}
             </Text>
           </View>
         )}
@@ -418,20 +242,10 @@ function RouteRow(props: {
         accessibilityLabel={`Y aller, ${formatDuration(route.duration + walk)}`}
         style={({ pressed }) => [
           styles.go,
-          {
-            backgroundColor: selected ? c.texte.principal : c.fond.attenue,
-            opacity: pressed ? 0.85 : 1,
-          },
+          { backgroundColor: selected ? c.texte.principal : c.fond.attenue, opacity: pressed ? 0.85 : 1 },
         ]}
       >
-        <Text
-          style={[
-            texte.corpsFort,
-            { color: selected ? c.texte.inverse : c.texte.principal },
-          ]}
-        >
-          Y aller
-        </Text>
+        <Text style={[texte.corpsFort, { color: selected ? c.texte.inverse : c.texte.principal }]}>Y aller</Text>
       </Pressable>
     </Pressable>
   );
@@ -442,42 +256,19 @@ function Areas({ areas, c }: { areas: Area[] | undefined; c: Couleurs }) {
   if (!areas?.length) return null;
   return (
     <View style={[styles.areas, { borderTopColor: c.fond.separateur }]}>
-      <Text
-        style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}
-      >
-        Aires sur le trajet
-      </Text>
+      <Text style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}>Aires sur le trajet</Text>
       {areas.map((a) => {
-        const facts = [formatDistance(a.along), areaFuel(a), areaCharge(a)]
-          .filter(Boolean)
-          .join(" · ");
+        const facts = [formatDistance(a.along), areaFuel(a), areaCharge(a)].filter(Boolean).join(' · ');
         return (
-          <View
-            key={a.id}
-            style={styles.area}
-            accessible
-            accessibilityLabel={`${areaName(a)}, ${facts}. ${areaServices(a)}`}
-          >
-            <Text
-              numberOfLines={1}
-              style={[texte.corpsFort, { color: c.texte.principal }]}
-            >
+          <View key={a.id} style={styles.area} accessible accessibilityLabel={`${areaName(a)}, ${facts}. ${areaServices(a)}`}>
+            <Text numberOfLines={1} style={[texte.corpsFort, { color: c.texte.principal }]}>
               {areaName(a)}
             </Text>
-            <Text
-              numberOfLines={1}
-              style={[
-                texte.secondaire,
-                { color: c.texte.secondaire, fontVariant: ["tabular-nums"] },
-              ]}
-            >
+            <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
               {facts}
             </Text>
             {a.services.length > 0 && (
-              <Text
-                numberOfLines={2}
-                style={[texte.secondaire, { color: c.texte.secondaire }]}
-              >
+              <Text numberOfLines={2} style={[texte.secondaire, { color: c.texte.secondaire }]}>
                 {areaServices(a)}
               </Text>
             )}
@@ -489,172 +280,87 @@ function Areas({ areas, c }: { areas: Area[] | undefined; c: Couleurs }) {
 }
 
 function Chevron({ c }: { c: Couleurs }) {
-  return (
-    <SymbolView
-      name={{ ios: "chevron.down", android: "expand_more" }}
-      tintColor={c.texte.secondaire}
-      size={14}
-    />
-  );
+  return <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />;
 }
 
 const VEHICLES: [Vehicle, string][] = [
-  ["car", "Voiture"],
-  ["moto", "Moto"],
-  ["bike", "Vélo"],
+  ['car', 'Voiture'],
+  ['moto', 'Moto'],
+  ['bike', 'Vélo'],
 ];
 
-const VEHICLE_ICON: Record<Vehicle, SymbolViewProps["name"]> = {
-  car: { ios: "car.fill", android: "directions_car" },
-  moto: { ios: "motorcycle", android: "two_wheeler" },
-  bike: { ios: "bicycle", android: "directions_bike" },
+const VEHICLE_ICON: Record<Vehicle, SymbolViewProps['name']> = {
+  car: { ios: 'car.fill', android: 'directions_car' },
+  moto: { ios: 'motorcycle', android: 'two_wheeler' },
+  bike: { ios: 'bicycle', android: 'directions_bike' },
 };
 
 const AVOID: [Avoid, string][] = [
-  ["tolls", "Péages"],
-  ["highways", "Autoroutes"],
+  ['tolls', 'Péages'],
+  ['highways', 'Autoroutes'],
 ];
 
 function avoidLabel(avoid: readonly Avoid[]) {
-  const tolls = avoid.includes("tolls");
-  const highways = avoid.includes("highways");
-  if (tolls && highways) return "Sans péage ni autoroute";
-  if (tolls) return "Sans péage";
-  if (highways) return "Sans autoroute";
-  return "Éviter";
+  const tolls = avoid.includes('tolls');
+  const highways = avoid.includes('highways');
+  if (tolls && highways) return 'Sans péage ni autoroute';
+  if (tolls) return 'Sans péage';
+  if (highways) return 'Sans autoroute';
+  return 'Éviter';
 }
 
-function RoundButton(props: {
-  c: Couleurs;
-  label: string;
-  icon: { ios: "xmark" | "square.and.arrow.up"; android: "close" | "share" };
-  onPress: () => void;
-}) {
+function RoundButton(props: { c: Couleurs; label: string; icon: { ios: 'xmark' | 'square.and.arrow.up'; android: 'close' | 'share' }; onPress: () => void }) {
   return (
     <Pressable
       onPress={props.onPress}
       accessibilityRole="button"
       accessibilityLabel={props.label}
       hitSlop={6}
-      style={({ pressed }) => [
-        styles.round,
-        { backgroundColor: props.c.fond.attenue, opacity: pressed ? 0.7 : 1 },
-      ]}
+      style={({ pressed }) => [styles.round, { backgroundColor: props.c.fond.attenue, opacity: pressed ? 0.7 : 1 }]}
     >
-      <SymbolView
-        name={props.icon}
-        tintColor={props.c.texte.principal}
-        size={16}
-      />
+      <SymbolView name={props.icon} tintColor={props.c.texte.principal} size={16} />
     </Pressable>
   );
 }
 
-function TargetIcon({
-  t,
-  c,
-  size,
-}: {
-  t: TripTarget;
-  c: Couleurs;
-  size: number;
-}) {
-  if (t.kind === "parking")
-    return (
-      <Text
-        style={{
-          color: c.stationnement.base,
-          fontFamily: police,
-          fontSize: size,
-          fontWeight: "700",
-        }}
-      >
-        P
-      </Text>
-    );
-  if (t.kind === "charge")
-    return (
-      <SymbolView
-        name={{ ios: "bolt.fill", android: "bolt" }}
-        tintColor={c.recharge.base}
-        size={size}
-      />
-    );
-  return (
-    <SymbolView
-      name={{ ios: "car.fill", android: "directions_car" }}
-      tintColor={c.texte.secondaire}
-      size={size}
-    />
-  );
+function TargetIcon({ t, c, size }: { t: TripTarget; c: Couleurs; size: number }) {
+  if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontFamily: police, fontSize: size, fontWeight: '700' }}>P</Text>;
+  if (t.kind === 'charge') return <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.recharge.base} size={size} />;
+  return <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.secondaire} size={size} />;
 }
 
-const short = (t: TripTarget) =>
-  t.kind === "dropoff"
-    ? "Dépose"
-    : t.item.name || (t.kind === "parking" ? "Parking" : "Borne");
+const short = (t: TripTarget) => (t.kind === 'dropoff' ? 'Dépose' : t.item.name || (t.kind === 'parking' ? 'Parking' : 'Borne'));
 
 const title = (t: TripTarget) =>
-  t.kind === "dropoff"
-    ? "Me déposer à l’entrée"
-    : t.kind === "parking"
-      ? t.item.name || "Parking"
-      : `${t.item.name || "Borne"} · ${Math.round(t.item.maxPowerKw)} kW`;
+  t.kind === 'dropoff'
+    ? 'Me déposer à l’entrée'
+    : t.kind === 'parking'
+      ? t.item.name || 'Parking'
+      : `${t.item.name || 'Borne'} · ${Math.round(t.item.maxPowerKw)} kW`;
 
 function detail(t: TripTarget) {
-  if (t.kind === "dropoff") return "Pas de stationnement";
+  if (t.kind === 'dropoff') return 'Pas de stationnement';
   const walk = `${walkingMinutes(t.walk)} min à pied`;
-  if (t.kind === "charge")
-    return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? "s" : ""} · ${walk}`;
+  if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
   const first = t.item.tariff?.prices[0];
-  if (first)
-    return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;
+  if (first) return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;
   return t.item.fee === false ? `Gratuit · ${walk}` : walk;
 }
 
-const shadow = {
-  shadowColor: "#000",
-  shadowOpacity: 0.14,
-  shadowRadius: 20,
-  shadowOffset: { width: 0, height: -2 },
-  elevation: 8,
-};
+const shadow = { shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 20, shadowOffset: { width: 0, height: -2 }, elevation: 8 };
 
 const styles = StyleSheet.create({
-  cardIos: {
-    marginHorizontal: espace[2],
-    borderRadius: 34,
-    paddingHorizontal: espace[4],
-    ...shadow,
-  },
-  cardAndroid: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: espace[4],
-    ...shadow,
-  },
-  handle: {
-    alignSelf: "center",
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-    marginTop: espace[2],
-    marginBottom: espace[3],
-  },
-  header: { flexDirection: "row", alignItems: "center", gap: espace[2] },
+  cardIos: { marginHorizontal: espace[2], borderRadius: 34, paddingHorizontal: espace[4], ...shadow },
+  cardAndroid: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: espace[4], ...shadow },
+  handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginTop: espace[2], marginBottom: espace[3] },
+  header: { flexDirection: 'row', alignItems: 'center', gap: espace[2] },
   title: { flex: 1 },
-  round: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  round: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   chips: { marginTop: espace[3], marginHorizontal: -espace[4], flexGrow: 0 },
   chipsRow: { gap: espace[2], paddingHorizontal: espace[4] },
   chip: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: espace[2],
     height: 36,
     paddingHorizontal: espace[3],
@@ -664,48 +370,15 @@ const styles = StyleSheet.create({
   chipText: { maxWidth: 200 },
   list: { marginTop: espace[3] },
   caption: { marginBottom: espace[1] },
-  option: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: espace[3],
-    paddingHorizontal: espace[3],
-    paddingVertical: espace[2],
-    borderRadius: rayon.s,
-  },
+  option: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingHorizontal: espace[3], paddingVertical: espace[2], borderRadius: rayon.s },
   message: { paddingVertical: espace[5] },
   routes: { maxHeight: 360, marginTop: espace[2] },
-  areas: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: espace[3],
-    marginTop: espace[1],
-  },
+  areas: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: espace[3], marginTop: espace[1] },
   area: { paddingVertical: espace[2], gap: 2 },
-  route: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: espace[3],
-    paddingVertical: espace[3],
-  },
+  route: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingVertical: espace[3] },
   flex: { flex: 1 },
-  duration: {
-    fontFamily: police,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "600",
-    fontVariant: ["tabular-nums"],
-  },
-  report: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: espace[2],
-    marginTop: 2,
-  },
+  duration: { fontFamily: police, fontSize: 22, lineHeight: 28, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  report: { flexDirection: 'row', alignItems: 'center', gap: espace[2], marginTop: 2 },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  go: {
-    height: 44,
-    paddingHorizontal: espace[5],
-    borderRadius: rayon.pilule,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  go: { height: 44, paddingHorizontal: espace[5], borderRadius: rayon.pilule, alignItems: 'center', justifyContent: 'center' },
 });
