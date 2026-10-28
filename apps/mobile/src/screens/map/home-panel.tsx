@@ -1,17 +1,7 @@
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Keyboard, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 
 import type { Place } from '@/api/geocode';
 import { useGeocode } from '@/hooks/use-geocode';
@@ -19,6 +9,15 @@ import { espace, rayon, texte, type Couleurs } from '@/theme';
 
 const ios = Platform.OS === 'ios';
 const FIELD_HEIGHT = ios ? 52 : 56;
+
+/** Hauteurs de la feuille : le champ seul, avec les récents en pastilles, ou en liste. */
+type Detent = 'reduit' | 'normal' | 'grand';
+const DETENTS: Detent[] = ['reduit', 'normal', 'grand'];
+/** L'app est affichée bord à bord : hauteur totale du clavier, barres système comprises. */
+const EDGE_TO_EDGE = { isStatusBarTranslucentAndroid: true, isNavigationBarTranslucentAndroid: true };
+
+/** Glissement (pt) sur la poignée qui fait changer de hauteur. */
+const SWIPE = 24;
 
 type Props = {
   c: Couleurs;
@@ -32,12 +31,44 @@ type Props = {
 
 /**
  * Feuille d'accueil des maquettes (01 · Accueil, 02 · Recherche) : « Où vas-tu ? », bouton
- * Ma voiture et destinations récentes. La saisie fait monter la feuille au-dessus du clavier.
+ * Ma voiture et destinations récentes. La saisie fait monter la feuille au-dessus du clavier ; la
+ * poignée se glisse (ou se touche) pour passer d'une hauteur à l'autre.
  */
 export function HomePanel({ c, bottomInset, near, recents, carParked, onSelect, onCar }: Props) {
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
+  const [detent, setDetent] = useState<Detent>('normal');
   const { places, loading, failed } = useGeocode(focused ? query : '', near);
+
+  // Le clavier, suivi image par image côté natif (y compris en plein écran sur Android, où la
+  // fenêtre ne se redimensionne plus) : la feuille monte de ce qu'il recouvre.
+  const keyboard = useAnimatedKeyboard(EDGE_TO_EDGE);
+  // Android : la marge basse de la carte (barre de gestes) passe sous le clavier. iOS : la carte
+  // flotte, à espace[2] au-dessus du clavier comme au-dessus du bord.
+  const rest = ios ? (bottomInset > 0 ? bottomInset - espace[3] : espace[2]) : 0;
+  const reach = ios ? rest - espace[2] : bottomInset;
+  const lift = useAnimatedStyle(() => {
+    const k = keyboard.height.value;
+    return { transform: [{ translateY: k > 0 ? -Math.max(0, k - reach) : 0 }] };
+  });
+
+  const handle = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
+        onPanResponderRelease: (_, g) => {
+          const step = g.dy < -SWIPE ? 1 : g.dy > SWIPE ? -1 : 0;
+          setDetent((d) => {
+            const i = DETENTS.indexOf(d);
+            // Une simple touche agrandit, ou revient à la hauteur normale.
+            if (step === 0) return d === 'normal' ? 'grand' : 'normal';
+            return DETENTS[Math.min(DETENTS.length - 1, Math.max(0, i + step))];
+          });
+        },
+      }),
+    [],
+  );
 
   const choose = (place: Place) => {
     Keyboard.dismiss();
@@ -49,26 +80,38 @@ export function HomePanel({ c, bottomInset, near, recents, carParked, onSelect, 
   const searching = focused && query.trim().length >= 3;
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={styles.avoid} pointerEvents="box-none">
-      <View
+    <Animated.View style={[styles.avoid, lift]} pointerEvents="box-none">
+      <Animated.View
+        layout={LinearTransition.duration(220)}
         style={[
           ios ? styles.cardIos : styles.cardAndroid,
           { backgroundColor: c.fond.surface, paddingBottom: (ios ? espace[4] : espace[4] + bottomInset) },
-          ios && { marginBottom: bottomInset > 0 ? bottomInset - espace[3] : espace[2] },
+          ios && { marginBottom: rest },
         ]}
       >
-        <View style={[styles.handle, { backgroundColor: c.fond.separateur }]} />
+        <View
+          {...handle.panHandlers}
+          style={styles.handleArea}
+          accessibilityRole="adjustable"
+          accessibilityLabel="Taille du panneau"
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          onAccessibilityAction={(e) =>
+            setDetent((d) => DETENTS[Math.min(2, Math.max(0, DETENTS.indexOf(d) + (e.nativeEvent.actionName === 'increment' ? 1 : -1)))])
+          }
+        >
+          <View style={[styles.handle, { backgroundColor: c.fond.separateur }]} />
+        </View>
 
         {searching && (
           <Results places={places} loading={loading} failed={failed} c={c} onChoose={choose} />
         )}
-        {focused && !searching && recents.length > 0 && (
-          <View style={styles.section}>
+        {(focused ? !searching : detent === 'grand') && recents.length > 0 && (
+          <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.section}>
             <Text style={[texte.corpsFort, styles.sectionTitle, { color: c.texte.principal }]}>Récents</Text>
             {recents.map((p) => (
               <Row key={p.id} place={p} icon={{ ios: 'clock', android: 'history' }} c={c} onPress={() => choose(p)} />
             ))}
-          </View>
+          </Animated.View>
         )}
 
         <View style={styles.searchRow}>
@@ -110,7 +153,7 @@ export function HomePanel({ c, bottomInset, near, recents, carParked, onSelect, 
           </Pressable>
         </View>
 
-        {!focused && recents.length > 0 && (
+        {!focused && detent === 'normal' && recents.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} keyboardShouldPersistTaps="handled">
             {recents.map((p) => (
               <Pressable
@@ -127,8 +170,8 @@ export function HomePanel({ c, bottomInset, near, recents, carParked, onSelect, 
             ))}
           </ScrollView>
         )}
-      </View>
-    </KeyboardAvoidingView>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -189,7 +232,9 @@ const styles = StyleSheet.create({
   avoid: { width: '100%' },
   cardIos: { marginHorizontal: espace[2], borderRadius: 34, paddingHorizontal: espace[4], ...shadow },
   cardAndroid: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: espace[4], ...shadow },
-  handle: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, marginTop: espace[2], marginBottom: espace[3] },
+  // Zone tactile de 28 pt autour de la poignée de 5 pt.
+  handleArea: { alignSelf: 'stretch', alignItems: 'center', paddingTop: espace[2], paddingBottom: espace[3] },
+  handle: { width: 36, height: 5, borderRadius: 3 },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: espace[3] },
   field: {
     flex: 1,
