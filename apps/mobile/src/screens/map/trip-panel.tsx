@@ -56,18 +56,24 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, onTar
         <RoundButton c={c} label="Fermer" icon={{ ios: 'xmark', android: 'close' }} onPress={onClose} />
       </View>
 
-      <Pressable
-        onPress={() => setChoosing((v) => !v)}
-        accessibilityRole="button"
-        accessibilityLabel="Choisir où se garer"
-        style={[styles.chip, { borderColor: c.fond.separateur }]}
-      >
-        <TargetIcon t={trip.target} c={c} size={16} />
-        <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
-          {short(trip.target)}
-        </Text>
-        <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />
-      </Pressable>
+      {/* Sans choix d'arrêt (« Y aller » vers une station), pas de puce. */}
+      {trip.target.kind !== 'dropoff' || trip.options.length > 1 ? (
+        <Pressable
+          onPress={() => setChoosing((v) => !v)}
+          disabled={trip.options.length < 2}
+          accessibilityRole="button"
+          accessibilityLabel="Choisir où se garer"
+          style={[styles.chip, { borderColor: c.fond.separateur }]}
+        >
+          <TargetIcon t={trip.target} c={c} size={16} />
+          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
+            {short(trip.target)}
+          </Text>
+          {trip.options.length > 1 && (
+            <SymbolView name={{ ios: 'chevron.down', android: 'expand_more' }} tintColor={c.texte.secondaire} size={14} />
+          )}
+        </Pressable>
+      ) : null}
 
       {choosing ? (
         <View style={styles.list}>

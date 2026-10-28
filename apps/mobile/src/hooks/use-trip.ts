@@ -4,7 +4,7 @@ import type { Place } from '@/api/geocode';
 import { ApiError, getRoutes, type ChargeStation, type Parking } from '@/api/zelo';
 import type { LatLon } from '@/utils/geo';
 import type { Route } from '@/utils/route';
-import { targetPoint, type Target } from '@/utils/targets';
+import { needsWalk, targetPoint, type Target } from '@/utils/targets';
 
 export type TripTarget = Target<Parking, ChargeStation>;
 
@@ -45,7 +45,7 @@ export function useTrip() {
       const stop = targetPoint(target, destination);
       const [routes, walk] = await Promise.all([
         getRoutes(from, stop, 'car', alternates, ctl.signal),
-        target.kind === 'dropoff' ? Promise.resolve(null) : getRoutes(stop, destination, 'walk', 0, ctl.signal).then((r) => r[0]),
+        !needsWalk(target) ? Promise.resolve(null) : getRoutes(stop, destination, 'walk', 0, ctl.signal).then((r) => r[0]),
       ]);
       if (ctl.signal.aborted) return;
       setTrip((t) => (t ? { ...t, routes, selected: 0, walk, loading: false } : t));
