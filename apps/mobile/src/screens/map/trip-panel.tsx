@@ -8,7 +8,7 @@ import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
 import { areaCharge, areaFuel, areaName, areaServices } from '@/utils/areas';
-import { relayDuration, titleCase } from '@/utils/transit';
+import { linesLabel, relayDuration, titleCase } from '@/utils/transit';
 import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
@@ -47,7 +47,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   const afterDrive = (r: Route) => {
     const t = trip.target;
     if (t.kind !== 'parkride') return walkTime;
-    return relayDuration(t.relay.rides, start + r.duration * 1000, t.relay.board.walk, walkTime) ?? walkTime;
+    return relayDuration(t.relay.journeys, start + r.duration * 1000, walkTime) ?? walkTime;
   };
 
   const share = () => {
@@ -331,7 +331,11 @@ function RoundButton(props: { c: Couleurs; label: string; icon: { ios: 'xmark' |
 }
 
 function TargetIcon({ t, c, size }: { t: TripTarget; c: Couleurs; size: number }) {
-  if (t.kind === 'parkride') return <SymbolView name={{ ios: 'tram.fill', android: 'tram' }} tintColor={`#${t.relay.line.color}`} size={size} />;
+  if (t.kind === 'parkride') {
+    const first = t.relay.journeys[0]?.legs.find((l) => l.line)?.line;
+    const icon = first?.mode === 'bus' ? ({ ios: 'bus.fill', android: 'directions_bus' } as const) : ({ ios: 'tram.fill', android: 'tram' } as const);
+    return <SymbolView name={icon} tintColor={first ? `#${first.color}` : c.texte.secondaire} size={size} />;
+  }
   if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontFamily: police, fontSize: size, fontWeight: '700' }}>P</Text>;
   if (t.kind === 'charge') return <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.recharge.base} size={size} />;
   return <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.secondaire} size={size} />;
@@ -346,13 +350,16 @@ const title = (t: TripTarget) =>
     : t.kind === 'parking'
       ? t.item.name || 'Parking'
       : t.kind === 'parkride'
-        ? `${t.item.name || 'Parking relais'} + tram`
+        ? `${t.item.name || 'Parking relais'} + ${t.relay.journeys[0] ? linesLabel(t.relay.journeys[0]).toLowerCase() : 'transports'}`
         : `${t.item.name || 'Borne'} · ${Math.round(t.item.maxPowerKw)} kW`;
 
 function detail(t: TripTarget) {
   if (t.kind === 'dropoff') return 'Pas de stationnement';
   const walk = `${walkingMinutes(t.walk)} min à pied`;
-  if (t.kind === 'parkride') return `Tram jusqu'à ${titleCase(t.relay.alight.name)}, puis ${walk}`;
+  if (t.kind === 'parkride') {
+    const j = t.relay.journeys[0];
+    return j ? `${linesLabel(j)} jusqu'à ${titleCase(j.legs.at(-1)!.to.name)}, puis ${walk}` : walk;
+  }
   if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
   const first = t.item.tariff?.prices[0];
   if (first) return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;

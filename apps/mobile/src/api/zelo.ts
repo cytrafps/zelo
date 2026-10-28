@@ -130,23 +130,29 @@ export const postReport = (kind: ReportKind, lat: number, lon: number) =>
 export const voteReport = (id: number, up: boolean) =>
   request<{ report: Report; removed: boolean }>(`/v1/reports/${id}/votes`, { method: 'POST', body: JSON.stringify({ up }) });
 
-/** Arrêt de tram ; `walk` : mètres à vol d'oiseau depuis le parking relais ou jusqu'à la destination. */
-export type TramStop = { id: string; name: string; lat: number; lon: number; walk: number };
+/** Arrêt de tram ou de bus. */
+export type TransitStop = { id: string; name: string; lat: number; lon: number };
 
-/** Un tram entre deux arrêts (heures ISO). */
-export type Ride = { line: string; headsign: string; depart: string; arrive: string; stops: number };
+export type TransitLine = { id: string; name: string; mode: 'tram' | 'bus'; color: string; textColor: string };
 
-/** Se garer au parking relais, puis le tram jusqu'à l'arrêt le plus proche de la destination. */
-export type ParkRide = {
-  parking: Parking;
-  board: TramStop;
-  alight: TramStop;
-  /** Couleurs en hexadécimal sans « # ». */
-  line: { id: string; name: string; color: string; textColor: string };
-  rides: Ride[];
+/** Un tronçon en tram ou en bus, ou une correspondance à pied (`line` absent). Heures ISO. */
+export type TransitLeg = {
+  line?: TransitLine;
+  headsign?: string;
+  from: TransitStop;
+  to: TransitStop;
+  depart: string;
+  arrive: string;
+  stops?: number;
 };
 
-/** Parkings relais vers `to` sur le chemin depuis `from`, avec les trams des deux prochaines heures. */
+/** Du parking relais à la destination ; `arrive` compte la marche finale (à vol d'oiseau). */
+export type Journey = { legs: TransitLeg[]; arrive: string; boardWalk: number; finalWalk: number };
+
+/** Se garer au parking relais, puis tram ou bus (correspondances comprises) : prochains trajets. */
+export type ParkRide = { parking: Parking; journeys: Journey[] };
+
+/** Parkings relais vers `to` sur le chemin depuis `from`, avec les trajets des deux prochaines heures. */
 export function getParkRides(to: LatLon, from: LatLon | null, signal?: AbortSignal) {
   const q = [`to=${to.lat},${to.lon}`];
   if (from) q.push(`from=${from.lat},${from.lon}`);

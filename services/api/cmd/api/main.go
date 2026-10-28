@@ -170,7 +170,7 @@ func run(log *slog.Logger, once bool) error {
 	}, func() float64 { return float64(hub.Len()) }))
 	registerPoolMetrics(db)
 
-	// Horaires du tram : chaque réplique garde les siens en mémoire (quelques Mo), rechargés chaque jour.
+	// Horaires du tram et des bus : chaque réplique garde les siens en mémoire (quelques Mo), rechargés chaque jour.
 	var timetable atomic.Pointer[transit.Timetable]
 	go loadTimetable(ctx, log, client, envOr("GTFS_URL", transit.FeedURL), &timetable)
 
@@ -312,7 +312,7 @@ func envOr(key, def string) string {
 	return def
 }
 
-// loadTimetable charge le GTFS au démarrage puis chaque jour ; après un échec, réessaie dans 15 min.
+// loadTimetable charge le GTFS (tram et bus) au démarrage puis chaque jour ; après un échec, réessaie dans 15 min.
 // Les horaires précédents restent servis tant que les nouveaux ne sont pas lus.
 func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, url string, into *atomic.Pointer[transit.Timetable]) {
 	for {
@@ -320,15 +320,15 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 		start := time.Now()
 		tt, err := transit.Fetch(ctx, client, url)
 		if err != nil {
-			log.Error("horaires du tram", "err", err)
-			metrics.IngestRuns.WithLabelValues("tram", "erreur").Inc()
+			log.Error("horaires tram et bus", "err", err)
+			metrics.IngestRuns.WithLabelValues("transports", "erreur").Inc()
 			wait = 15 * time.Minute
 		} else {
 			into.Store(tt)
-			metrics.IngestRuns.WithLabelValues("tram", "ok").Inc()
-			metrics.IngestRows.WithLabelValues("tram").Set(float64(len(tt.Stops)))
-			metrics.IngestLastSuccess.WithLabelValues("tram").SetToCurrentTime()
-			log.Info("horaires du tram", "arrets", len(tt.Stops), "duree", time.Since(start).Round(time.Millisecond).String())
+			metrics.IngestRuns.WithLabelValues("transports", "ok").Inc()
+			metrics.IngestRows.WithLabelValues("transports").Set(float64(len(tt.Stops)))
+			metrics.IngestLastSuccess.WithLabelValues("transports").SetToCurrentTime()
+			log.Info("horaires tram et bus", "arrets", len(tt.Stops), "duree", time.Since(start).Round(time.Millisecond).String())
 		}
 		select {
 		case <-ctx.Done():

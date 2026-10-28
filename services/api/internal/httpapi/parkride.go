@@ -19,30 +19,25 @@ const (
 	parkRideToStop  = 300.0
 	stopToDest      = 800.0
 	parkRideMinGain = 1500.0 // plus près, autant se garer à destination
-	walkSpeed       = 1.2    // m/s, détours compris
 	ridesWindow     = 2 * time.Hour
-	maxRides        = 8
+	maxRides        = 6
 )
 
-type stopJSON struct {
-	ID   string  `json:"id"`
-	Name string  `json:"name"`
-	Lat  float64 `json:"lat"`
-	Lon  float64 `json:"lon"`
-	Walk float64 `json:"walk"` // mètres à vol d'oiseau
+type journeyJSON struct {
+	transit.Journey
+	// BoardWalk, FinalWalk : mètres à vol d'oiseau du parking au premier arrêt, et du dernier à la destination.
+	BoardWalk float64 `json:"boardWalk"`
+	FinalWalk float64 `json:"finalWalk"`
 }
 
 type parkRideJSON struct {
-	Parking parking        `json:"parking"`
-	Board   stopJSON       `json:"board"`
-	Alight  stopJSON       `json:"alight"`
-	Line    transit.Line   `json:"line"`
-	Rides   []transit.Ride `json:"rides"`
+	Parking  parking       `json:"parking"`
+	Journeys []journeyJSON `json:"journeys"`
 }
 
 // parkRide : GET /v1/park-ride?to=lat,lon[&from=lat,lon][&at=<secondes Unix>]
-// Parkings relais d'où un tram mène près de la destination, avec les prochains départs
-// (à partir de at, l'heure où l'on y sera ; maintenant par défaut).
+// Parkings relais d'où le tram ou le bus (correspondances comprises) mène près de la destination,
+// avec les prochains départs (à partir de at, l'heure où l'on y sera ; maintenant par défaut).
 func (a *API) parkRide(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	to, err := parsePoint(q.Get("to"))
@@ -84,60 +79,52 @@ func (a *API) parkRide(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, r, err)
 		return
 	}
-	alights := nearStops(tt.Stops, to, stopToDest, 3)
+	targets, targetDist := access(tt.Stops, to, stopToDest, 8)
 	for _, p := range parkings {
 		here := route.Point{Lat: p.Lat, Lon: p.Lon}
 		if !p.ParkRide || dist(here, to) < parkRideMinGain || (from != nil && dist(*from, here) > dist(*from, to)) {
 			continue
 		}
-		boards := nearStops(tt.Stops, here, parkRideToStop, 1)
-		if len(boards) == 0 {
+		origins, originDist := access(tt.Stops, here, parkRideToStop, 3)
+		if len(origins) == 0 {
 			continue
 		}
-		board := boards[0]
-		best := parkRideJSON{}
-		bestArrive := time.Time{}
-		for _, alight := range alights {
-			if alight.ID == board.ID {
-				continue
-			}
-			rides := tt.Rides(board.ID, alight.ID, at.Add(seconds(board.Walk/walkSpeed)), ridesWindow)
-			if len(rides) == 0 {
-				continue
-			}
-			arrive := rides[0].Arrive.Add(seconds(alight.Walk / walkSpeed))
-			if bestArrive.IsZero() || arrive.Before(bestArrive) {
-				best = parkRideJSON{Parking: parking{p, tarif.For(p.ID)}, Board: board, Alight: alight, Line: tt.Lines[rides[0].LineID], Rides: rides[:min(len(rides), maxRides)]}
-				bestArrive = arrive
-			}
+		var js []journeyJSON
+		for _, j := range tt.Plan(origins, targets, at, ridesWindow, maxRides) {
+			js = append(js, journeyJSON{Journey: j, BoardWalk: originDist[j.Legs[0].From.ID], FinalWalk: targetDist[j.Legs[len(j.Legs)-1].To.ID]})
 		}
-		if !bestArrive.IsZero() {
-			options = append(options, best)
+		if len(js) > 0 {
+			options = append(options, parkRideJSON{Parking: parking{p, tarif.For(p.ID)}, Journeys: js})
 		}
 	}
-	slices.SortFunc(options, func(x, y parkRideJSON) int {
-		return x.Rides[0].Arrive.Add(seconds(x.Alight.Walk / walkSpeed)).Compare(y.Rides[0].Arrive.Add(seconds(y.Alight.Walk / walkSpeed)))
-	})
+	slices.SortFunc(options, func(x, y parkRideJSON) int { return x.Journeys[0].Arrive.Compare(y.Journeys[0].Arrive) })
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"options": options})
 }
 
-// nearStops : au plus n arrêts à moins de max mètres de p, du plus proche au plus loin.
-func nearStops(stops []transit.Stop, p route.Point, max float64, n int) []stopJSON {
-	var out []stopJSON
+// access : au plus n stations à moins de max mètres de p, avec le temps de marche, et leur distance.
+func access(stops []transit.Stop, p route.Point, max float64, n int) ([]transit.Access, map[string]float64) {
+	type near struct {
+		id string
+		d  float64
+	}
+	var all []near
 	for _, s := range stops {
 		if d := dist(p, route.Point{Lat: s.Lat, Lon: s.Lon}); d <= max {
-			out = append(out, stopJSON{ID: s.ID, Name: s.Name, Lat: s.Lat, Lon: s.Lon, Walk: math.Round(d)})
+			all = append(all, near{s.ID, d})
 		}
 	}
-	slices.SortFunc(out, func(a, b stopJSON) int { return cmp.Compare(a.Walk, b.Walk) })
-	return out[:min(len(out), n)]
+	slices.SortFunc(all, func(a, b near) int { return cmp.Compare(a.d, b.d) })
+	all = all[:min(len(all), n)]
+	out := make([]transit.Access, len(all))
+	dists := make(map[string]float64, len(all))
+	for i, x := range all {
+		out[i] = transit.Access{Stop: x.id, Walk: seconds(x.d / transit.WalkSpeed)}
+		dists[x.id] = math.Round(x.d)
+	}
+	return out, dists
 }
 
-func dist(a, b route.Point) float64 {
-	const m = 111_320.0
-	c := math.Cos((a.Lat + b.Lat) / 2 * math.Pi / 180)
-	return math.Hypot((b.Lon-a.Lon)*m*c, (b.Lat-a.Lat)*m)
-}
+func dist(a, b route.Point) float64 { return transit.Distance(a.Lat, a.Lon, b.Lat, b.Lon) }
 
 func seconds(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }

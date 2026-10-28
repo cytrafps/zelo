@@ -74,7 +74,7 @@ export function useTrip() {
     try {
       const stop = targetPoint(target, destination);
       // Par le tram, la marche part de l'arrêt d'arrivée, pas du parking.
-      const walkFrom = target.kind === 'parkride' ? target.relay.alight : stop;
+      const walkFrom = target.kind === 'parkride' ? (target.relay.journeys[0]?.legs.at(-1)?.to ?? stop) : stop;
       const [routes, walk] = await Promise.all([
         getRoutes(
           from,
