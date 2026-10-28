@@ -94,3 +94,15 @@ CREATE TABLE IF NOT EXISTS junction_control (
     geom  geography(Point, 4326) NOT NULL
 );
 CREATE INDEX IF NOT EXISTS junction_control_geom ON junction_control USING gist (geom);
+
+-- Aires d'autoroute et de repos (OSM) : contour, centre et services (restauration, douches…).
+CREATE TABLE IF NOT EXISTS service_area (
+    id        text PRIMARY KEY,
+    kind      text NOT NULL,
+    name      text NOT NULL DEFAULT '',
+    operator  text NOT NULL DEFAULT '',
+    geom      geography(Polygon, 4326) NOT NULL,
+    center    geography(Point, 4326) NOT NULL,
+    services  text[] NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS service_area_geom ON service_area USING gist (geom);

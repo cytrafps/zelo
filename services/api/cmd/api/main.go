@@ -29,6 +29,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/overpass"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
 	"github.com/cytrafps/zelo/services/api/internal/route"
+	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 )
 
@@ -109,6 +110,22 @@ func run(log *slog.Logger, once bool) error {
 		}})
 	} else {
 		log.Warn("IMPORT_BBOX vide : import des parkings et des feux désactivé")
+	}
+
+	// Les aires servent les trajets : leur zone suit celle du graphe routier (la Marne), plus
+	// large que celle des parkings. À défaut, IMPORT_BBOX.
+	areasBox, err := parseBBox(envOr("AREAS_BBOX", os.Getenv("IMPORT_BBOX")))
+	if err != nil {
+		return fmt.Errorf("AREAS_BBOX: %w", err)
+	}
+	if areasBox != (irve.BBox{}) {
+		jobs = append(jobs, job{"aires", 24 * time.Hour, func(ctx context.Context) (int, error) {
+			a, err := servicearea.Fetch(ctx, client, envOr("OVERPASS_URL", overpass.URL), overpass.BBox(areasBox))
+			if err != nil {
+				return 0, err
+			}
+			return len(a), db.SaveAreas(ctx, a)
+		}})
 	}
 
 	if once {

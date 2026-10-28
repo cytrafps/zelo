@@ -52,6 +52,7 @@ type Store interface {
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(context.Context, store.BBox, int) ([]store.Parking, error)
 	Controls(ctx context.Context, points [][2]float64, radius float64) ([]junction.Control, error)
+	AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]store.AreaOnRoute, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
 	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
 	Vote(ctx context.Context, id int64, voter string, up bool, ttl func(kind string) time.Duration) (store.Report, bool, error)
@@ -387,9 +388,17 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// annotate ajoute feux et stops aux manœuvres. Sans eux, le guidage reste juste : une base
-// indisponible est seulement journalisée.
+// annotate ajoute feux et stops aux manœuvres, et les aires d'autoroute desservies. Sans eux,
+// le trajet reste juste : une base indisponible est seulement journalisée.
 func (a *API) annotate(ctx context.Context, routes []route.Route) {
+	for i := range routes {
+		found, err := a.store.AreasAlong(ctx, routes[i].Coordinates, route.AreaReach)
+		if err != nil {
+			a.log.Warn("aires", "err", err)
+			break
+		}
+		route.PlaceAreas(&routes[i], toAreas(found))
+	}
 	var points [][2]float64
 	for _, r := range routes {
 		for _, s := range r.Steps {
@@ -410,6 +419,25 @@ func (a *API) annotate(ctx context.Context, routes []route.Route) {
 	for i := range routes {
 		route.Annotate(&routes[i], controls)
 	}
+}
+
+func toAreas(found []store.AreaOnRoute) []route.Area {
+	out := make([]route.Area, len(found))
+	for i, f := range found {
+		a := route.Area{ID: f.ID, Kind: f.Kind, Name: f.Name, Lat: f.Lat, Lon: f.Lon, Services: f.Services}
+		if len(f.Fuel) > 0 {
+			a.Fuel = f.Fuel
+		}
+		if f.ChargeTotal > 0 {
+			a.Charge = &route.AreaCharge{Total: f.ChargeTotal}
+			if f.ChargeKnown > 0 {
+				free := f.ChargeFree
+				a.Charge.Available = &free
+			}
+		}
+		out[i] = a
+	}
+	return out
 }
 
 // Départ accepté : de quelques minutes dans le passé (horloge du téléphone) à une semaine.

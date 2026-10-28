@@ -7,9 +7,10 @@ import type { Avoid, Report } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
+import { areaCharge, areaFuel, areaName, areaServices } from '@/utils/areas';
 import { formatCents, formatStay } from '@/utils/format';
-import { walkingMinutes } from '@/utils/geo';
-import { along, cumulative, formatClock, formatDuration, type Route } from '@/utils/route';
+import { formatDistance, walkingMinutes } from '@/utils/geo';
+import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
 import { sameTarget } from '@/utils/targets';
 
 const ios = Platform.OS === 'ios';
@@ -170,6 +171,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
               onGo={() => onGo(i)}
             />
           ))}
+          <Areas areas={trip.routes[trip.selected]?.areas} c={c} />
         </ScrollView>
       )}
     </View>
@@ -201,6 +203,11 @@ function RouteRow(props: {
       <View style={styles.flex}>
         <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + walk)}</Text>
         <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Arrivée ${eta} · ${km} km`}</Text>
+        {!!route.areas?.length && (
+          <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
+            {`${route.areas.length} aire${route.areas.length > 1 ? 's' : ''} · première à ${formatDistance(route.areas[0].along)}`}
+          </Text>
+        )}
         {hit && (
           <View style={styles.report}>
             <View style={[styles.dot, { backgroundColor: REPORT_META[hit.item.kind].couleur }]} />
@@ -222,6 +229,34 @@ function RouteRow(props: {
         <Text style={[texte.corpsFort, { color: selected ? c.texte.inverse : c.texte.principal }]}>Y aller</Text>
       </Pressable>
     </Pressable>
+  );
+}
+
+/** Aires du trajet choisi : où s'arrêter, ce qu'on y trouve, le prix du plein et les bornes libres. */
+function Areas({ areas, c }: { areas: Area[] | undefined; c: Couleurs }) {
+  if (!areas?.length) return null;
+  return (
+    <View style={[styles.areas, { borderTopColor: c.fond.separateur }]}>
+      <Text style={[texte.petit, styles.caption, { color: c.texte.secondaire }]}>Aires sur le trajet</Text>
+      {areas.map((a) => {
+        const facts = [formatDistance(a.along), areaFuel(a), areaCharge(a)].filter(Boolean).join(' · ');
+        return (
+          <View key={a.id} style={styles.area} accessible accessibilityLabel={`${areaName(a)}, ${facts}. ${areaServices(a)}`}>
+            <Text numberOfLines={1} style={[texte.corpsFort, { color: c.texte.principal }]}>
+              {areaName(a)}
+            </Text>
+            <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
+              {facts}
+            </Text>
+            {a.services.length > 0 && (
+              <Text numberOfLines={2} style={[texte.secondaire, { color: c.texte.secondaire }]}>
+                {areaServices(a)}
+              </Text>
+            )}
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -306,7 +341,9 @@ const styles = StyleSheet.create({
   caption: { marginBottom: espace[1] },
   option: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingHorizontal: espace[3], paddingVertical: espace[2], borderRadius: rayon.s },
   message: { paddingVertical: espace[5] },
-  routes: { maxHeight: 300, marginTop: espace[2] },
+  routes: { maxHeight: 360, marginTop: espace[2] },
+  areas: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: espace[3], marginTop: espace[1] },
+  area: { paddingVertical: espace[2], gap: 2 },
   route: { flexDirection: 'row', alignItems: 'center', gap: espace[3], paddingVertical: espace[3] },
   flex: { flex: 1 },
   duration: { fontFamily: police, fontSize: 22, lineHeight: 28, fontWeight: '600', fontVariant: ['tabular-nums'] },

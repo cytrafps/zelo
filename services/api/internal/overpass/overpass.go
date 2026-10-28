@@ -32,6 +32,8 @@ type Element struct {
 	Lon    float64                     `json:"lon"`
 	Center *struct{ Lat, Lon float64 } `json:"center"`
 	Tags   map[string]string           `json:"tags"`
+	// Geometry : sommets d'un chemin (« out geom »).
+	Geometry []struct{ Lat, Lon float64 } `json:"geometry"`
 }
 
 // Fetch envoie la requête Overpass QL et renvoie ses éléments.

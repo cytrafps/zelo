@@ -24,7 +24,7 @@ flowchart LR
   subgraph Sources["Données ouvertes"]
     F["Prix des carburants<br/>toutes les 10 min"]
     B["Bornes IRVE<br/>statique 24 h · dynamique 5 min"]
-    O["OpenStreetMap<br/>parkings, feux et stops, 24 h"]
+    O["OpenStreetMap<br/>parkings, feux, stops, aires, 24 h"]
   end
   subgraph Serveur["services/api (Go)"]
     J["Collecte planifiée"]
@@ -159,7 +159,7 @@ npx eas-cli@latest build -p android --profile preview
 | `GET /v1/reports?bbox=…` | Signalements encore actifs |
 | `POST /v1/reports` | `{"kind", "lat", "lon"}` ; types : `accident`, `travaux`, `bouchon`, `obstacle`, `route_fermee`, `place_liberee`, `borne_hs` ; 5 par IP puis 1 toutes les 12 s |
 | `POST /v1/reports/{id}/votes` | `{"up": true}` (toujours là) ou `false` (plus là) ; un vote par appareil (`X-Zelo-Device`), modifiable ; jamais sur son propre signalement (409) |
-| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk` | `{"routes": […]}`, du plus rapide au plus lent : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; en voiture, chaque étape peut porter `control` (`feu`, `stop` : « Au feu, tournez… ») et `lanes` (voies à l'approche, `take` sur celles à prendre). Options : `alternates=0..2`, `heading` (cap au départ, en °), `depart` (heure Unix, 7 jours au plus), `avoid=tolls,highways`. 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
+| `GET /v1/route?from=lat,lon&to=lat,lon&mode=car\|walk` | `{"routes": […]}`, du plus rapide au plus lent : distance (m), durée (s), tracé `[lon, lat]`, étapes en français ; en voiture, `areas` liste les aires d'autoroute desservies (distance, services, prix du carburant, bornes libres) et chaque étape peut porter `control` (`feu`, `stop` : « Au feu, tournez… ») et `lanes` (voies à l'approche, `take` sur celles à prendre). Options : `alternates=0..2`, `heading` (cap au départ, en °), `depart` (heure Unix, 7 jours au plus), `avoid=tolls,highways`. 422 hors de la zone couverte ; 20 par IP puis 1 par seconde |
 | `GET /v1/live` | WebSocket : `report` (nouveau ou mis à jour) et `report_removed` sont poussés à tous les clients, quelle que soit l'instance |
 | `GET /healthz`, `GET /metrics` | Santé et métriques Prometheus (collectes, trafic par route, calculs d'itinéraire) |
 
@@ -179,6 +179,7 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | `ADDR` | `:8080` | Adresse d'écoute |
 | `IMPORT_BBOX` | vide (France entière) | Zone d'import des bornes, des parkings, des feux et des stops (obligatoire pour ces deux derniers) |
 | `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
+| `AREAS_BBOX` | `IMPORT_BBOX` | Zone d'import des aires d'autoroute (OSM), à caler sur celle du graphe routier |
 | `TRUSTED_PROXIES` | vide | Réseaux des proxys de confiance (ex. `10.42.0.0/16`, Traefik sur K3s) : l'IP cliente est lue dans `X-Forwarded-For` |
 | `LIVE_MAX_CLIENTS` | `5000` | Clients du flux temps réel par instance, au-delà refusés (le client réessaie) |
 | `GOMEMLIMIT` | vide | Limite mémoire visée par Go, à ~90 % de la limite du conteneur |
@@ -193,6 +194,6 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | [Prix des carburants](https://www.prix-carburants.gouv.fr/rubrique/opendata/) | 10 min | Licence Ouverte 2.0 |
 | [OpenStreetMap, extrait de la Marne](https://download.openstreetmap.fr/extracts/europe/france/champagne_ardenne/) (itinéraires) | 7 j | ODbL |
 | [Bornes IRVE statiques](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) | 24 h | Licence Ouverte 2.0 |
-| [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings, feux et stops) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
+| [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings, feux et stops, aires d'autoroute) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |
 | Tarifs des parkings du centre, relevés sur les sites de [Champagne Parc Auto](https://www.cpa-champagneparcauto.com/parkings/) et d'[Effia](https://www.effia.com/) | À la main, datés | Seul le tarif affiché sur place fait foi |

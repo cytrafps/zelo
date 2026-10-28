@@ -67,6 +67,11 @@ type Route struct {
 	Duration    float64      `json:"duration"` // secondes
 	Coordinates [][2]float64 `json:"coordinates"`
 	Steps       []Step       `json:"steps"`
+	// Areas : aires d'autoroute desservies par le trajet, dans l'ordre de passage (voir PlaceAreas).
+	Areas []Area `json:"areas,omitempty"`
+
+	// motorway[i] : le segment i → i+1 du tracé est sur autoroute.
+	motorway []bool
 }
 
 type Client struct {
@@ -157,10 +162,13 @@ type osrmStep struct {
 		Modifier    string `json:"modifier"`
 		Instruction string `json:"instruction"`
 	} `json:"maneuver"`
-	Intersections []struct {
-		GeometryIndex int        `json:"geometry_index"`
-		Lanes         []osrmLane `json:"lanes"`
-	} `json:"intersections"`
+	Intersections []osrmIntersection `json:"intersections"`
+}
+
+type osrmIntersection struct {
+	GeometryIndex int        `json:"geometry_index"`
+	Lanes         []osrmLane `json:"lanes"`
+	Classes       []string   `json:"classes"` // « motorway », « toll »…
 }
 
 type osrmRoute struct {
@@ -252,8 +260,30 @@ func (o osrmRoute) route() (Route, error) {
 	if err != nil {
 		return Route{}, fmt.Errorf("valhalla: tracé: %w", err)
 	}
-	r := Route{Distance: o.Distance, Duration: o.Duration, Coordinates: pts}
+	r := Route{Distance: o.Distance, Duration: o.Duration, Coordinates: pts, motorway: make([]bool, len(pts))}
 	for _, leg := range o.Legs {
+		// La classe d'un carrefour vaut jusqu'au suivant.
+		var marks []struct {
+			at   int
+			fast bool
+		}
+		for _, st := range leg.Steps {
+			for _, x := range st.Intersections {
+				marks = append(marks, struct {
+					at   int
+					fast bool
+				}{x.GeometryIndex, slices.Contains(x.Classes, "motorway")})
+			}
+		}
+		for i, m := range marks {
+			end := len(pts)
+			if i+1 < len(marks) {
+				end = marks[i+1].at
+			}
+			for k := max(m.at, 0); k < end && k < len(pts); k++ {
+				r.motorway[k] = m.fast
+			}
+		}
 		for k, st := range leg.Steps {
 			if len(st.Intersections) == 0 {
 				return Route{}, errors.New("valhalla: étape sans point de manœuvre")

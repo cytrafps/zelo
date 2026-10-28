@@ -12,6 +12,9 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/cytrafps/zelo/services/api/internal/overpass"
+	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 )
 
 var gare, cathedrale = Point{49.2591, 4.0245}, Point{49.2535, 4.0341}
@@ -236,10 +239,7 @@ func TestApproachLanes(t *testing.T) {
 		var s osrmStep
 		s.Maneuver.Modifier = modifier
 		for i, l := range lanes {
-			s.Intersections = append(s.Intersections, struct {
-				GeometryIndex int        `json:"geometry_index"`
-				Lanes         []osrmLane `json:"lanes"`
-			}{i, l})
+			s.Intersections = append(s.Intersections, osrmIntersection{GeometryIndex: i, Lanes: l})
 		}
 		return s
 	}
@@ -248,10 +248,7 @@ func TestApproachLanes(t *testing.T) {
 
 	// Voies décrites au carrefour précédent (44 m avant), qui mènent au virage à gauche.
 	prev, turn := step("", nil, left), step("left")
-	turn.Intersections = append(turn.Intersections, struct {
-		GeometryIndex int        `json:"geometry_index"`
-		Lanes         []osrmLane `json:"lanes"`
-	}{2, nil})
+	turn.Intersections = append(turn.Intersections, osrmIntersection{GeometryIndex: 2})
 	if got := approachLanes(prev, turn, pts); len(got) != 2 || !got[0].Take || got[1].Take {
 		t.Errorf("virage à gauche : %+v", got)
 	}
@@ -274,6 +271,50 @@ func TestManeuverType(t *testing.T) {
 	for _, c := range cases {
 		if got := maneuverType(c.kind, c.modifier); got != c.want {
 			t.Errorf("%s %s : %d, attendu %d", c.kind, c.modifier, got, c.want)
+		}
+	}
+}
+
+// Aires de l'A4 entre Reims et Châlons : chaque sens n'a que les aires de son côté
+// (Reims Champagne-Sud vers Châlons, -Nord vers Reims ; l'Espérance et la Vesle se font face).
+func TestPlaceAreas(t *testing.T) {
+	f, err := os.Open("../servicearea/testdata/marne.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	els, err := overpass.Parse(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var candidates []Area
+	for _, a := range servicearea.FromElements(els) {
+		candidates = append(candidates, Area{ID: a.ID, Name: a.Name, Lat: a.Lat, Lon: a.Lon})
+	}
+	cases := map[string][]string{
+		"reims-chalons": {"Aire de l'Espérance", "Aire de Reims Champagne-Sud"},
+		"chalons-reims": {"Aire des Grands Traquiers", "Aire de Reims Champagne-Nord", "Aire de la Vesle"},
+	}
+	for fixture, want := range cases {
+		body, err := os.ReadFile("testdata/" + fixture + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := routes[0]
+		PlaceAreas(&r, candidates)
+		var got []string
+		for i, a := range r.Areas {
+			got = append(got, a.Name)
+			if i > 0 && a.Along < r.Areas[i-1].Along {
+				t.Errorf("%s : aires dans le désordre", fixture)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s : %v, attendu %v", fixture, got, want)
 		}
 	}
 }

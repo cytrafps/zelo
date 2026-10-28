@@ -12,6 +12,7 @@ configMapGenerator:
     namespace: zelo
     literals:
       - IMPORT_BBOX=3.85,49.15,4.25,49.35 # Grand Reims
+      - AREAS_BBOX=3.38,48.51,5.04,49.41 # la Marne, comme le graphe de Valhalla
       # Réseau des pods K3s : Traefik y est, l'IP cliente est lue dans X-Forwarded-For.
       - TRUSTED_PROXIES=10.42.0.0/16
 patches:

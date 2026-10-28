@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useNow } from '@/hooks/use-now';
+import { areaFuel, areaName, nextArea } from '@/utils/areas';
 import type { Phase, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
@@ -97,6 +98,9 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
   const remaining = p?.remainingTime ?? route.duration;
   const eta = formatClock(new Date(now + remaining * 1000));
   const km = formatDistance(p?.remaining ?? route.distance);
+  // Prochaine aire d'autoroute, à moins de 50 km : de quoi décider où s'arrêter.
+  const traveled = route.distance - (p?.remaining ?? route.distance);
+  const area = phase === 'drive' ? nextArea(route.areas, traveled) : undefined;
 
   return (
     <>
@@ -125,6 +129,21 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
           <SymbolView name={maneuverIcon(then.type)} tintColor="#FFFFFF" size={16} />
           <Text numberOfLines={1} style={styles.thenStreet}>
             {then.street ?? then.instruction}
+          </Text>
+        </View>
+      )}
+
+      {area && (
+        <View
+          style={[styles.area, { backgroundColor: c.fond.surface, bottom: bottomInset + espace[3] + 72 + espace[2] }]}
+          accessible
+          accessibilityLabel={`Prochaine aire : ${areaName(area)}, dans ${formatDistance(area.along - traveled)}`}
+        >
+          <Text numberOfLines={1} style={[styles.areaName, { color: c.texte.principal }]}>
+            {areaName(area)}
+          </Text>
+          <Text numberOfLines={1} style={[styles.areaFacts, { color: c.texte.secondaire }]}>
+            {[formatDistance(area.along - traveled), areaFuel(area)].filter(Boolean).join(' · ')}
           </Text>
         </View>
       )}
@@ -236,6 +255,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: espace[3],
     paddingVertical: espace[2],
   },
+  area: {
+    position: 'absolute',
+    left: espace[2],
+    maxWidth: '80%',
+    borderRadius: rayon.m,
+    paddingHorizontal: espace[4],
+    paddingVertical: espace[2],
+    ...shadow,
+  },
+  areaName: { fontFamily: police, fontSize: 15, fontWeight: '600' },
+  areaFacts: { fontFamily: police, fontSize: 13, fontVariant: ['tabular-nums'] },
   thenLabel: { color: 'rgba(255,255,255,0.7)', fontFamily: police, fontSize: 14 },
   thenStreet: { color: '#FFFFFF', fontFamily: police, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   bar: {
