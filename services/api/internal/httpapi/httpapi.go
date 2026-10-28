@@ -30,6 +30,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
+	"github.com/cytrafps/zelo/services/api/internal/zfe"
 )
 
 const (
@@ -78,6 +79,8 @@ type Config struct {
 	Realtime func() *transit.Realtime
 	// Closures : rues fermées publiées dans DiaLog (rechargées chaque jour) ; nil : aucune.
 	Closures func() []closure.Closure
+	// Zones : zones à faibles émissions de la base nationale (rechargées chaque jour) ; nil : aucune.
+	Zones func() []zfe.Zone
 }
 
 type Router interface {
@@ -111,6 +114,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /v1/live", a.liveFeed)
 	mux.HandleFunc("GET /v1/route", a.route)
 	mux.HandleFunc("GET /v1/park-ride", a.parkRide)
+	mux.HandleFunc("GET /v1/zfe", a.zfe)
 	return instrument(mux)
 }
 
@@ -189,6 +193,43 @@ func (a *API) parkings(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) reports(w http.ResponseWriter, r *http.Request) {
 	list(a, w, r, a.store.Reports, 0)
+}
+
+// zfe : GET /v1/zfe?bbox=… — zones à faibles émissions qui touchent la zone, en vigueur ou à
+// venir. L'app décide selon la vignette du conducteur, qui ne quitte pas le téléphone.
+func (a *API) zfe(w http.ResponseWriter, r *http.Request) {
+	b, err := parseBBox(r.URL.Query().Get("bbox"))
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items := []zfe.Zone{}
+	if a.cfg.Zones != nil {
+		today := time.Now().In(transit.Paris).Format(time.DateOnly)
+		for _, z := range a.cfg.Zones() {
+			if (z.To == "" || z.To >= today) && zoneTouches(z, b) {
+				items = append(items, z)
+			}
+		}
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func zoneTouches(z zfe.Zone, b store.BBox) bool {
+	for _, poly := range z.Rings {
+		for _, ring := range poly {
+			minLon, minLat, maxLon, maxLat := 180.0, 90.0, -180.0, -90.0
+			for _, p := range ring {
+				minLon, maxLon = min(minLon, p[0]), max(maxLon, p[0])
+				minLat, maxLat = min(minLat, p[1]), max(maxLat, p[1])
+			}
+			if minLon <= b.MaxLon && maxLon >= b.MinLon && minLat <= b.MaxLat && maxLat >= b.MinLat {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func list[T any](a *API, w http.ResponseWriter, r *http.Request,

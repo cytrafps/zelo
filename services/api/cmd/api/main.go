@@ -35,6 +35,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
+	"github.com/cytrafps/zelo/services/api/internal/zfe"
 )
 
 func main() {
@@ -182,6 +183,10 @@ func run(log *slog.Logger, once bool) error {
 	if bbox != (irve.BBox{}) {
 		go loadClosures(ctx, log, client, envOr("DIALOG_URL", closure.FeedURL), closure.BBox(bbox), &closures)
 	}
+	var zones atomic.Pointer[[]zfe.Zone]
+	if bbox != (irve.BBox{}) {
+		go loadZones(ctx, log, client, envOr("ZFE_URL", zfe.FeedURL), zfe.BBox(bbox), &zones)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
@@ -190,6 +195,12 @@ func run(log *slog.Logger, once bool) error {
 		TrustedProxies: trusted,
 		Transit:        timetable.Load,
 		Realtime:       realtime.Load,
+		Zones: func() []zfe.Zone {
+			if z := zones.Load(); z != nil {
+				return *z
+			}
+			return nil
+		},
 		Closures: func() []closure.Closure {
 			if c := closures.Load(); c != nil {
 				return *c
@@ -351,6 +362,30 @@ func loadTimetable(ctx context.Context, log *slog.Logger, client *http.Client, u
 			metrics.IngestRows.WithLabelValues("transports").Set(float64(len(tt.Stops)))
 			metrics.IngestLastSuccess.WithLabelValues("transports").SetToCurrentTime()
 			log.Info("horaires tram et bus", "arrets", len(tt.Stops), "duree", time.Since(start).Round(time.Millisecond).String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// loadZones lit chaque jour la base nationale des zones à faibles émissions ; après un échec,
+// les précédentes restent servies et un nouvel essai a lieu dans 1 h.
+func loadZones(ctx context.Context, log *slog.Logger, client *http.Client, url string, zone zfe.BBox, into *atomic.Pointer[[]zfe.Zone]) {
+	for {
+		wait := 24 * time.Hour
+		z, err := zfe.Fetch(ctx, client, url, zone)
+		if err != nil {
+			log.Warn("zones à faibles émissions", "err", err)
+			metrics.IngestRuns.WithLabelValues("zfe", "erreur").Inc()
+			wait = time.Hour
+		} else {
+			into.Store(&z)
+			metrics.IngestRuns.WithLabelValues("zfe", "ok").Inc()
+			metrics.IngestRows.WithLabelValues("zfe").Set(float64(len(z)))
+			metrics.IngestLastSuccess.WithLabelValues("zfe").SetToCurrentTime()
 		}
 		select {
 		case <-ctx.Done():
