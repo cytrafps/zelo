@@ -17,6 +17,9 @@ type Props = {
   onPark: (at: LatLon) => void;
   onForget: () => void;
   onShow: (car: ParkedCar) => void;
+  /** Place quittée récemment (reconnexion à Android Auto), à signaler libre. */
+  freed: LatLon | null;
+  onReportFreed: (at: LatLon) => Promise<void>;
 };
 
 /** Itinéraire à pied dans l'app de cartes du système (Plans sur iOS, Google Maps ailleurs). */
@@ -28,7 +31,7 @@ function walkTo({ lat, lon }: LatLon) {
   void Linking.openURL(url);
 }
 
-export function CarSheet({ isPresented, onDismiss, car, me, here, onPark, onForget, onShow }: Props) {
+export function CarSheet({ isPresented, onDismiss, car, me, here, onPark, onForget, onShow, freed, onReportFreed }: Props) {
   const { c, dark } = useTheme();
   const meters = car && me ? distance(me, car) : null;
 
@@ -52,6 +55,24 @@ export function CarSheet({ isPresented, onDismiss, car, me, here, onPark, onForg
                 variant="text"
                 onPress={() => {
                   onForget();
+                  onDismiss();
+                }}
+              />
+            </>
+          ) : freed ? (
+            <>
+              <Column spacing={4}>
+                <Text textStyle={{ ...texte.titre, color: c.texte.principal }}>Tu as libéré ta place</Text>
+                <Text textStyle={{ ...texte.secondaire, color: c.texte.secondaire }}>
+                  Signale-la : un conducteur qui cherche autour la trouvera tout de suite.
+                </Text>
+              </Column>
+              <Button label="Signaler la place libre" onPress={() => void onReportFreed(freed).then(onDismiss)} />
+              <Button
+                label="J'ai garé ma voiture ici"
+                variant="outlined"
+                onPress={() => {
+                  onPark(here);
                   onDismiss();
                 }}
               />
