@@ -342,16 +342,24 @@ func (o osrmRoute) route() (Route, error) {
 }
 
 // prefaces : débuts d'annonce que Valhalla fait suivre d'une majuscule (« Ensuite, Tournez… »).
-var prefaces = regexp.MustCompile(`(Ensuite, |^Dans [^,]+, )(\p{Lu})(\p{Ll})`)
+var prefaces = regexp.MustCompile(`(Ensuite, |(?:^|Ensuite, )[Dd]ans [^,]+, )(\p{Lu})(\p{Ll})`)
 
 // tidyVoice corrige la rédaction de Valhalla : majuscule après « Ensuite, » ou « Dans 200
 // mètres, », point doublé en fin d'annonce.
 func tidyVoice(s string) string {
 	s = strings.ReplaceAll(strings.TrimSpace(s), "..", ".")
-	return prefaces.ReplaceAllStringFunc(s, func(m string) string {
-		p := prefaces.FindStringSubmatch(m)
-		return p[1] + strings.ToLower(p[2]) + p[3]
-	})
+	// « Ensuite, Dans 80 mètres, Tournez » : chaque passe corrige un niveau.
+	for range 3 {
+		t := prefaces.ReplaceAllStringFunc(s, func(m string) string {
+			p := prefaces.FindStringSubmatch(m)
+			return p[1] + strings.ToLower(p[2]) + p[3]
+		})
+		if t == s {
+			break
+		}
+		s = t
+	}
+	return s
 }
 
 // LanesWithin : au-delà, des voies décrites avant la manœuvre concernent un autre carrefour.

@@ -3,6 +3,7 @@ package weather
 import (
 	"context"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -46,5 +47,26 @@ func TestCache(t *testing.T) {
 	c.Get(context.Background(), 49.10, 4.0341)   // autre maille
 	if calls != 2 {
 		t.Errorf("%d appels, attendu 2", calls)
+	}
+}
+
+// Open-Meteo plus lent que le client : la requête abandonne, la lecture se termine et sert la suivante.
+func TestCacheOutlivesRequest(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	c := &Cache{TTL: time.Minute, Fetch: func(context.Context, float64, float64) ([]Slot, error) {
+		calls.Add(1)
+		<-release
+		return []Slot{{}}, nil
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := c.Get(ctx, 49.25, 4.03); err == nil {
+		t.Fatal("attendu l'expiration de la requête")
+	}
+	close(release)
+	slots, err := c.Get(context.Background(), 49.25, 4.03)
+	if err != nil || len(slots) != 1 || calls.Load() != 1 {
+		t.Fatalf("slots=%v err=%v appels=%d, attendu la lecture déjà lancée", slots, err, calls.Load())
 	}
 }

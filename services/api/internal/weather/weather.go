@@ -117,8 +117,9 @@ type Cache struct {
 	Fetch func(ctx context.Context, lat, lon float64) ([]Slot, error)
 	TTL   time.Duration
 
-	mu    sync.Mutex
-	cells map[[2]int]cell
+	mu       sync.Mutex
+	cells    map[[2]int]cell
+	inflight map[[2]int]*call
 }
 
 type cell struct {
@@ -126,9 +127,21 @@ type cell struct {
 	slots []Slot
 }
 
+// call : une lecture en cours, partagée par toutes les requêtes de la même maille.
+type call struct {
+	done  chan struct{}
+	slots []Slot
+	err   error
+}
+
 const mesh = 0.05
 
-// Get : la prévision de la maille du point.
+// FetchTimeout borne une lecture d'Open-Meteo. Elle ne dépend pas de la requête qui l'a lancée :
+// Open-Meteo répond parfois en 3 à 4 s, plus que ce qu'un client attend ; la lecture se termine
+// quand même et remplit le cache pour les requêtes suivantes.
+var FetchTimeout = 15 * time.Second
+
+// Get : la prévision de la maille du point, ou l'erreur de ctx s'il expire avant la réponse.
 func (c *Cache) Get(ctx context.Context, lat, lon float64) ([]Slot, error) {
 	k := [2]int{int(math.Floor(lat / mesh)), int(math.Floor(lon / mesh))}
 	c.mu.Lock()
@@ -136,22 +149,42 @@ func (c *Cache) Get(ctx context.Context, lat, lon float64) ([]Slot, error) {
 		c.mu.Unlock()
 		return e.slots, nil
 	}
-	c.mu.Unlock()
-	// Centre de la maille : tous les points de la maille partagent la même prévision.
-	slots, err := c.Fetch(ctx, (float64(k[0])+0.5)*mesh, (float64(k[1])+0.5)*mesh)
-	if err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	if c.cells == nil {
-		c.cells = map[[2]int]cell{}
-	}
-	for key, e := range c.cells { // les mailles périmées ne s'accumulent pas
-		if time.Since(e.at) >= c.TTL {
-			delete(c.cells, key)
+	f, ok := c.inflight[k]
+	if !ok {
+		if c.inflight == nil {
+			c.inflight = map[[2]int]*call{}
 		}
+		f = &call{done: make(chan struct{})}
+		c.inflight[k] = f
+		go c.fill(k, f)
 	}
-	c.cells[k] = cell{time.Now(), slots}
 	c.mu.Unlock()
-	return slots, nil
+	select {
+	case <-f.done:
+		return f.slots, f.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (c *Cache) fill(k [2]int, f *call) {
+	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
+	defer cancel()
+	// Centre de la maille : tous les points de la maille partagent la même prévision.
+	f.slots, f.err = c.Fetch(ctx, (float64(k[0])+0.5)*mesh, (float64(k[1])+0.5)*mesh)
+	c.mu.Lock()
+	delete(c.inflight, k)
+	if f.err == nil {
+		if c.cells == nil {
+			c.cells = map[[2]int]cell{}
+		}
+		for key, e := range c.cells { // les mailles périmées ne s'accumulent pas
+			if time.Since(e.at) >= c.TTL {
+				delete(c.cells, key)
+			}
+		}
+		c.cells[k] = cell{time.Now(), f.slots}
+	}
+	c.mu.Unlock()
+	close(f.done)
 }
