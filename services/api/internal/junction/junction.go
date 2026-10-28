@@ -1,5 +1,5 @@
-// Package junction lit les feux tricolores et les stops d'OpenStreetMap (via Overpass) : ils
-// donnent au guidage ses repères, « au feu, tournez à droite ».
+// Package junction lit les feux tricolores, stops et cédez-le-passage d'OpenStreetMap (via
+// Overpass) : ils donnent au guidage ses repères, « au feu, tournez à droite ».
 package junction
 
 import (
@@ -13,15 +13,16 @@ import (
 
 type Control struct {
 	ID       string // « node/123 »
-	Kind     string // « feu », « stop »
+	Kind     string // « feu », « stop », « cédez »
 	Lat, Lon float64
 }
 
-// Query : feux et stops de la zone. Les feux réservés aux piétons (traversée seule) ne marquent
-// pas un carrefour : ils sont écartés.
+// Query : feux, stops et cédez-le-passage de la zone. Les feux réservés aux piétons (traversée
+// seule) ne marquent pas un carrefour : ils sont écartés.
 func Query(b overpass.BBox) string {
 	f := b.Filter()
-	return `[out:json][timeout:90];(node["highway"="traffic_signals"]` + f + `;node["highway"="stop"]` + f + `;);out;`
+	return `[out:json][timeout:120];(node["highway"="traffic_signals"]` + f + `;node["highway"="stop"]` + f +
+		`;node["highway"="give_way"]` + f + `;);out;`
 }
 
 func Fetch(ctx context.Context, client *http.Client, endpoint string, b overpass.BBox) ([]Control, error) {
@@ -50,6 +51,8 @@ func FromElements(els []overpass.Element) []Control {
 			kind = "feu"
 		case "stop":
 			kind = "stop"
+		case "give_way":
+			kind = "cédez"
 		default:
 			continue
 		}
