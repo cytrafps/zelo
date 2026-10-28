@@ -26,6 +26,6 @@ patches:
           traefik.ingress.kubernetes.io/router.middlewares: zelo-compress@kubernetescrd
 images:
   - name: ghcr.io/cytrafps/zelo-api
-    newTag: sha-f7138b5
+    newTag: sha-1fac879
   - name: ghcr.io/cytrafps/zelo-valhalla
     newTag: osm-20261028-0be4282
