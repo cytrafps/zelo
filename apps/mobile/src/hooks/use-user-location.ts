@@ -9,10 +9,11 @@ export type Position = { lat: number; lon: number };
 const HEADING_TTL_MS = 10_000;
 
 /**
- * Position de l'utilisateur, au premier plan uniquement (pas de suivi en arrière-plan).
- * La précision « équilibrée » suffit pour signaler et centrer la carte.
+ * Position de l'utilisateur, au premier plan uniquement (pas de suivi en arrière-plan),
+ * mise à jour tous les 20 m : elle sert à centrer la carte, signaler et partir.
+ * `watch` à false (pendant le guidage, qui a son propre suivi précis) coupe l'abonnement.
  */
-export function useUserLocation() {
+export function useUserLocation(watch = true) {
   const [permission, requestPermission] = Location.useForegroundPermissions();
   const [position, setPosition] = useState<Position | null>(null);
   const lastCourse = useRef<{ heading: number | null; at: number }>({ heading: null, at: 0 });
@@ -27,7 +28,7 @@ export function useUserLocation() {
   }, [permission, requestPermission]);
 
   useEffect(() => {
-    if (!granted) return;
+    if (!granted || !watch) return;
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
     Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, distanceInterval: 20 }, (l) => {
@@ -38,7 +39,7 @@ export function useUserLocation() {
       cancelled = true;
       sub?.remove();
     };
-  }, [granted]);
+  }, [granted, watch]);
 
   /** Position actuelle, en demandant l'autorisation si besoin ; null si refusée. */
   const locate = async (): Promise<Position | null> => {
