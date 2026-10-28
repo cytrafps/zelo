@@ -61,6 +61,10 @@ export type Parking = {
   maxHeight: number | null;
   openingHours: string;
   parkRide: boolean;
+  /** car : parking ; moto : places deux-roues motorisés ; bike : arceaux vélo. */
+  vehicle: Vehicle;
+  /** Abrité (vélos, motos). */
+  covered: boolean;
   /** Tarifs relevés sur le site de l'exploitant ; null si non relevés. */
   tariff: Tariff | null;
 };
@@ -125,11 +129,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 const list = <T>(path: string, bbox: BBox, signal?: AbortSignal) =>
-  request<{ items: T[] }>(`${path}?bbox=${bbox.join(',')}`, { signal }).then((r) => r.items);
+  request<{ items: T[] }>(`${path}${path.includes('?') ? '&' : '?'}bbox=${bbox.join(',')}`, { signal }).then((r) => r.items);
 
 export const getFuelStations = (b: BBox, s?: AbortSignal) => list<FuelStation>('/v1/fuel-stations', b, s);
 export const getChargeStations = (b: BBox, s?: AbortSignal) => list<ChargeStation>('/v1/charge-stations', b, s);
-export const getParkings = (b: BBox, s?: AbortSignal) => list<Parking>('/v1/parkings', b, s);
+/** Parkings voiture par défaut ; `vehicle` : places motos (moto) ou arceaux vélo (bike). */
+export const getParkings = (b: BBox, s?: AbortSignal, vehicle: Vehicle = 'car') =>
+  list<Parking>(vehicle === 'car' ? '/v1/parkings' : `/v1/parkings?vehicle=${vehicle}`, b, s);
 export const getReports = (b: BBox, s?: AbortSignal) => list<Report>('/v1/reports', b, s);
 
 /** Un signalement du même type à moins de 150 m n'est pas dupliqué : il est confirmé et renvoyé. */

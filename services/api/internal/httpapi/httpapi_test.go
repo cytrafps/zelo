@@ -30,6 +30,7 @@ type fakeStore struct {
 	controls  []junction.Control
 	areas     []store.AreaOnRoute
 	parkings  []store.Parking
+	vehicle   string
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -39,7 +40,8 @@ func (f *fakeStore) FuelStations(context.Context, store.BBox, int) ([]store.Fuel
 func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error) {
 	return nil, nil
 }
-func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking, error) {
+func (f *fakeStore) Parkings(_ context.Context, _ store.BBox, _ int, vehicle string) ([]store.Parking, error) {
+	f.vehicle = vehicle
 	if f.parkings != nil {
 		return f.parkings, nil
 	}
@@ -281,7 +283,7 @@ func TestParkingsTariff(t *testing.T) {
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	New(&fakeStore{}, live.NewHub(0), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3", nil))
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK || !strings.Contains(body, `"name":"Erlon"`) || !strings.Contains(body, `"tariff":{"free":30,"prices":[{"minutes":60,"cents":120}`) || !strings.Contains(body, `"name":"Sans relevé","operator":"","kind":"","lat":0,"lon":0,"capacity":null,"disabled":null,"charging":null,"fee":null,"maxHeight":null,"openingHours":"","parkRide":false,"tariff":null`) {
+	if rec.Code != http.StatusOK || !strings.Contains(body, `"name":"Erlon"`) || !strings.Contains(body, `"tariff":{"free":30,"prices":[{"minutes":60,"cents":120}`) || !strings.Contains(body, `"name":"Sans relevé","operator":"","kind":"","lat":0,"lon":0,"capacity":null,"disabled":null,"charging":null,"fee":null,"maxHeight":null,"openingHours":"","parkRide":false,"vehicle":"","covered":false,"tariff":null`) {
 		t.Fatalf("%d %s", rec.Code, body)
 	}
 }
@@ -364,5 +366,22 @@ func TestRouteModes(t *testing.T) {
 		if rec.Code != http.StatusOK || router.mode != want {
 			t.Errorf("mode=%s : %d, %q", q, rec.Code, router.mode)
 		}
+	}
+}
+
+func TestParkingsVehicle(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for q, want := range map[string]string{"": "car", "&vehicle=bike": "bike", "&vehicle=moto": "moto"} {
+		s := &fakeStore{}
+		rec := httptest.NewRecorder()
+		New(s, live.NewHub(0), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3"+q, nil))
+		if rec.Code != http.StatusOK || s.vehicle != want {
+			t.Errorf("%q : %d, %q", q, rec.Code, s.vehicle)
+		}
+	}
+	rec := httptest.NewRecorder()
+	New(&fakeStore{}, live.NewHub(0), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3&vehicle=avion", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("véhicule inconnu : %d", rec.Code)
 	}
 }

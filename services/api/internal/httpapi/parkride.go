@@ -74,7 +74,7 @@ func (a *API) parkRide(w http.ResponseWriter, r *http.Request) {
 	}
 	// Parkings relais à 15 km au plus.
 	box := store.BBox{MinLon: to.Lon - 0.2, MinLat: to.Lat - 0.14, MaxLon: to.Lon + 0.2, MaxLat: to.Lat + 0.14}
-	parkings, err := a.store.Parkings(r.Context(), box, 2000)
+	parkings, err := a.store.Parkings(r.Context(), box, 2000, "car")
 	if err != nil {
 		a.serverError(w, r, err)
 		return

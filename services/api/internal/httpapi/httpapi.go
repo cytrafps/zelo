@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -51,7 +52,7 @@ type Store interface {
 	Ping(context.Context) error
 	FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error)
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
-	Parkings(context.Context, store.BBox, int) ([]store.Parking, error)
+	Parkings(ctx context.Context, b store.BBox, limit int, vehicle string) ([]store.Parking, error)
 	Controls(ctx context.Context, points [][2]float64, radius float64) ([]junction.Control, error)
 	AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]store.AreaOnRoute, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
@@ -166,9 +167,15 @@ type parking struct {
 	Tariff *tarif.Summary `json:"tariff"`
 }
 
+// parkings : GET /v1/parkings?bbox=…[&vehicle=car|moto|bike] (voiture par défaut).
 func (a *API) parkings(w http.ResponseWriter, r *http.Request) {
+	vehicle := cmp.Or(r.URL.Query().Get("vehicle"), "car")
+	if vehicle != "car" && vehicle != "moto" && vehicle != "bike" {
+		httpError(w, http.StatusBadRequest, "vehicle : car, moto ou bike")
+		return
+	}
 	list(a, w, r, func(ctx context.Context, b store.BBox, limit int) ([]parking, error) {
-		ps, err := a.store.Parkings(ctx, b, limit)
+		ps, err := a.store.Parkings(ctx, b, limit, vehicle)
 		out := make([]parking, len(ps))
 		for i, p := range ps {
 			out[i] = parking{p, tarif.For(p.ID)}

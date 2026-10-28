@@ -68,3 +68,18 @@ func TestQuery(t *testing.T) {
 		t.Fatalf("ordre sud,ouest,nord,est attendu : %s", q)
 	}
 }
+
+// Arceaux vélo et places motos : gardés même petits et sans nom ; l'accès privé reste exclu.
+func TestTwoWheels(t *testing.T) {
+	ps, err := Parse(strings.NewReader(`{"elements":[
+		{"type":"node","id":1,"lat":49.25,"lon":4.03,"tags":{"amenity":"bicycle_parking","capacity":"6","covered":"yes"}},
+		{"type":"node","id":2,"lat":49.25,"lon":4.03,"tags":{"amenity":"motorcycle_parking"}},
+		{"type":"node","id":3,"lat":49.25,"lon":4.03,"tags":{"amenity":"motorcycle_parking","access":"private"}},
+		{"type":"node","id":4,"lat":49.25,"lon":4.03,"tags":{"amenity":"parking"}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 2 || ps[0].Vehicle != "bike" || !ps[0].Covered || *ps[0].Capacity != 6 || ps[1].Vehicle != "moto" {
+		t.Fatalf("%+v", ps)
+	}
+}

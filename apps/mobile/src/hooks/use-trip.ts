@@ -5,7 +5,7 @@ import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking, type
 import { useStored } from '@/hooks/use-stored';
 import type { Fix } from '@/utils/geo';
 import type { Route } from '@/utils/route';
-import { needsWalk, targetPoint, type Target } from '@/utils/targets';
+import { forVehicle, needsWalk, targetPoint, type Target } from '@/utils/targets';
 
 export type TripTarget = Target<Parking, ChargeStation, ParkRide>;
 
@@ -40,9 +40,8 @@ type Request = {
   vehicle: Vehicle;
 };
 
-/** À vélo, on va jusqu'à la destination : pas de parking ni de borne à proposer. */
-const stopFor = (vehicle: Vehicle, options: TripTarget[]): TripTarget =>
-  vehicle === 'bike' ? { kind: 'dropoff' } : (options[0] ?? { kind: 'dropoff' });
+/** L'arrêt proposé par défaut pour ce véhicule (à vélo : l'arceau le plus proche, sinon la destination). */
+const stopFor = (vehicle: Vehicle, options: TripTarget[]): TripTarget => forVehicle(options, vehicle)[0] ?? { kind: 'dropoff' };
 
 const message = (e: unknown) =>
   e instanceof ApiError && e.status === 422 ? e.message : 'Itinéraire indisponible, vérifie ta connexion.';

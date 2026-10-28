@@ -114,3 +114,7 @@ CREATE TABLE IF NOT EXISTS service_area (
     services  text[] NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS service_area_geom ON service_area USING gist (geom);
+
+-- Places deux-roues motorisés et vélos (OSM), à côté des parkings voiture.
+ALTER TABLE parking ADD COLUMN IF NOT EXISTS vehicle text NOT NULL DEFAULT 'car';
+ALTER TABLE parking ADD COLUMN IF NOT EXISTS covered boolean NOT NULL DEFAULT false;
