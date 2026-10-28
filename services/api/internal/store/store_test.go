@@ -379,3 +379,38 @@ func TestSaveAreasMarne(t *testing.T) {
 		t.Fatalf("%d aires enregistrées sur %d (%v)", n, len(areas), err)
 	}
 }
+
+// Accès et usage : une station dont tous les points sont réservés l'est ; la hauteur la plus
+// basse l'emporte ; l'accès PMR d'un seul point suffit.
+func TestChargeStationAccess(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	h := func(v float64) *float64 { return &v }
+	pt := func(id, station string, reserved bool, pmr string, height *float64, twoWheels bool) irve.ChargePoint {
+		return irve.ChargePoint{ID: id, StationID: station, StationName: station, Lat: 49.2601, Lon: 4.0401, PowerKW: 22,
+			Reserved: reserved, PMR: pmr, MaxHeight: height, TwoWheels: twoWheels, Placement: "parking"}
+	}
+	if err := s.SaveChargePoints(ctx, []irve.ChargePoint{
+		pt("T-ACC-1", "T-ACC-HOTEL", true, "non", h(2.1), false),
+		pt("T-ACC-2", "T-ACC-HOTEL", true, "non", h(1.9), false),
+		pt("T-ACC-3", "T-ACC-PUBLIC", false, "accessible", nil, true),
+		pt("T-ACC-4", "T-ACC-PUBLIC", true, "", nil, false),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ChargeStations(ctx, BBox{4.04, 49.26, 4.0402, 49.2602}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]ChargeStation{}
+	for _, c := range got {
+		by[c.ID] = c
+	}
+	hotel, public := by["T-ACC-HOTEL"], by["T-ACC-PUBLIC"]
+	if !hotel.Reserved || hotel.PMR == nil || *hotel.PMR || hotel.MaxHeight == nil || *hotel.MaxHeight < 1.89 || *hotel.MaxHeight > 1.91 {
+		t.Errorf("hôtel : %+v", hotel)
+	}
+	if public.Reserved || public.PMR == nil || !*public.PMR || !public.TwoWheels || public.Placement != "parking" {
+		t.Errorf("publique : %+v", public)
+	}
+}

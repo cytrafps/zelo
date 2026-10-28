@@ -77,7 +77,8 @@ internal object ZeloApi {
     val total = o.getInt("total")
     val available = if (o.isNull("available")) null else o.getInt("available")
     // Une borne pleine ne mérite pas le détour : on ne propose que celles annoncées libres ou sans état publié.
-    if (available == 0) return null
+    // Une borne réservée aux clients (hôtel, concession) n'est pas pour le conducteur de passage.
+    if (available == 0 || o.optBoolean("reserved")) return null
     val power = "${o.getDouble("maxPowerKw").toInt()} kW"
     val state = available?.let { "$it libre${if (it > 1) "s" else ""} sur $total" } ?: "État non publié"
     val details = mutableListOf("Disponibilité" to state, "Puissance max." to power)

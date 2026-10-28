@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS report_vote (
 ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_kwh real;
 ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_from boolean NOT NULL DEFAULT false;
 
+-- Accès et usage (IRVE statique) : réservé aux clients, PMR, hauteur, deux-roues, emplacement.
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS reserved boolean NOT NULL DEFAULT false;
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS pmr text NOT NULL DEFAULT '';
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS max_height real;
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS two_wheels boolean NOT NULL DEFAULT false;
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS placement text NOT NULL DEFAULT '';
+ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS bookable boolean NOT NULL DEFAULT false;
+
 -- Feux tricolores et stops (OSM), repères du guidage : « au feu, tournez à droite ».
 CREATE TABLE IF NOT EXISTS junction_control (
     id    text PRIMARY KEY,

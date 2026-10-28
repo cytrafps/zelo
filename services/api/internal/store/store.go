@@ -177,11 +177,13 @@ func (s *Store) SaveChargePoints(ctx context.Context, points []irve.ChargePoint)
 		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_cp (
 			id text, station_id text, station_name text, operator text, address text,
 			lon float8, lat float8, power_kw real, sockets text[], free boolean, card_payment boolean, hours text,
-			price_kwh real, price_from boolean) ON COMMIT DROP`); err != nil {
+			price_kwh real, price_from boolean, reserved boolean, pmr text, max_height real, two_wheels boolean,
+			placement text, bookable boolean) ON COMMIT DROP`); err != nil {
 			return err
 		}
 		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_cp"},
-			[]string{"id", "station_id", "station_name", "operator", "address", "lon", "lat", "power_kw", "sockets", "free", "card_payment", "hours", "price_kwh", "price_from"},
+			[]string{"id", "station_id", "station_name", "operator", "address", "lon", "lat", "power_kw", "sockets", "free", "card_payment", "hours", "price_kwh", "price_from",
+				"reserved", "pmr", "max_height", "two_wheels", "placement", "bookable"},
 			pgx.CopyFromSlice(len(points), func(i int) ([]any, error) {
 				p := points[i]
 				var price *float32
@@ -189,20 +191,30 @@ func (s *Store) SaveChargePoints(ctx context.Context, points []irve.ChargePoint)
 					v := float32(*p.PriceKWh)
 					price = &v
 				}
+				var height *float32
+				if p.MaxHeight != nil {
+					h := float32(*p.MaxHeight)
+					height = &h
+				}
 				return []any{p.ID, p.StationID, p.StationName, p.Operator, p.Address, p.Lon, p.Lat,
-					float32(p.PowerKW), p.Sockets, p.Free, p.CardPayment, p.Hours, price, p.PriceFrom}, nil
+					float32(p.PowerKW), p.Sockets, p.Free, p.CardPayment, p.Hours, price, p.PriceFrom,
+					p.Reserved, p.PMR, height, p.TwoWheels, p.Placement, p.Bookable}, nil
 			})); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `
-			INSERT INTO charge_point (id, station_id, station_name, operator, address, geom, power_kw, sockets, free, card_payment, hours, price_kwh, price_from, seen_at)
+			INSERT INTO charge_point (id, station_id, station_name, operator, address, geom, power_kw, sockets, free, card_payment, hours,
+				price_kwh, price_from, reserved, pmr, max_height, two_wheels, placement, bookable, seen_at)
 			SELECT id, station_id, station_name, operator, address, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography,
-				power_kw, coalesce(sockets, '{}'), free, card_payment, hours, price_kwh, price_from, now()
+				power_kw, coalesce(sockets, '{}'), free, card_payment, hours, price_kwh, price_from,
+				reserved, coalesce(pmr, ''), max_height, two_wheels, coalesce(placement, ''), bookable, now()
 			FROM tmp_cp
 			ON CONFLICT (id) DO UPDATE SET station_id = EXCLUDED.station_id, station_name = EXCLUDED.station_name,
 				operator = EXCLUDED.operator, address = EXCLUDED.address, geom = EXCLUDED.geom, power_kw = EXCLUDED.power_kw,
 				sockets = EXCLUDED.sockets, free = EXCLUDED.free, card_payment = EXCLUDED.card_payment,
-				hours = EXCLUDED.hours, price_kwh = EXCLUDED.price_kwh, price_from = EXCLUDED.price_from, seen_at = now();
+				hours = EXCLUDED.hours, price_kwh = EXCLUDED.price_kwh, price_from = EXCLUDED.price_from,
+				reserved = EXCLUDED.reserved, pmr = EXCLUDED.pmr, max_height = EXCLUDED.max_height, two_wheels = EXCLUDED.two_wheels,
+				placement = EXCLUDED.placement, bookable = EXCLUDED.bookable, seen_at = now();
 
 			DELETE FROM charge_point WHERE seen_at < now() - interval '7 days';`)
 		return err
@@ -470,6 +482,15 @@ type ChargeStation struct {
 	ObservedAt *time.Time `json:"observedAt"`
 	// Price : prix au kWh annoncé par l'opérateur, nil s'il n'est pas publié lisiblement.
 	Price *ChargePrice `json:"price"`
+	// Reserved : tous les points sont en « accès réservé » (clients, flotte…).
+	Reserved bool `json:"reserved"`
+	// PMR : au moins un point accessible en fauteuil ; false : aucun ; nil : inconnu.
+	PMR *bool `json:"pmr"`
+	// MaxHeight : la hauteur maximale la plus basse publiée pour la station (m), nil sinon.
+	MaxHeight *float32 `json:"maxHeight"`
+	TwoWheels bool     `json:"twoWheels"`
+	Placement string   `json:"placement"` // voirie, parking, parking-clients, recharge-rapide, ou vide
+	Bookable  bool     `json:"bookable"`
 }
 
 type ChargePrice struct {
@@ -490,7 +511,10 @@ func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]Charge
 			count(*) FILTER (WHERE st.occupancy = 'libre' AND st.state = 'en_service' AND st.observed_at > now() - interval '24 hours'),
 			count(st.id) FILTER (WHERE st.observed_at > now() - interval '24 hours'),
 			max(st.observed_at),
-			bool_and(c.free), min(c.price_kwh), bool_or(c.price_from) OR count(DISTINCT c.price_kwh) > 1
+			bool_and(c.free), min(c.price_kwh), bool_or(c.price_from) OR count(DISTINCT c.price_kwh) > 1,
+			bool_and(c.reserved),
+			CASE WHEN bool_or(c.pmr IN ('accessible', 'réservé')) THEN true WHEN bool_and(c.pmr = 'non') THEN false END,
+			min(c.max_height), bool_or(c.two_wheels), max(c.placement), bool_or(c.bookable)
 		FROM charge_point c
 		LEFT JOIN charge_status st ON st.id = c.id
 		WHERE ST_Intersects(c.geom, `+envelope+`)
@@ -506,7 +530,7 @@ func (s *Store) ChargeStations(ctx context.Context, b BBox, limit int) ([]Charge
 		var allFree, priceFrom bool
 		var price *float32
 		err := r.Scan(&c.ID, &c.Name, &c.Operator, &c.Lat, &c.Lon, &c.MaxPowerKW, &c.Sockets, &c.Total, &free, &withStatus, &c.ObservedAt,
-			&allFree, &price, &priceFrom)
+			&allFree, &price, &priceFrom, &c.Reserved, &c.PMR, &c.MaxHeight, &c.TwoWheels, &c.Placement, &c.Bookable)
 		if withStatus > 0 {
 			c.Available = &free
 		}

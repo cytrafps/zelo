@@ -77,7 +77,12 @@ function ChargeDetails({ s, c, onGo }: { s: ChargeStation; c: Couleurs; onGo: ()
   const color = s.available === null ? c.texte.secondaire : s.available > 0 ? c.recharge.texte : c.alerte.base;
   return (
     <>
-      <Header title={s.name || 'Borne de recharge'} subtitle={s.operator || 'Opérateur inconnu'} c={c} onGo={onGo} />
+      <Header
+        title={s.name || 'Borne de recharge'}
+        subtitle={[s.operator || 'Opérateur inconnu', s.reserved ? 'Accès réservé' : null].filter(Boolean).join(' · ')}
+        c={c}
+        onGo={onGo}
+      />
       <List>
         <ListItem
           supportingText={s.observedAt ? `État relevé ${formatAgo(s.observedAt)}` : undefined}
@@ -105,9 +110,33 @@ function ChargeDetails({ s, c, onGo }: { s: ChargeStation; c: Couleurs; onGo: ()
         >
           <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>Prises</Text>
         </ListItem>
+        {chargeFacts(s).map(([label, value]) => (
+          <ListItem key={label} trailing={<Text textStyle={{ ...texte.corps, color: c.texte.secondaire }}>{value}</Text>}>
+            <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>{label}</Text>
+          </ListItem>
+        ))}
       </List>
     </>
   );
+}
+
+const PLACEMENT = {
+  voirie: 'Sur la voie',
+  parking: 'Dans un parking',
+  'parking-clients': 'Parking réservé aux clients',
+  'recharge-rapide': 'Station de recharge rapide',
+} as const;
+
+/** Ce qui décide si l'on peut s'y arrêter : accès, emplacement, hauteur, PMR, deux-roues, réservation. */
+function chargeFacts(s: ChargeStation): [string, string][] {
+  const rows: [string, string][] = [];
+  if (s.reserved) rows.push(['Accès', 'Réservé (clients, flotte)']);
+  if (s.placement) rows.push(['Emplacement', PLACEMENT[s.placement]]);
+  if (s.maxHeight !== null) rows.push(['Hauteur max.', `${meters.format(s.maxHeight)} m`]);
+  if (s.pmr !== null) rows.push(['Accès PMR', s.pmr ? 'Oui' : 'Non']);
+  if (s.twoWheels) rows.push(['Deux-roues', 'Adaptée']);
+  if (s.bookable) rows.push(['Réservation', 'Possible']);
+  return rows;
 }
 
 const PARKING_KIND = {

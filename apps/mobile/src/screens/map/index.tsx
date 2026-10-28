@@ -118,7 +118,10 @@ export function MapScreen() {
       getParkings(box).catch(() => []),
       getChargeStations(box).catch(() => []),
       getParkRides(place, location.position).catch(() => []),
-    ]).then(([parkings, charge, relays]) => targets(place, parkings, charge, relays));
+    ]).then(([parkings, charge, relays]) =>
+      // Une borne réservée aux clients n'est pas un arrêt à proposer ; à moto, seules les bornes deux-roues.
+      targets(place, parkings, charge.filter((b) => !b.reserved && (trips.vehicle !== 'moto' || b.twoWheels)), relays),
+    );
     return startTrip(place, options);
   };
 

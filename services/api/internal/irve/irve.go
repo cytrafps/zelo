@@ -35,6 +35,18 @@ type ChargePoint struct {
 	PriceKWh *float64
 	// PriceFrom : d'autres frais (minute, session) s'ajoutent au kWh.
 	PriceFrom bool
+	// Reserved : « Accès réservé » (clients d'un hôtel, d'une concession, flotte…).
+	Reserved bool
+	// PMR : « accessible », « réservé » (aux PMR), « non » ou « » (inconnu).
+	PMR string
+	// MaxHeight : hauteur maximale (m) quand elle est publiée lisiblement, sinon nil.
+	MaxHeight *float64
+	// TwoWheels : point adapté aux deux-roues (scooters, motos électriques).
+	TwoWheels bool
+	// Placement : « voirie », « parking », « parking-clients » ou « recharge-rapide ».
+	Placement string
+	// Bookable : le point se réserve à l'avance.
+	Bookable bool
 }
 
 // Status est l'état d'un point de charge à un instant donné.
@@ -174,6 +186,12 @@ func ParseStatic(r io.Reader, bbox BBox) ([]ChargePoint, error) {
 			Hours:       cols.get(rec, "horaires"),
 			PriceKWh:    price,
 			PriceFrom:   from,
+			Reserved:    cols.get(rec, "condition_acces") == "Accès réservé",
+			PMR:         pmr(cols.get(rec, "accessibilite_pmr")),
+			MaxHeight:   maxHeight(cols.get(rec, "restriction_gabarit")),
+			TwoWheels:   isTrue(cols.get(rec, "station_deux_roues")),
+			Placement:   placement(cols.get(rec, "implantation_station")),
+			Bookable:    isTrue(cols.get(rec, "reservation")),
 		})
 	}
 }
