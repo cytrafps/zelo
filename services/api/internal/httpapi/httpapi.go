@@ -94,8 +94,40 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("POST /v1/reports/{id}/votes", a.vote)
 	mux.HandleFunc("GET /v1/live", a.liveFeed)
 	mux.HandleFunc("GET /v1/route", a.route)
-	return mux
+	return instrument(mux)
 }
+
+// instrument compte chaque requête par route déclarée et mesure sa durée. Le flux temps réel,
+// ouvert pendant des heures, est compté mais pas chronométré. Une URL inconnue est rangée
+// sous « autre » : un robot qui balaie des chemins ne crée pas de nouvelles séries.
+func instrument(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		mux.ServeHTTP(rec, r)
+		route := r.Pattern
+		if route == "" {
+			route = "autre"
+		}
+		metrics.HTTPRequests.WithLabelValues(route, strconv.Itoa(rec.status)).Inc()
+		if route != "GET /v1/live" {
+			metrics.HTTPDuration.WithLabelValues(route).Observe(time.Since(start).Seconds())
+		}
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap laisse http.ResponseController (et le passage en WebSocket) atteindre la connexion.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func (a *API) health(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -309,16 +341,22 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	start := time.Now()
 	res, err := a.cfg.Router.Routes(ctx, from, to, mode, opts)
+	metrics.RouteDuration.WithLabelValues(q.Get("mode")).Observe(time.Since(start).Seconds())
 	switch {
 	case errors.Is(err, route.ErrOutOfArea):
+		metrics.Routes.WithLabelValues(q.Get("mode"), "hors_zone").Inc()
 		httpError(w, http.StatusUnprocessableEntity, "cette adresse est hors de la zone couverte par Zelo")
 	case errors.Is(err, route.ErrNoRoute):
+		metrics.Routes.WithLabelValues(q.Get("mode"), "sans_itineraire").Inc()
 		httpError(w, http.StatusUnprocessableEntity, "aucun itinéraire trouvé")
 	case err != nil:
+		metrics.Routes.WithLabelValues(q.Get("mode"), "erreur").Inc()
 		a.log.Error("itinéraire", "err", err)
 		httpError(w, http.StatusBadGateway, "calcul d'itinéraire indisponible")
 	default:
+		metrics.Routes.WithLabelValues(q.Get("mode"), "ok").Inc()
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"routes": res})
 	}
