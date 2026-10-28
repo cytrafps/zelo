@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +41,10 @@ func TestParkRide(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/park-ride?from=49.30,4.05&to=49.2538,4.0341&at="+itoa(at), nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	// Les clés que lit l'app (TransitStop) : en minuscules, json.Decode ne le vérifierait pas.
+	if raw := rec.Body.String(); !strings.Contains(raw, `"from":{"id":`) || !strings.Contains(raw, `"name":"NEUFCHATEL"`) {
+		t.Fatalf("arrêts sans les clés id/name : %.300s", raw)
 	}
 	var body struct {
 		Options []struct {
