@@ -22,6 +22,7 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/time/rate"
 
+	"github.com/cytrafps/zelo/services/api/internal/closure"
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
@@ -75,6 +76,8 @@ type Config struct {
 	Transit func() *transit.Timetable
 	// Realtime : dernier flux temps réel lu ; nil : horaires théoriques.
 	Realtime func() *transit.Realtime
+	// Closures : rues fermées publiées dans DiaLog (rechargées chaque jour) ; nil : aucune.
+	Closures func() []closure.Closure
 }
 
 type Router interface {
@@ -378,7 +381,21 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	start := time.Now()
+	at := opts.Depart
+	if at.IsZero() {
+		at = start
+	}
+	opts.Exclude = a.exclusions(ctx, from, to, mode, at)
 	res, err := a.cfg.Router.Routes(ctx, from, to, mode, opts)
+	if err != nil && len(opts.Exclude) > 0 && !errors.Is(err, route.ErrOutOfArea) {
+		// Départ ou arrivée dans la rue fermée (rue piétonne aux heures où l'on y habite…), ou
+		// zones refusées par Valhalla : mieux vaut un itinéraire qui l'emprunte que pas d'itinéraire.
+		if !errors.Is(err, route.ErrNoRoute) {
+			a.log.Warn("itinéraire avec rues fermées", "err", err, "zones", len(opts.Exclude))
+		}
+		opts.Exclude = nil
+		res, err = a.cfg.Router.Routes(ctx, from, to, mode, opts)
+	}
 	metrics.RouteDuration.WithLabelValues(q.Get("mode")).Observe(time.Since(start).Seconds())
 	switch {
 	case errors.Is(err, route.ErrOutOfArea):

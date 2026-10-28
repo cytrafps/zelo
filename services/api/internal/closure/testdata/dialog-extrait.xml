@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<d2:payload
+  modelBaseVersion="3"
+  lang="FR"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:d2="http://datex2.eu/schema/3/d2Payload"
+  xmlns:com="http://datex2.eu/schema/3/common"
+  xmlns:comx="http://datex2.eu/schema/3/commonExtension"
+  xmlns:loc="http://datex2.eu/schema/3/locationReferencing"
+  xmlns:dx="https://raw.githubusercontent.com/MTES-MCT/dialog/main/docs/spec/datex2"
+  xmlns="http://datex2.eu/schema/3/trafficRegulation"
+  xsi:schemaLocation="http://datex2.eu/schema/3/d2Payload/DATEXII_3_D2Payload.xsd"
+  xsi:type="TrafficRegulationPublication"
+  id="910928b3-58a1-4462-881b-53dec84602f9"
+>
+    <com:publicationTime>2026-10-28T15:35:48+00:00</com:publicationTime>
+    <com:publicationCreator>
+        <com:country>fr</com:country>
+        <com:nationalIdentifier>DiaLog</com:nationalIdentifier>
+    </com:publicationCreator>
+
+    <trafficRegulationsFromCompetentAuthorities>
+                                            <trafficRegulationOrder id="019e97ff-9cc1-7299-b61e-f060260cd4dc" version="1">
+                <description>
+                    <com:values>
+                        <com:value>Reims_2024P0086</com:value>
+                    </com:values>
+                </description>
+                <issuingAuthority>
+                    <com:values>
+                        <com:value>CU du Grand Reims</com:value>
+                    </com:values>
+                </issuingAuthority>
+                <regulationId>Reims_2024P0086#019bfecd-46be-74ce-8250-2cb7e826f84b</regulationId>
+                <status>madeAndImplemented</status>
+
+                <validityByOrder>
+                    <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                    <com:validityTimeSpecification>
+                        <com:overallStartTime>2024-04-01T22:00:00+00:00</com:overallStartTime>
+                                            </com:validityTimeSpecification>
+                </validityByOrder>
+
+                                    <trafficRegulation>
+                        <status>active</status>
+                                                    <typeOfRegulation xsi:type="AccessRestriction">
+                                <accessRestrictionType>noEntry</accessRestrictionType>
+                            </typeOfRegulation>
+                        
+                        <condition xsi:type="ConditionSet">
+                            <operator>and</operator>
+
+                                                            <conditions xsi:type="ConditionSet">
+                                    <operator>or</operator>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2024-04-01T22:00:00+00:00</com:overallStartTime>
+
+                                                    
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                    </conditions>
+                            
+                            <conditions xsi:type="ConditionSet">
+                                <operator>or</operator>
+                                                                    <conditions xsi:type="LocationCondition">
+                                        <locationByOrder xsi:type="loc:LinearLocation">
+                                            <loc:supplementaryPositionalDescription>
+                                                                                                    <loc:locationDescription>
+                                                        <com:values>
+                                                            <com:value>Rue de Courcelles, de la place Max Rousseaux jusqu&#039;au boulevard Louis Roederer</com:value>
+                                                        </com:values>
+                                                    </loc:locationDescription>
+                                                                                            </loc:supplementaryPositionalDescription>
+                                            <loc:_linearLocationExtension>
+                                                <loc:linearLocationExtended>
+                                                    <dx:geoJsonGeometry>{&quot;type&quot;:&quot;MultiLineString&quot;,&quot;coordinates&quot;:[[[4.010242387,49.264531683],[4.012228921,49.264391137],[4.012594489,49.264359699],[4.012828426,49.264361769],[4.013080921,49.264334973],[4.013141205,49.264315018],[4.013177026,49.264280239],[4.013139458,49.264266556],[4.013096647,49.264258004],[4.012577679,49.264360629],[4.013098394,49.264258004],[4.013140331,49.264265986],[4.013177026,49.264280809],[4.013308079,49.26424432],[4.014642579,49.263753391],[4.014759653,49.263704929],[4.017925011,49.262169727],[4.017984422,49.262130956],[4.02187223,49.257687686],[4.021947367,49.257628383],[4.023039537,49.256991721]]]}</dx:geoJsonGeometry>
+                                                </loc:linearLocationExtended>
+                                            </loc:_linearLocationExtension>
+                                        </locationByOrder>
+                                    </conditions>
+                                                            </conditions>
+
+                                                        
+                                                                                        <conditions xsi:type="ConditionSet">
+                                    <operator>or</operator>
+                                                                                        <conditions xsi:type="VehicleCondition">
+            <negate>false</negate>
+            <vehicleCharacteristics>
+                                                            <com:vehicleType>heavyGoodsVehicle</com:vehicleType>
+                                                                                            <com:grossWeightCharacteristic>
+                                <com:comparisonOperator>lessThanOrEqualTo</com:comparisonOperator>
+                                <com:grossVehicleWeight>3.5</com:grossVehicleWeight>
+                                <com:typeOfWeight>maximumPermitted</com:typeOfWeight>
+                            </com:grossWeightCharacteristic>
+                                                                                            </vehicleCharacteristics>
+        </conditions>
+    
+                                                                    </conditions>
+                            
+                                                                                        <conditions xsi:type="ConditionSet">
+                                    <operator>and</operator>
+                                                                                        <conditions xsi:type="VehicleCondition">
+            <negate>true</negate>
+            <vehicleCharacteristics>
+                                    <com:vehicleUsage>cityLogistics</com:vehicleUsage>
+                            </vehicleCharacteristics>
+        </conditions>
+    
+                                                                    </conditions>
+                                                    </condition>
+                    </trafficRegulation>
+                                    <trafficRegulation>
+                        <status>active</status>
+                                                    <typeOfRegulation xsi:type="AccessRestriction">
+                                <accessRestrictionType>noEntry</accessRestrictionType>
+                            </typeOfRegulation>
+                        
+                        <condition xsi:type="ConditionSet">
+                            <operator>and</operator>
+
+                                                            <conditions xsi:type="ConditionSet">
+                                    <operator>or</operator>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2024-04-01T22:00:00+00:00</com:overallStartTime>
+
+                                                    
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                    </conditions>
+                            
+                            <conditions xsi:type="ConditionSet">
+                                <operator>or</operator>
+                                                                    <conditions xsi:type="LocationCondition">
+                                        <locationByOrder xsi:type="loc:LinearLocation">
+                                            <loc:supplementaryPositionalDescription>
+                                                                                                    <loc:locationDescription>
+                                                        <com:values>
+                                                            <com:value>Rue de Courcelles, des deux côtés sous le pont SNCF</com:value>
+                                                        </com:values>
+                                                    </loc:locationDescription>
+                                                                                            </loc:supplementaryPositionalDescription>
+                                            <loc:_linearLocationExtension>
+                                                <loc:linearLocationExtended>
+                                                    <dx:geoJsonGeometry>{&quot;type&quot;:&quot;MultiLineString&quot;,&quot;coordinates&quot;:[[[4.023041293,49.256992067],[4.022242273,49.257444669],[4.021955571,49.257623048]]]}</dx:geoJsonGeometry>
+                                                </loc:linearLocationExtended>
+                                            </loc:_linearLocationExtension>
+                                        </locationByOrder>
+                                    </conditions>
+                                                            </conditions>
+
+                                                        
+                                                                                        <conditions xsi:type="ConditionSet">
+                                    <operator>or</operator>
+                                                                                        <conditions xsi:type="VehicleCondition">
+            <negate>false</negate>
+            <vehicleCharacteristics>
+                                                                                        <com:heightCharacteristic>
+                                <com:comparisonOperator>lessThanOrEqualTo</com:comparisonOperator>
+                                <com:vehicleHeight>3.7</com:vehicleHeight>
+                            </com:heightCharacteristic>
+                                                                                                                                                                </vehicleCharacteristics>
+        </conditions>
+    
+                                                                    </conditions>
+                            
+                                                                                </condition>
+                    </trafficRegulation>
+                
+                <_trafficRegulationOrderExtension>
+                    <trafficRegulationOrderExtended>
+                        <dx:source>api</dx:source>
+                        <dx:publicUrl>https://dialog.beta.gouv.fr/regulations/019e97ff-9cc1-7479-b61e-f06026e56662</dx:publicUrl>
+                    </trafficRegulationOrderExtended>
+                </_trafficRegulationOrderExtension>
+            </trafficRegulationOrder>
+<trafficRegulationOrder id="019e9800-b507-7efc-a047-276290ebaa32" version="1">
+                <description>
+                    <com:values>
+                        <com:value>Reims_2021P0365</com:value>
+                    </com:values>
+                </description>
+                <issuingAuthority>
+                    <com:values>
+                        <com:value>CU du Grand Reims</com:value>
+                    </com:values>
+                </issuingAuthority>
+                <regulationId>Reims_2021P0365#019bfecd-46be-74ce-8250-2cb7e826f84b</regulationId>
+                <status>madeAndImplemented</status>
+
+                <validityByOrder>
+                    <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                    <com:validityTimeSpecification>
+                        <com:overallStartTime>2021-11-24T23:00:00+00:00</com:overallStartTime>
+                                            </com:validityTimeSpecification>
+                </validityByOrder>
+
+                                    <trafficRegulation>
+                        <status>active</status>
+                                                    <typeOfRegulation xsi:type="AccessRestriction">
+                                <accessRestrictionType>noEntry</accessRestrictionType>
+                            </typeOfRegulation>
+                        
+                        <condition xsi:type="ConditionSet">
+                            <operator>and</operator>
+
+                                                            <conditions xsi:type="ConditionSet">
+                                    <operator>or</operator>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2021-11-24T23:00:00+00:00</com:overallStartTime>
+
+                                                    
+                                                                                                            <com:validPeriod>
+                                                                                                                            <com:recurringTimePeriodOfDay>
+                                                                    <com:startTimeOfPeriod>23:00:00+00:00</com:startTimeOfPeriod>
+                                                                    <com:endTimeOfPeriod>06:00:00+00:00</com:endTimeOfPeriod>
+                                                                </com:recurringTimePeriodOfDay>
+                                                                                                                                                                                        <com:recurringDayWeekMonthPeriod>
+                                                                                                                                            <com:applicableDay>monday</com:applicableDay>
+                                                                                                                                    </com:recurringDayWeekMonthPeriod>
+                                                                                                                    </com:validPeriod>
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2021-11-24T23:00:00+00:00</com:overallStartTime>
+
+                                                    
+                                                                                                            <com:validPeriod>
+                                                                                                                            <com:recurringTimePeriodOfDay>
+                                                                    <com:startTimeOfPeriod>18:00:00+00:00</com:startTimeOfPeriod>
+                                                                    <com:endTimeOfPeriod>22:59:00+00:00</com:endTimeOfPeriod>
+                                                                </com:recurringTimePeriodOfDay>
+                                                                                                                                                                                        <com:recurringDayWeekMonthPeriod>
+                                                                                                                                            <com:applicableDay>friday</com:applicableDay>
+                                                                                                                                    </com:recurringDayWeekMonthPeriod>
+                                                                                                                    </com:validPeriod>
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2021-11-24T23:00:00+00:00</com:overallStartTime>
+
+                                                    
+                                                                                                            <com:validPeriod>
+                                                                                                                            <com:recurringTimePeriodOfDay>
+                                                                    <com:startTimeOfPeriod>23:00:00+00:00</com:startTimeOfPeriod>
+                                                                    <com:endTimeOfPeriod>22:59:00+00:00</com:endTimeOfPeriod>
+                                                                </com:recurringTimePeriodOfDay>
+                                                                                                                                                                                        <com:recurringDayWeekMonthPeriod>
+                                                                                                                                            <com:applicableDay>saturday</com:applicableDay>
+                                                                                                                                    </com:recurringDayWeekMonthPeriod>
+                                                                                                                    </com:validPeriod>
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2021-11-24T23:00:00+00:00</com:overallStartTime>
+
+                                                    
+                                                                                                            <com:validPeriod>
+                                                                                                                            <com:recurringTimePeriodOfDay>
+                                                                    <com:startTimeOfPeriod>23:00:00+00:00</com:startTimeOfPeriod>
+                                                                    <com:endTimeOfPeriod>22:59:00+00:00</com:endTimeOfPeriod>
+                                                                </com:recurringTimePeriodOfDay>
+                                                                                                                                                                                        <com:recurringDayWeekMonthPeriod>
+                                                                                                                                            <com:applicableDay>sunday</com:applicableDay>
+                                                                                                                                    </com:recurringDayWeekMonthPeriod>
+                                                                                                                    </com:validPeriod>
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                    </conditions>
+                            
+                            <conditions xsi:type="ConditionSet">
+                                <operator>or</operator>
+                                                                    <conditions xsi:type="LocationCondition">
+                                        <locationByOrder xsi:type="loc:LinearLocation">
+                                            <loc:supplementaryPositionalDescription>
+                                                                                                    <loc:locationDescription>
+                                                        <com:values>
+                                                            <com:value>Rue Buirette, de la place Drouet d&#039;Erlon jusqu&#039;à la rue Jeanne d&#039;Arc</com:value>
+                                                        </com:values>
+                                                    </loc:locationDescription>
+                                                                                            </loc:supplementaryPositionalDescription>
+                                            <loc:_linearLocationExtension>
+                                                <loc:linearLocationExtended>
+                                                    <dx:geoJsonGeometry>{&quot;type&quot;:&quot;MultiLineString&quot;,&quot;coordinates&quot;:[[[4.027196101,49.25511156],[4.025616837,49.254539593],[4.025443101,49.254470009]]]}</dx:geoJsonGeometry>
+                                                </loc:linearLocationExtended>
+                                            </loc:_linearLocationExtension>
+                                        </locationByOrder>
+                                    </conditions>
+                                                            </conditions>
+
+                                                        
+                                                        
+                                                                                        <conditions xsi:type="ConditionSet">
+                                    <operator>and</operator>
+                                                                                        <conditions xsi:type="VehicleCondition">
+            <negate>true</negate>
+            <vehicleCharacteristics>
+                                    <com:vehicleUsage>cityLogistics</com:vehicleUsage>
+                            </vehicleCharacteristics>
+        </conditions>
+    
+                                                                    </conditions>
+                                                    </condition>
+                    </trafficRegulation>
+                
+                <_trafficRegulationOrderExtension>
+                    <trafficRegulationOrderExtended>
+                        <dx:source>api</dx:source>
+                        <dx:publicUrl>https://dialog.beta.gouv.fr/regulations/019e9800-b508-71c5-9373-c90a2d75e593</dx:publicUrl>
+                    </trafficRegulationOrderExtended>
+                </_trafficRegulationOrderExtension>
+            </trafficRegulationOrder>
+<trafficRegulationOrder id="019851f7-87b8-7d0b-ba09-de8314ee2ea7" version="1">
+                <description>
+                    <com:values>
+                        <com:value>Modifiant, à titre provisoire, les règles de stationnement, de circulation générale et des cycles boulevard Voltaire et rue Gobert à Paris 11ème.</com:value>
+                    </com:values>
+                </description>
+                <issuingAuthority>
+                    <com:values>
+                        <com:value>Paris&lt;img src=xx&gt;&lt;script&gt;alert(1)&lt;/script&gt;</com:value>
+                    </com:values>
+                </issuingAuthority>
+                <regulationId>2024T11570#018b60cd-c261-7619-af21-15913eeac249</regulationId>
+                <status>madeAndImplemented</status>
+
+                <validityByOrder>
+                    <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                    <com:validityTimeSpecification>
+                        <com:overallStartTime>2024-04-12T22:00:00+00:00</com:overallStartTime>
+                                                    <com:overallEndTime>2026-10-30T23:00:00+00:00</com:overallEndTime>
+                                            </com:validityTimeSpecification>
+                </validityByOrder>
+
+                                    <trafficRegulation>
+                        <status>active</status>
+                                                    <typeOfRegulation xsi:type="AccessRestriction">
+                                <accessRestrictionType>noEntry</accessRestrictionType>
+                            </typeOfRegulation>
+                        
+                        <condition xsi:type="ConditionSet">
+                            <operator>and</operator>
+
+                                                            <conditions xsi:type="ConditionSet">
+                                    <operator>or</operator>
+                                                                            <conditions xsi:type="ValidityCondition">
+                                            <validityByOrder>
+                                                <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+                                                <com:validityTimeSpecification>
+                                                    <com:overallStartTime>2024-04-12T22:00:00+00:00</com:overallStartTime>
+
+                                                                                                            <com:overallEndTime>2026-10-30T23:00:00+00:00</com:overallEndTime>
+                                                    
+                                                                                                    </com:validityTimeSpecification>
+                                            </validityByOrder>
+                                        </conditions>
+                                                                    </conditions>
+                            
+                            <conditions xsi:type="ConditionSet">
+                                <operator>or</operator>
+                                                                    <conditions xsi:type="LocationCondition">
+                                        <locationByOrder xsi:type="loc:LinearLocation">
+                                            <loc:supplementaryPositionalDescription>
+                                                                                                    <loc:roadInformation>
+                                                        <loc:roadName>Boulevard Voltaire</loc:roadName>
+                                                    </loc:roadInformation>
+                                                                                            </loc:supplementaryPositionalDescription>
+                                            <loc:_linearLocationExtension>
+                                                <loc:linearLocationExtended>
+                                                    <dx:geoJsonGeometry>{&quot;type&quot;:&quot;GeometryCollection&quot;,&quot;geometries&quot;:[{&quot;type&quot;:&quot;LineString&quot;,&quot;coordinates&quot;:[[2.384290114,48.855309242],[2.385327677,48.854697623]]},{&quot;type&quot;:&quot;LineString&quot;,&quot;coordinates&quot;:[[2.382833713,48.8561849],[2.382833713,48.8561849]]},{&quot;type&quot;:&quot;LineString&quot;,&quot;coordinates&quot;:[[2.382833713,48.8561849],[2.383308617,48.855903154]]},{&quot;type&quot;:&quot;LineString&quot;,&quot;coordinates&quot;:[[2.383308617,48.855903154],[2.383876899,48.855561631]]},{&quot;type&quot;:&quot;LineString&quot;,&quot;coordinates&quot;:[[2.383876899,48.855561631],[2.38421597,48.855355627],[2.384290114,48.855309242]]}]}</dx:geoJsonGeometry>
+                                                </loc:linearLocationExtended>
+                                            </loc:_linearLocationExtension>
+                                        </locationByOrder>
+                                    </conditions>
+                                                            </conditions>
+
+                                                        
+                                                        
+                                                                                </condition>
+                    </trafficRegulation>
+                
+                <_trafficRegulationOrderExtension>
+                    <trafficRegulationOrderExtended>
+                        <dx:source>eudonet_paris</dx:source>
+                        <dx:publicUrl>https://dialog.beta.gouv.fr/regulations/019851f7-87b8-7d0b-ba09-de8315903c98</dx:publicUrl>
+                    </trafficRegulationOrderExtended>
+                </_trafficRegulationOrderExtension>
+            </trafficRegulationOrder>
+
+            </trafficRegulationsFromCompetentAuthorities>
+</d2:payload>
