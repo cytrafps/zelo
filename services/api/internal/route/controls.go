@@ -2,6 +2,7 @@ package route
 
 import (
 	"math"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -57,6 +58,9 @@ func Annotate(r *Route, controls []Control) {
 		if best != "" {
 			s.Control = best
 			s.Instruction = prefix(best) + lowerFirst(s.Instruction)
+			for i := range s.Voice {
+				s.Voice[i].Text = voiceControl(s.Voice[i].Text, best)
+			}
 		}
 	}
 }
@@ -83,6 +87,25 @@ func project(pts [][2]float64, cum []float64, p [2]float64, from, to float64) (a
 		}
 	}
 	return along, off
+}
+
+// voiceControl place le repère dans l'annonce de la manœuvre : « Dans 100 mètres, au feu,
+// tournez à droite… », « …Ensuite, au stop, tournez… ». L'annonce qui ne parle que de la route
+// en cours (« Continuez pendant 600 mètres. ») reste telle quelle.
+func voiceControl(text, kind string) string {
+	if i := strings.Index(text, "Ensuite, "); i >= 0 {
+		i += len("Ensuite, ")
+		return text[:i] + lowerFirst(prefix(kind)) + text[i:]
+	}
+	if strings.HasPrefix(text, "Continuez") || strings.HasPrefix(text, "Conduisez") {
+		return text
+	}
+	if strings.HasPrefix(text, "Dans ") {
+		if i := strings.Index(text, ", "); i >= 0 {
+			return text[:i+2] + lowerFirst(prefix(kind)) + text[i+2:]
+		}
+	}
+	return prefix(kind) + lowerFirst(text)
 }
 
 var rank = map[string]int{"cédez": 1, "stop": 2, "feu": 3}

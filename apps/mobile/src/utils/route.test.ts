@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { along, bounds, cumulative, formatClock, formatDuration, pointAt, progress, type Route } from './route.ts';
+import { along, bounds, cumulative, formatClock, formatDuration, pointAt, progress, voiceDue, type Route } from './route.ts';
 
 // Vraie réponse de GET /v1/route : gare de Reims → cathédrale, 1 875 m.
 const route: Route = JSON.parse(readFileSync(new URL('./testdata/gare-cathedrale.json', import.meta.url), 'utf8'));
@@ -88,4 +88,23 @@ test("progress : sur un aller-retour, l'indice garde le guidage sur le bon passa
   assert.ok(p.segment >= 10);
   // Sans indice, la même position tombe sur l'aller.
   assert.ok(progress(loop, c, back).segment < 10);
+});
+
+test('annonces vocales : une fois chacune, au bon moment, sauf périmées', () => {
+  const voice = [
+    { before: 614, text: 'Continuez pendant 600 mètres.' },
+    { before: 243, text: 'Dans 200 mètres, tournez à droite.' },
+    { before: 69, text: 'Tournez à droite.' },
+  ];
+  assert.equal(voiceDue(voice, 700, 0), null);
+  assert.deepEqual(voiceDue(voice, 610, 0), { next: 1, text: 'Continuez pendant 600 mètres.' });
+  assert.equal(voiceDue(voice, 400, 1), null);
+  assert.deepEqual(voiceDue(voice, 240, 1), { next: 2, text: 'Dans 200 mètres, tournez à droite.' });
+  assert.deepEqual(voiceDue(voice, 60, 2), { next: 3, text: 'Tournez à droite.' });
+  assert.equal(voiceDue(voice, 10, 3), null);
+  // Reprise à 300 m du virage après un recalcul : « Continuez pendant 600 mètres » est périmée.
+  assert.deepEqual(voiceDue(voice, 300, 0), { next: 1, text: '' });
+  // Position sautée au-delà de deux annonces : seule la plus proche est dite.
+  assert.deepEqual(voiceDue(voice, 65, 1), { next: 3, text: 'Tournez à droite.' });
+  assert.equal(voiceDue(undefined, 10, 0), null);
 });
