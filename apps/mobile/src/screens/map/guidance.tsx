@@ -10,7 +10,7 @@ import { useStored } from '@/hooks/use-stored';
 import { areaFuel, areaName, nextArea } from '@/utils/areas';
 import type { TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
-import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
+import { course, formatDistance, keepFix, type Fix, type LatLon, type TimedFix } from '@/utils/geo';
 import {
   cumulative,
   deviation,
@@ -36,13 +36,21 @@ const ARRIVED_M = { drive: 30, walk: 15 } as const;
 
 /** Position précise pendant le guidage seulement (la carte d'accueil se contente d'une précision moyenne). */
 function useNavigationFix() {
-  const [fix, setFix] = useState<Fix | null>(null);
+  const [fix, setFix] = useState<TimedFix | null>(null);
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
-    Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, (l) =>
-      setFix({ lat: l.coords.latitude, lon: l.coords.longitude, heading: course(l.coords), accuracy: l.coords.accuracy }),
-    )
+    Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, (l) => {
+      const next = {
+        lat: l.coords.latitude,
+        lon: l.coords.longitude,
+        heading: course(l.coords),
+        accuracy: l.coords.accuracy,
+        at: l.timestamp,
+      };
+      // Même objet si la position est écartée : rien ne se recalcule.
+      setFix((prev) => keepFix(prev, next));
+    })
       .then((s) => (cancelled ? s.remove() : (sub = s)))
       .catch(() => {
         // Localisation coupée : le bandeau garde la dernière manœuvre connue.
