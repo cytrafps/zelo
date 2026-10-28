@@ -373,3 +373,44 @@ func TestAnnotateGiveWay(t *testing.T) {
 		t.Fatal("aucune manœuvre au cédez-le-passage")
 	}
 }
+
+// Valhalla rédige les annonces vocales ; elles sont rattachées à la manœuvre qu'elles préparent,
+// et le feu y est annoncé comme dans le bandeau.
+func TestVoice(t *testing.T) {
+	body, err := os.ReadFile("testdata/gare-saint-remi-voix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := fakeValhalla(t, http.StatusOK, body).Routes(context.Background(), gare, cathedrale, Car, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := routes[0]
+	if len(r.Steps[0].Voice) != 0 {
+		t.Errorf("départ : %+v", r.Steps[0].Voice)
+	}
+	want := []Voice{
+		{51.6, "Conduisez vers le sud-est sur Cour de la Gare. Ensuite, tournez à droite dans Boulevard Joffre."},
+		{12.9, "Tournez à droite dans Boulevard Joffre."},
+	}
+	if !slices.Equal(r.Steps[1].Voice, want) {
+		t.Errorf("étape 1 : %+v", r.Steps[1].Voice)
+	}
+	if got := r.Steps[2].Voice[1].Text; got != "Dans 100 mètres, faites demi-tour à gauche dans Boulevard Louis Roederer." {
+		t.Errorf("annonce : %q", got)
+	}
+	p := r.Coordinates[r.Steps[3].Shape]
+	Annotate(&r, []Control{{Kind: "feu", Lat: p[1], Lon: p[0]}})
+	if r.Steps[3].Control != "feu" {
+		t.Fatalf("feu non retenu : %+v", r.Steps[3])
+	}
+	for i, w := range []string{
+		"Continuez pendant 600 mètres.",
+		"Dans 200 mètres, au feu, tournez à droite dans Place de la République.",
+		"Au feu, tournez à droite dans Place de la République, N 44.",
+	} {
+		if got := r.Steps[3].Voice[i].Text; got != w {
+			t.Errorf("annonce %d : %q, attendu %q", i, got, w)
+		}
+	}
+}

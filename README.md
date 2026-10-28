@@ -201,4 +201,4 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | [Temps réel du réseau Grand Reims Mobilités](https://transport.data.gouv.fr/datasets/offre-de-transport-du-reseau-grand-reims-mobilites-communaute-urbaine-du-grand-reims) (GTFS-RT) | 30 s | Licence Ouverte 2.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass (parkings, feux et stops, aires d'autoroute, noms des arrêts) | 24 h | ODbL (attribution « © contributeurs OpenStreetMap ») |
 | [Bornes IRVE dynamiques](https://transport.data.gouv.fr/) (bêta) | 5 min | Licence Ouverte 2.0 |
-| Tarifs des parkings du centre, relevés sur les sites de [Champagne Parc Auto](https://www.cpa-champagneparcauto.com/parkings/) et d'[Effia](https://www.effia.com/) | À la main, datés | Seul le tarif affiché sur place fait foi |
+| Tarifs des parkings du centre, relevés sur les sites de [Champagne Parc Auto](https://www.cpa-champagneparcauto.com/parkings/) et d'[Effia](https://www.effia.com/) | Chaque jour, lus sur la page de chaque parking (dernier relevé manuel en secours), datés | Seul le tarif affiché sur place fait foi |

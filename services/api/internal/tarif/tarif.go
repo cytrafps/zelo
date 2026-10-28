@@ -1,10 +1,12 @@
 // Package tarif donne le prix des principaux parkings payants de Reims.
 //
-// Aucune source ouverte ne publie ces tarifs : ils sont relevés à la main sur le site de
-// chaque exploitant (lien dans tarifs.json) et datés. Seul le tarif affiché sur place fait foi.
+// Aucune source ouverte ne publie ces tarifs : Refresh les relit chaque jour sur le site de
+// chaque exploitant (lien dans tarifs.json, qui garde le dernier relevé à la main en secours) et
+// les date. Seul le tarif affiché sur place fait foi.
 package tarif
 
 import (
+	"cmp"
 	_ "embed"
 	"encoding/json"
 )
@@ -37,6 +39,7 @@ type grid struct {
 	Quarters [][2]int `json:"quarters"`
 	Cap      int      `json:"cap"`
 	Points   [][2]int `json:"points"`
+	Checked  string   `json:"-"` // date de lecture sur le site ; vide : relevé de tarifs.json
 }
 
 // price : centimes pour m minutes (m ≤ 24 h), ou -1 si la grille ne le dit pas.
@@ -88,11 +91,11 @@ var table = func() (t struct {
 
 // For renvoie les tarifs du parking OSM `id` (« way/123 »), ou nil s'il n'a pas été relevé.
 func For(id string) *Summary {
-	g, ok := table.Parkings[id]
+	g, ok := grids()[id]
 	if !ok {
 		return nil
 	}
-	s := &Summary{Free: g.Free, Source: g.Source, Checked: table.Checked}
+	s := &Summary{Free: g.Free, Source: g.Source, Checked: cmp.Or(g.Checked, table.Checked)}
 	for _, m := range Durations {
 		if c := g.price(m); c >= 0 {
 			s.Prices = append(s.Prices, Price{m, c})

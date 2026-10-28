@@ -14,7 +14,31 @@ export type Step = {
   lanes?: Lane[];
   /** La manœuvre se fait à un feu, un stop ou un cédez-le-passage (OpenStreetMap). */
   control?: 'feu' | 'stop' | 'cédez';
+  /** Annonces vocales rédigées par Valhalla, la plus lointaine d'abord. */
+  voice?: Voice[];
 };
+
+/** À dire quand il reste `before` mètres jusqu'à la manœuvre. */
+export type Voice = { before: number; text: string };
+
+/** Le temps de dire l'annonce : on la lance un peu avant son point. */
+const VOICE_LEAD_M = 10;
+/** Passé son point de plus que ça (reprise après un recalcul, saut GPS), l'annonce ne vaut plus : « Continuez pendant 600 mètres » à 300 m du virage. */
+const VOICE_STALE_M = 150;
+
+/**
+ * Annonce à dire maintenant pour la prochaine manœuvre : la plus proche de celles dont le point
+ * est passé, si elle n'a pas déjà été traitée (`done` : nombre d'annonces de cette manœuvre déjà
+ * traitées). `next` est le nouveau `done` ; `text` est vide quand l'annonce est périmée.
+ */
+export function voiceDue(voice: readonly Voice[] | undefined, toNext: number, done: number) {
+  if (!voice) return null;
+  let i = done - 1;
+  while (i + 1 < voice.length && voice[i + 1].before >= toNext - VOICE_LEAD_M) i++;
+  if (i < done) return null;
+  const v = voice[i];
+  return { next: i + 1, text: v.before - toNext <= VOICE_STALE_M ? v.text : '' };
+}
 
 export type Lane = {
   /** Flèches au sol : « left », « straight », « slight right »… */

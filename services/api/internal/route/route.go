@@ -15,6 +15,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -56,8 +57,17 @@ type Step struct {
 	// Lanes : voies à l'approche de la manœuvre, de gauche à droite ; absent si la route n'en
 	// décrit pas ou si toutes conviennent (rien à montrer).
 	Lanes []Lane `json:"lanes,omitempty"`
-	// Control : feu ou stop au carrefour de la manœuvre (« feu », « stop »), voir Annotate.
+	// Control : feu, stop ou cédez-le-passage au carrefour de la manœuvre, voir Annotate.
 	Control string `json:"control,omitempty"`
+	// Voice : annonces vocales de la manœuvre, la plus lointaine d'abord.
+	Voice []Voice `json:"voice,omitempty"`
+}
+
+// Voice : une annonce à dire quand il reste Before mètres jusqu'à la manœuvre (« Dans 200
+// mètres, tournez à droite… »). Valhalla les rédige et les place lui-même.
+type Voice struct {
+	Before float64 `json:"before"`
+	Text   string  `json:"text"`
 }
 
 // Lane : une voie, ses flèches au sol (« left », « straight », « slight right »…) et si elle
@@ -145,6 +155,7 @@ type request struct {
 	DateTime       *dateTime            `json:"date_time,omitempty"`
 	Alternates     int                  `json:"alternates,omitempty"`
 	Format         string               `json:"format"`
+	Voice          bool                 `json:"voice_instructions"`
 	Directions     struct {
 		Language string `json:"language"`
 		Units    string `json:"units"`
@@ -168,6 +179,11 @@ type osrmStep struct {
 		Instruction string `json:"instruction"`
 	} `json:"maneuver"`
 	Intersections []osrmIntersection `json:"intersections"`
+	// Annonces menant à la manœuvre suivante, placées en mètres avant la fin de l'étape.
+	VoiceInstructions []struct {
+		Announcement          string  `json:"announcement"`
+		DistanceAlongGeometry float64 `json:"distanceAlongGeometry"`
+	} `json:"voiceInstructions"`
 }
 
 type osrmIntersection struct {
@@ -219,6 +235,7 @@ func (c *Client) Routes(ctx context.Context, from, to Point, mode Mode, opts Opt
 		req.CostingOptions = map[Mode]autoCosting{mode: a}
 	}
 	req.Format = "osrm"
+	req.Voice = true
 	req.Directions.Language = "fr-FR"
 	req.Directions.Units = "kilometers"
 	body, _ := json.Marshal(req)
@@ -289,6 +306,7 @@ func (o osrmRoute) route() (Route, error) {
 				r.motorway[k] = m.fast
 			}
 		}
+		base := len(r.Steps)
 		for k, st := range leg.Steps {
 			if len(st.Intersections) == 0 {
 				return Route{}, errors.New("valhalla: étape sans point de manœuvre")
@@ -308,8 +326,28 @@ func (o osrmRoute) route() (Route, error) {
 			}
 			r.Steps = append(r.Steps, s)
 		}
+		// Les annonces d'une étape préparent la manœuvre suivante : elles lui sont rattachées.
+		for k := 1; k < len(leg.Steps); k++ {
+			next := &r.Steps[base+k]
+			for _, v := range leg.Steps[k-1].VoiceInstructions {
+				next.Voice = append(next.Voice, Voice{Before: v.DistanceAlongGeometry, Text: tidyVoice(v.Announcement)})
+			}
+		}
 	}
 	return r, nil
+}
+
+// prefaces : débuts d'annonce que Valhalla fait suivre d'une majuscule (« Ensuite, Tournez… »).
+var prefaces = regexp.MustCompile(`(Ensuite, |^Dans [^,]+, )(\p{Lu})(\p{Ll})`)
+
+// tidyVoice corrige la rédaction de Valhalla : majuscule après « Ensuite, » ou « Dans 200
+// mètres, », point doublé en fin d'annonce.
+func tidyVoice(s string) string {
+	s = strings.ReplaceAll(strings.TrimSpace(s), "..", ".")
+	return prefaces.ReplaceAllStringFunc(s, func(m string) string {
+		p := prefaces.FindStringSubmatch(m)
+		return p[1] + strings.ToLower(p[2]) + p[3]
+	})
 }
 
 // LanesWithin : au-delà, des voies décrites avant la manœuvre concernent un autre carrefour.

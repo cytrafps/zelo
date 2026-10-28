@@ -1,15 +1,17 @@
 import * as Location from 'expo-location';
 import { useKeepAwake } from 'expo-keep-awake';
+import * as Speech from 'expo-speech';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useNow } from '@/hooks/use-now';
+import { useStored } from '@/hooks/use-stored';
 import { areaFuel, areaName, nextArea } from '@/utils/areas';
 import type { TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
-import { cumulative, formatClock, formatDuration, progress, type Lane, type Progress, type Route } from '@/utils/route';
+import { cumulative, formatClock, formatDuration, progress, voiceDue, type Lane, type Progress, type Route } from '@/utils/route';
 
 import { laneIcon, maneuverIcon, maneuverSide } from './maneuver';
 
@@ -75,6 +77,10 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
   const offCount = useRef(0);
   const lastReroute = useRef(0);
   const arrived = useRef<Route | null>(null);
+  const [voiceOn, setVoiceOn] = useStored('zelo.voix', true);
+  /** Annonces déjà traitées pour la manœuvre en cours. */
+  const spoken = useRef({ route: null as Route | null, step: -1, done: 0 });
+  useEffect(() => () => void Speech.stop(), []);
 
   useEffect(() => {
     if (!fix || !p) return;
@@ -82,6 +88,16 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
       arrived.current = route;
       onArrive(fix);
       return;
+    }
+    const s = spoken.current;
+    const same = s.route === route && s.step === p.next;
+    const v = rerouting ? null : voiceDue(route.steps[p.next]?.voice, p.toNext, same ? s.done : 0);
+    if (v) {
+      spoken.current = { route, step: p.next, done: v.next };
+      if (v.text && voiceOn) {
+        void Speech.stop();
+        Speech.speak(v.text, { language: 'fr-FR' });
+      }
     }
     offCount.current = p.offRoute > OFF_ROUTE_M ? offCount.current + 1 : 0;
     if (offCount.current >= 2 && Date.now() - lastReroute.current > REROUTE_EVERY_MS) {
@@ -155,6 +171,23 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
         </View>
         <View style={[styles.sep, { backgroundColor: c.fond.separateur }]} />
         <Stop phase={phase} target={target} c={c} />
+        <Pressable
+          onPress={() => {
+            if (voiceOn) void Speech.stop();
+            setVoiceOn(!voiceOn);
+          }}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: voiceOn }}
+          accessibilityLabel="Annonces vocales"
+          hitSlop={8}
+          style={({ pressed }) => [styles.close, { backgroundColor: c.fond.attenue, opacity: pressed ? 0.7 : 1 }]}
+        >
+          <SymbolView
+            name={voiceOn ? { ios: 'speaker.wave.2.fill', android: 'volume_up' } : { ios: 'speaker.slash.fill', android: 'volume_off' }}
+            tintColor={c.texte.principal}
+            size={18}
+          />
+        </Pressable>
         <Pressable
           onPress={onClose}
           accessibilityRole="button"

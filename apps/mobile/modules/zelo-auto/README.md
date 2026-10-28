@@ -6,6 +6,8 @@ Module natif (Kotlin, [Android for Cars App Library](https://developer.android.c
 - **Recharge** : les bornes libres (ou sans état publié) les plus proches, avec la puissance.
 - **Fiche** : tarifs, places, hauteur ; disponibilité, puissance, prix. « Y aller » passe le guidage à l'app de navigation de la voiture (Google Maps, Waze…).
 
+- **Voiture garée, place libérée** : tant que l'app vit (ouverte, ou Zelo affiché dans la voiture), `CarWatch` suit la connexion à Android Auto. À la déconnexion, il note la dernière position connue du téléphone ; l'app l'enregistre comme emplacement de la voiture si elle est récente (moins de 3 min) et précise (moins de 50 m), sinon elle demande où l'on est garé. À la reconnexion, la place enregistrée est proposée au signalement « place libérée » pendant 20 min. Rien ne quitte le téléphone sans que l'utilisateur touche « Signaler ».
+
 L'écran de la voiture tourne sans JavaScript : l'app lui transmet seulement l'adresse de l'API au démarrage (`setApiUrl`). La position vient du téléphone, avec l'autorisation déjà donnée à Zelo.
 
 ## Tester
