@@ -5,7 +5,7 @@ import { ApiError, getRoutes, type Avoid, type ChargeStation, type Parking } fro
 import { useStored } from '@/hooks/use-stored';
 import type { Fix } from '@/utils/geo';
 import type { Route } from '@/utils/route';
-import { targetPoint, type Target } from '@/utils/targets';
+import { needsWalk, targetPoint, type Target } from '@/utils/targets';
 
 export type TripTarget = Target<Parking, ChargeStation>;
 
@@ -52,7 +52,7 @@ export function useTrip() {
       const stop = targetPoint(target, destination);
       const [routes, walk] = await Promise.all([
         getRoutes(from, stop, 'car', { alternates, heading: from.heading, depart, avoid }, ctl.signal),
-        target.kind === 'dropoff'
+        !needsWalk(target)
           ? Promise.resolve(null)
           : getRoutes(stop, destination, 'walk', {}, ctl.signal).then((r) => r[0]),
       ]);

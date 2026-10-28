@@ -33,7 +33,7 @@ func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.Ch
 	return nil, nil
 }
 func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking, error) {
-	return nil, nil
+	return []store.Parking{{ID: "way/31432939", Name: "Erlon"}, {ID: "way/1", Name: "Sans relevé"}}, nil
 }
 func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, error) {
 	return f.added, nil
@@ -257,5 +257,15 @@ func TestRoute(t *testing.T) {
 		if rec := call(Config{Router: &fakeRouter{err: err}}, ok); rec.Code != code {
 			t.Errorf("%v : %d, attendu %d", err, rec.Code, code)
 		}
+	}
+}
+
+func TestParkingsTariff(t *testing.T) {
+	rec := httptest.NewRecorder()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	New(&fakeStore{}, live.NewHub(), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3", nil))
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `"name":"Erlon"`) || !strings.Contains(body, `"tariff":{"free":30,"prices":[{"minutes":60,"cents":120}`) || !strings.Contains(body, `"name":"Sans relevé","operator":"","kind":"","lat":0,"lon":0,"capacity":null,"disabled":null,"charging":null,"fee":null,"maxHeight":null,"openingHours":"","parkRide":false,"tariff":null`) {
+		t.Fatalf("%d %s", rec.Code, body)
 	}
 }

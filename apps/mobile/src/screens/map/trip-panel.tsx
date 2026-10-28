@@ -7,6 +7,7 @@ import type { Avoid, Report } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
+import { formatCents, formatStay } from '@/utils/format';
 import { walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Route } from '@/utils/route';
 import { sameTarget } from '@/utils/targets';
@@ -64,18 +65,22 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsRow}>
-        <Pressable
-          onPress={() => setChoosing((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel="Choisir où se garer"
-          style={[styles.chip, { borderColor: c.fond.separateur }]}
-        >
-          <TargetIcon t={trip.target} c={c} size={16} />
-          <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
-            {short(trip.target)}
-          </Text>
-          <Chevron c={c} />
-        </Pressable>
+        {/* Sans choix d'arrêt (« Y aller » vers une station), pas de puce. */}
+        {(trip.target.kind !== 'dropoff' || trip.options.length > 1) && (
+          <Pressable
+            onPress={() => setChoosing((v) => !v)}
+            disabled={trip.options.length < 2}
+            accessibilityRole="button"
+            accessibilityLabel="Choisir où se garer"
+            style={[styles.chip, { borderColor: c.fond.separateur }]}
+          >
+            <TargetIcon t={trip.target} c={c} size={16} />
+            <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.texte.principal }]}>
+              {short(trip.target)}
+            </Text>
+            {trip.options.length > 1 && <Chevron c={c} />}
+          </Pressable>
+        )}
 
         <MenuView
           title="Départ"
@@ -271,6 +276,8 @@ function detail(t: TripTarget) {
   if (t.kind === 'dropoff') return 'Pas de stationnement';
   const walk = `${walkingMinutes(t.walk)} min à pied`;
   if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
+  const first = t.item.tariff?.prices[0];
+  if (first) return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;
   return t.item.fee === false ? `Gratuit · ${walk}` : walk;
 }
 

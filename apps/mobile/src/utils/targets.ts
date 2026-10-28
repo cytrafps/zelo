@@ -36,6 +36,12 @@ export function targets<P extends Parking, C extends Charge>(dest: LatLon, parki
   return out;
 }
 
+/** En dessous (m), l'arrêt est la destination : pas de trajet à pied. */
+const MIN_WALK = 30;
+
+/** Faut-il finir à pied après s'être arrêté ? */
+export const needsWalk = (t: Target) => t.kind !== 'dropoff' && t.walk >= MIN_WALK;
+
 /** Point où la voiture s'arrête. */
 export const targetPoint = (t: Target, dest: LatLon): LatLon => (t.kind === 'dropoff' ? dest : t.item);
 

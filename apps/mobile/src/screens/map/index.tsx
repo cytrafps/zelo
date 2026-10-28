@@ -11,7 +11,7 @@ import { useMapData, type DataStatus } from '@/hooks/use-map-data';
 import { useParkedCar } from '@/hooks/use-parked-car';
 import { useStored } from '@/hooks/use-stored';
 import { Glass } from '@/components/glass';
-import { useTrip } from '@/hooks/use-trip';
+import { useTrip, type TripTarget } from '@/hooks/use-trip';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
 import type { LatLon } from '@/utils/geo';
@@ -111,12 +111,29 @@ export function MapScreen() {
   /** Destination choisie : aperçu du trajet, avec les parkings et bornes autour d'elle. */
   const goTo = async (place: Place) => {
     setRecents((list) => pushRecent(list, place));
+    const box = around(place, 0.012);
+    const [parkings, charge] = await Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]);
+    await startTrip(place, targets(place, parkings, charge));
+  };
+
+  /** « Y aller » depuis la fiche d'un lieu : on s'y arrête, sans proposer d'autre parking. */
+  const goToSelection = (s: Selection) => {
+    setSelection(null);
+    const place = { id: `${s.kind}-${s.item.id}`, lat: s.item.lat, lon: s.item.lon, detail: '' };
+    if (s.kind === 'fuel') {
+      const name = s.item.address || 'Station-service';
+      return startTrip({ ...place, name, label: name, detail: s.item.city }, [{ kind: 'dropoff' }]);
+    }
+    const name = s.item.name || (s.kind === 'parking' ? 'Parking' : 'Borne de recharge');
+    const stop: TripTarget = s.kind === 'parking' ? { kind: 'parking', item: s.item, walk: 0 } : { kind: 'charge', item: s.item, walk: 0 };
+    return startTrip({ ...place, name, label: name }, [stop]);
+  };
+
+  const startTrip = async (place: Place, options: TripTarget[]) => {
     setHomeTracking(null);
     const from = await location.locate().catch(() => null);
     if (!from) return flash('Active la localisation pour calculer un itinéraire');
-    const box = around(place, 0.012);
-    const [parkings, charge] = await Promise.all([getParkings(box).catch(() => []), getChargeStations(box).catch(() => [])]);
-    trips.start({ ...from, heading: location.heading() }, place, targets(place, parkings, charge));
+    trips.start({ ...from, heading: location.heading() }, place, options);
   };
 
   // Aperçu : la carte cadre tous les itinéraires au-dessus de la feuille.
@@ -271,7 +288,7 @@ export function MapScreen() {
         </View>
       )}
 
-      <PlaceSheet selection={selection} onDismiss={() => setSelection(null)} />
+      <PlaceSheet selection={selection} onDismiss={() => setSelection(null)} onGo={goToSelection} />
       <CarSheet
         isPresented={carOpen}
         onDismiss={() => setCarOpen(false)}

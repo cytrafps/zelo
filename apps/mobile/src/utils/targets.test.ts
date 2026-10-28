@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { sameTarget, targetPoint, targets } from './targets.ts';
+import { sameTarget, targetPoint, targets, needsWalk } from './targets.ts';
 
 const cinema = { lat: 49.2556, lon: 4.0262 };
 const p = (id: string, dLat: number, fee: boolean | null = true) => ({ id, name: id, lat: cinema.lat + dLat, lon: cinema.lon, fee });
@@ -29,4 +29,11 @@ test('targetPoint et sameTarget', () => {
   assert.deepEqual(targetPoint(dropoff, cinema), cinema);
   assert.equal(targetPoint(erlon, cinema).lat, cinema.lat + 0.002);
   assert.ok(sameTarget(erlon, { ...erlon }) && !sameTarget(erlon, dropoff));
+});
+
+test("needsWalk : pas de trajet à pied quand on se gare à destination", () => {
+  const p = { id: 'p', name: 'Erlon', fee: true, lat: 49.25, lon: 4.03 };
+  assert.equal(needsWalk({ kind: 'parking', item: p, walk: 0 }), false);
+  assert.equal(needsWalk({ kind: 'parking', item: p, walk: 210 }), true);
+  assert.equal(needsWalk({ kind: 'dropoff' }), false);
 });
