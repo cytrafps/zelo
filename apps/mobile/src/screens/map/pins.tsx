@@ -1,21 +1,10 @@
-import { ViewAnnotation } from '@maplibre/maplibre-react-native';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-
-import type { BBox, ChargeStation, FuelStation, Parking } from '@/api/zelo';
-import { police, rayon, type Couleurs } from '@/theme';
-import { FUEL_ORDER } from '@/utils/format';
-import { nearest, type LatLon } from '@/utils/geo';
-
-import type { Selection } from './place-sheet';
+import { Images } from '@maplibre/maplibre-react-native';
+import type { SymbolViewProps } from 'expo-symbols';
 
 export type Category = 'carburant' | 'recharge' | 'stationnement';
 
-/** En dessous de ce zoom, les points restent de simples ronds (couches GeoJSON). */
+/** À partir de ce zoom, les ronds deviennent les pastilles des maquettes (icône + valeur). */
 export const PIN_MIN_ZOOM = 14.5;
-/** Au-delà, une vue native par repère coûte cher : on n'affiche que les plus proches du centre. */
-const MAX_PINS = 50;
 
 export const CATEGORY_ICON: Record<Category, SymbolViewProps['name']> = {
   carburant: { ios: 'fuelpump.fill', android: 'local_gas_station' },
@@ -23,89 +12,63 @@ export const CATEGORY_ICON: Record<Category, SymbolViewProps['name']> = {
   stationnement: { ios: 'parkingsign', android: 'local_parking' },
 };
 
-type Pin = LatLon & { id: string; label: string; muted: boolean; select: Selection };
-
-const price = (prices: Record<string, number>) => {
-  const fuel = FUEL_ORDER.find((f) => f in prices);
-  return fuel ? prices[fuel].toFixed(2).replace('.', ',') : '';
+/**
+ * Pastilles dessinées par la carte elle-même (couche « symbol »), pas par des vues React :
+ * le moteur natif les place et les déclutte à chaque image, sans passer par JavaScript.
+ * Une image par forme et par thème ; la valeur (prix, places libres) est un texte de la couche.
+ */
+const LIGHT = {
+  'pin-parking': require('../../../assets/map/pin-parking-light.png'),
+  'pin-fuel': require('../../../assets/map/pin-fuel-light.png'),
+  'pin-fuel-icon': require('../../../assets/map/pin-fuel-icon-light.png'),
+  'pin-ev': require('../../../assets/map/pin-ev-light.png'),
+  'pin-ev-s': require('../../../assets/map/pin-ev-s-light.png'),
+  'pin-ev-l': require('../../../assets/map/pin-ev-l-light.png'),
+  'pin-ev-s-off': require('../../../assets/map/pin-ev-s-off-light.png'),
+  'pin-ev-l-off': require('../../../assets/map/pin-ev-l-off-light.png'),
 };
 
-function toPins(category: Category, data: { fuel: FuelStation[]; charge: ChargeStation[]; parkings: Parking[] }): Pin[] {
-  switch (category) {
-    case 'carburant':
-      return data.fuel.map((s) => ({ id: s.id, lat: s.lat, lon: s.lon, label: price(s.prices), muted: false, select: { kind: 'fuel', item: s } }));
-    case 'recharge':
-      return data.charge.map((s) => ({
-        id: s.id,
-        lat: s.lat,
-        lon: s.lon,
-        label: s.available === null ? '' : `${s.available}/${s.total}`,
-        muted: s.available === 0,
-        select: { kind: 'charge', item: s },
-      }));
-    case 'stationnement':
-      // Icône seule, comme dans les maquettes : le tarif et la gratuité sont dans la fiche.
-      return data.parkings.map((p) => ({
-        id: p.id,
-        lat: p.lat,
-        lon: p.lon,
-        label: '',
-        muted: false,
-        select: { kind: 'parking', item: p },
-      }));
-  }
+const DARK: typeof LIGHT = {
+  'pin-parking': require('../../../assets/map/pin-parking-dark.png'),
+  'pin-fuel': require('../../../assets/map/pin-fuel-dark.png'),
+  'pin-fuel-icon': require('../../../assets/map/pin-fuel-icon-dark.png'),
+  'pin-ev': require('../../../assets/map/pin-ev-dark.png'),
+  'pin-ev-s': require('../../../assets/map/pin-ev-s-dark.png'),
+  'pin-ev-l': require('../../../assets/map/pin-ev-l-dark.png'),
+  'pin-ev-s-off': require('../../../assets/map/pin-ev-s-off-dark.png'),
+  'pin-ev-l-off': require('../../../assets/map/pin-ev-l-off-dark.png'),
+};
+
+export type PinImage = keyof typeof LIGHT;
+
+export function PinImages({ dark }: { dark: boolean }) {
+  return <Images images={dark ? DARK : LIGHT} />;
 }
 
-type Props = {
-  category: Category;
-  data: { fuel: FuelStation[]; charge: ChargeStation[]; parkings: Parking[] };
-  view: BBox;
-  c: Couleurs;
-  onSelect: (s: Selection) => void;
-};
+/**
+ * Le texte commence juste après la tuile de couleur, à 34 px du bord gauche de la pastille :
+ * décalage en em (police de 15 px) depuis le centre de l'image, selon la largeur de la pastille.
+ */
+const offset = (width: number): [number, number] => [(34 - width / 2) / 15, 0];
 
-/** Pastilles des maquettes (icône de catégorie + valeur), pour les repères les plus proches du centre. */
-export const Pins = memo(function Pins({ category, data, view, c, onSelect }: Props) {
-  const [w, s, e, n] = view;
-  const center = { lat: (s + n) / 2, lon: (w + e) / 2 };
-  const visible = toPins(category, data).filter((p) => p.lon >= w && p.lon <= e && p.lat >= s && p.lat <= n);
-  const tone = { carburant: c.carburant, recharge: c.recharge, stationnement: c.stationnement }[category];
+/** Expression de la couche : décalage du texte selon l'image de la pastille. */
+export const TEXT_OFFSET = [
+  'match',
+  ['get', 'pin'],
+  'pin-fuel',
+  ['literal', offset(74)],
+  ['pin-ev-s', 'pin-ev-s-off'],
+  ['literal', offset(68)],
+  ['pin-ev-l', 'pin-ev-l-off'],
+  ['literal', offset(84)],
+  ['literal', [0, 0]],
+];
 
-  return nearest(visible, center, MAX_PINS).map(({ item: p }) => (
-    <ViewAnnotation key={p.id} id={`pin-${p.id}`} lngLat={[p.lon, p.lat]} onPress={() => onSelect(p.select)}>
-      <View style={[styles.pill, { backgroundColor: c.fond.surface }, !p.label && styles.pillIcon]}>
-        <View style={[styles.tile, { backgroundColor: p.muted ? c.indisponible : tone.base }]}>
-          {category === 'stationnement' ? (
-            <Text style={styles.letter}>P</Text>
-          ) : (
-            <SymbolView name={CATEGORY_ICON[category]} tintColor="#FFFFFF" size={15} />
-          )}
-        </View>
-        {p.label ? (
-          <Text style={[styles.label, { color: p.muted ? c.texte.secondaire : c.texte.principal }]}>{p.label}</Text>
-        ) : null}
-      </View>
-    </ViewAnnotation>
-  ));
-});
+/** Pastille d'une station : avec le prix, ou l'icône seule s'il n'est pas publié. */
+export const fuelPin = (label: string): PinImage => (label ? 'pin-fuel' : 'pin-fuel-icon');
 
-const styles = StyleSheet.create({
-  pill: {
-    height: 32,
-    paddingLeft: 4,
-    paddingRight: 10,
-    borderRadius: rayon.pilule,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  pillIcon: { paddingRight: 4 },
-  tile: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  letter: { color: '#FFFFFF', fontFamily: police, fontSize: 15, fontWeight: '700' },
-  label: { fontFamily: police, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
-});
+/** Pastille d'une borne : icône seule sans état publié, grise si aucun point n'est libre. */
+export function chargePin(label: string, free: boolean): PinImage {
+  if (!label) return 'pin-ev';
+  return `pin-ev-${label.length > 3 ? 'l' : 's'}${free ? '' : '-off'}`;
+}

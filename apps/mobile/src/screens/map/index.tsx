@@ -6,15 +6,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Place } from '@/api/geocode';
 import { getChargeStations, getParkings, type BBox } from '@/api/zelo';
+import { Glass } from '@/components/glass';
 import { useLive } from '@/hooks/use-live';
-import { useMapData, type DataStatus } from '@/hooks/use-map-data';
+import { useMapData, type DataStatus, type Place as DataPlace } from '@/hooks/use-map-data';
 import { useParkedCar } from '@/hooks/use-parked-car';
 import { useStored } from '@/hooks/use-stored';
-import { Glass } from '@/components/glass';
 import { useTrip, type TripTarget } from '@/hooks/use-trip';
 import { useUserLocation } from '@/hooks/use-user-location';
 import { espace, rayon, texte, useTheme, type Couleurs } from '@/theme';
-import type { LatLon } from '@/utils/geo';
+import { distance, type LatLon } from '@/utils/geo';
 import { pushRecent } from '@/utils/recents';
 import { bounds } from '@/utils/route';
 import { targets } from '@/utils/targets';
@@ -26,7 +26,7 @@ import { HomePanel } from './home-panel';
 import { ChargeLayer, FuelLayer, ParkingLayer, ReportLayer } from './layers';
 import { mapStyle } from './map-style';
 import { CarMarker, DestinationMarker, StopMarker } from './markers';
-import { PIN_MIN_ZOOM, Pins, type Category } from './pins';
+import { PinImages, type Category } from './pins';
 import { PlaceSheet, type Selection } from './place-sheet';
 import { ReportDetailSheet } from './report-detail-sheet';
 import { ReportSheet } from './report-sheet';
@@ -39,9 +39,8 @@ export function MapScreen() {
   const { c, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const camera = useRef<CameraRef>(null);
-  const [view, setView] = useState<BBox | null>(null);
+  /** Centre de la carte, à 300 m près : il ne sert qu'à orienter la recherche et à défaut de GPS. */
   const [center, setCenter] = useState(REIMS);
-  const [zoom, setZoom] = useState(15);
   const [category, setCategory] = useStored<Category>('zelo.categorie', 'stationnement');
   const [recents, setRecents] = useStored<Place[]>('zelo.recents', []);
   const [panelHeight, setPanelHeight] = useState(0);
@@ -69,11 +68,12 @@ export function MapScreen() {
       ? undefined
       : (homeTracking ?? undefined);
 
-  const data = useMapData(view);
-  const live = useLive(data.upsertReport, data.removeReport, data.reload);
+  const data = useMapData(trip ? null : PLACE[category]);
+  const live = useLive(data.upsertReport, data.removeReport, data.reloadReports);
   const [reportId, setReportId] = useState<number | null>(null);
   const openReport = data.reports.find((r) => r.id === reportId) ?? null;
-  const location = useUserLocation();
+  // Pendant le guidage, la position vient du suivi précis de Guidance : pas de second abonnement.
+  const location = useUserLocation(!guiding);
 
   const select =
     (kind: Selection['kind']): NonNullable<GeoJSONSourceProps['onPress']> =>
@@ -179,9 +179,10 @@ export function MapScreen() {
         compass
         compassPosition={{ top: top + 172, right: espace[4] }}
         onRegionDidChange={(e) => {
-          setView(e.nativeEvent.bounds);
-          setCenter(e.nativeEvent.center);
-          setZoom(e.nativeEvent.zoom);
+          // Aucun état React à chaque mouvement : la carte qui suit la voiture ne redessine pas l'écran.
+          const { bounds, center: next } = e.nativeEvent;
+          data.look(bounds);
+          if (distance(at(center), at(next)) > 300) setCenter(next);
         }}
       >
         <Camera
@@ -218,8 +219,8 @@ export function MapScreen() {
             if (typeof id === 'number') setReportId(id);
           }}
         />
+        <PinImages dark={dark} />
         {location.granted && <UserLocation accuracy heading={trip?.phase !== 'drive'} />}
-        {!trip && view && zoom >= PIN_MIN_ZOOM && <Pins category={category} data={data} view={view} c={c} onSelect={setSelection} />}
         {trip && trip.target.kind !== 'dropoff' && trip.phase !== 'walk' && <StopMarker target={trip.target} c={c} />}
         {trip && <DestinationMarker at={trip.destination} c={c} />}
         {parked.car && <CarMarker at={parked.car} c={c} onPress={() => setCarOpen(true)} />}
@@ -311,6 +312,10 @@ export function MapScreen() {
     </View>
   );
 }
+
+const PLACE: Record<Category, DataPlace> = { carburant: 'fuel', recharge: 'charge', stationnement: 'parkings' };
+
+const at = ([lon, lat]: [number, number]): LatLon => ({ lat, lon });
 
 /** Zone carrée de ±`d` degrés autour d'un point. */
 const around = (p: LatLon, d: number): BBox => [p.lon - d, p.lat - d * 0.66, p.lon + d, p.lat + d * 0.66];
