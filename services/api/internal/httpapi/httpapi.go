@@ -27,6 +27,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
+	"github.com/cytrafps/zelo/services/api/internal/transit"
 )
 
 const (
@@ -69,6 +70,8 @@ type Config struct {
 	OriginPatterns []string
 	// Router calcule les itinéraires (Valhalla) ; nil : /v1/route répond 503.
 	Router Router
+	// Transit : horaires du tram en vigueur (rechargés chaque jour) ; nil ou nil renvoyé : aucun parking relais proposé.
+	Transit func() *transit.Timetable
 }
 
 type Router interface {
@@ -101,6 +104,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("POST /v1/reports/{id}/votes", a.vote)
 	mux.HandleFunc("GET /v1/live", a.liveFeed)
 	mux.HandleFunc("GET /v1/route", a.route)
+	mux.HandleFunc("GET /v1/park-ride", a.parkRide)
 	return instrument(mux)
 }
 

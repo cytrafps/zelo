@@ -37,7 +37,7 @@ export function CarMarker({ at, c, onPress }: { at: LatLon; c: Couleurs; onPress
 
 /** Point d'arrêt du trajet (parking ou borne choisi), comme le repère sélectionné des maquettes. */
 export function StopMarker({ target, c }: { target: Exclude<TripTarget, { kind: 'dropoff' }>; c: Couleurs }) {
-  const parking = target.kind === 'parking';
+  const parking = target.kind !== 'charge'; // parking ou parking relais
   return (
     <ViewAnnotation id="arret" lngLat={[target.item.lon, target.item.lat]}>
       <View style={[styles.stop, { backgroundColor: parking ? c.stationnement.base : c.recharge.base }]}>

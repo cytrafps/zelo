@@ -8,6 +8,7 @@ import { useNow } from '@/hooks/use-now';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
 import { areaCharge, areaFuel, areaName, areaServices } from '@/utils/areas';
+import { relayDuration, titleCase } from '@/utils/transit';
 import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
@@ -42,11 +43,17 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   // Heure de départ : choisie, ou maintenant.
   const start = trip.depart ?? now;
   const walkTime = trip.walk?.duration ?? 0;
+  /** Après la conduite : la marche, ou par le relais la marche au quai, l'attente, le tram et la marche finale. */
+  const afterDrive = (r: Route) => {
+    const t = trip.target;
+    if (t.kind !== 'parkride') return walkTime;
+    return relayDuration(t.relay.rides, start + r.duration * 1000, t.relay.board.walk, walkTime) ?? walkTime;
+  };
 
   const share = () => {
     const route = trip.routes[trip.selected];
     if (!route) return;
-    const eta = formatClock(new Date((trip.depart ?? Date.now()) + (route.duration + walkTime) * 1000));
+    const eta = formatClock(new Date((trip.depart ?? Date.now()) + (route.duration + afterDrive(route)) * 1000));
     void Share.share({ message: `J'arrive à ${trip.destination.name} vers ${eta}.` });
   };
 
@@ -180,7 +187,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
             <RouteRow
               key={i}
               route={r}
-              walk={walkTime}
+              walk={afterDrive(r)}
               now={start}
               reports={reports}
               selected={i === trip.selected}
@@ -324,23 +331,28 @@ function RoundButton(props: { c: Couleurs; label: string; icon: { ios: 'xmark' |
 }
 
 function TargetIcon({ t, c, size }: { t: TripTarget; c: Couleurs; size: number }) {
+  if (t.kind === 'parkride') return <SymbolView name={{ ios: 'tram.fill', android: 'tram' }} tintColor={`#${t.relay.line.color}`} size={size} />;
   if (t.kind === 'parking') return <Text style={{ color: c.stationnement.base, fontFamily: police, fontSize: size, fontWeight: '700' }}>P</Text>;
   if (t.kind === 'charge') return <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.recharge.base} size={size} />;
   return <SymbolView name={{ ios: 'car.fill', android: 'directions_car' }} tintColor={c.texte.secondaire} size={size} />;
 }
 
-const short = (t: TripTarget) => (t.kind === 'dropoff' ? 'Dépose' : t.item.name || (t.kind === 'parking' ? 'Parking' : 'Borne'));
+const short = (t: TripTarget) =>
+  t.kind === 'dropoff' ? 'Dépose' : t.kind === 'parkride' ? 'Relais + tram' : t.item.name || (t.kind === 'parking' ? 'Parking' : 'Borne');
 
 const title = (t: TripTarget) =>
   t.kind === 'dropoff'
     ? 'Me déposer à l’entrée'
     : t.kind === 'parking'
       ? t.item.name || 'Parking'
-      : `${t.item.name || 'Borne'} · ${Math.round(t.item.maxPowerKw)} kW`;
+      : t.kind === 'parkride'
+        ? `${t.item.name || 'Parking relais'} + tram`
+        : `${t.item.name || 'Borne'} · ${Math.round(t.item.maxPowerKw)} kW`;
 
 function detail(t: TripTarget) {
   if (t.kind === 'dropoff') return 'Pas de stationnement';
   const walk = `${walkingMinutes(t.walk)} min à pied`;
+  if (t.kind === 'parkride') return `Tram jusqu'à ${titleCase(t.relay.alight.name)}, puis ${walk}`;
   if (t.kind === 'charge') return `${t.item.available} libre${(t.item.available ?? 0) > 1 ? 's' : ''} · ${walk}`;
   const first = t.item.tariff?.prices[0];
   if (first) return `${formatStay(first.minutes)} : ${formatCents(first.cents)} · ${walk}`;
@@ -382,3 +394,4 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   go: { height: 44, paddingHorizontal: espace[5], borderRadius: rayon.pilule, alignItems: 'center', justifyContent: 'center' },
 });
+

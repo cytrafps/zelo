@@ -1,6 +1,7 @@
 // Client de l'API Zelo (services/api). Les formes suivent services/api/internal/store.
 import { deviceId } from '@/utils/device';
 import { fetchWithin } from '@/utils/net';
+import type { LatLon } from '@/utils/geo';
 import type { Route } from '@/utils/route';
 
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
@@ -128,6 +129,29 @@ export const postReport = (kind: ReportKind, lat: number, lon: number) =>
 /** « Toujours là » (up) ou « Plus là ». 409 : c'est ton propre signalement. */
 export const voteReport = (id: number, up: boolean) =>
   request<{ report: Report; removed: boolean }>(`/v1/reports/${id}/votes`, { method: 'POST', body: JSON.stringify({ up }) });
+
+/** Arrêt de tram ; `walk` : mètres à vol d'oiseau depuis le parking relais ou jusqu'à la destination. */
+export type TramStop = { id: string; name: string; lat: number; lon: number; walk: number };
+
+/** Un tram entre deux arrêts (heures ISO). */
+export type Ride = { line: string; headsign: string; depart: string; arrive: string; stops: number };
+
+/** Se garer au parking relais, puis le tram jusqu'à l'arrêt le plus proche de la destination. */
+export type ParkRide = {
+  parking: Parking;
+  board: TramStop;
+  alight: TramStop;
+  /** Couleurs en hexadécimal sans « # ». */
+  line: { id: string; name: string; color: string; textColor: string };
+  rides: Ride[];
+};
+
+/** Parkings relais vers `to` sur le chemin depuis `from`, avec les trams des deux prochaines heures. */
+export function getParkRides(to: LatLon, from: LatLon | null, signal?: AbortSignal) {
+  const q = [`to=${to.lat},${to.lon}`];
+  if (from) q.push(`from=${from.lat},${from.lon}`);
+  return request<{ options: ParkRide[] }>(`/v1/park-ride?${q.join('&')}`, { signal }).then((r) => r.options);
+}
 
 export type Avoid = 'tolls' | 'highways';
 

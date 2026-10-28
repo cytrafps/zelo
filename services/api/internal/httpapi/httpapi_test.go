@@ -29,6 +29,7 @@ type fakeStore struct {
 	hub       *live.Hub
 	controls  []junction.Control
 	areas     []store.AreaOnRoute
+	parkings  []store.Parking
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -39,6 +40,9 @@ func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.Ch
 	return nil, nil
 }
 func (f *fakeStore) Parkings(context.Context, store.BBox, int) ([]store.Parking, error) {
+	if f.parkings != nil {
+		return f.parkings, nil
+	}
 	return []store.Parking{{ID: "way/31432939", Name: "Erlon"}, {ID: "way/1", Name: "Sans relevé"}}, nil
 }
 func (f *fakeStore) Controls(context.Context, [][2]float64, float64) ([]junction.Control, error) {
