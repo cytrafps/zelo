@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- « Retenir où je me gare » : savoir quand le téléphone quitte le Bluetooth de la voiture,
+       et lire la position à ce moment-là, app fermée. Demandées seulement si l'option est activée. -->
+  <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
   <application>
     <!-- Android Auto : application à gabarits, catégories parking et recharge. -->
     <meta-data
@@ -18,5 +23,12 @@
         <category android:name="androidx.car.app.category.CHARGING" />
       </intent-filter>
     </service>
+
+    <receiver android:name="app.zelo.auto.CarBluetoothReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+        <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>
