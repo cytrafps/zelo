@@ -1,4 +1,9 @@
-import { BottomSheet, Button, Column, Host, List, ListItem, Switch, Text } from '@expo/ui';
+import { BottomSheet, Button, Column, Host, List, ListItem, Switch, Text, TextInput } from '@expo/ui';
+import { useEffect, useState } from 'react';
+
+import { getEvModels } from '@/api/zelo';
+import { useStored } from '@/hooks/use-stored';
+import { evName, searchModels, type EvModel } from '@/utils/ev';
 import { Linking, Platform } from 'react-native';
 
 import type { ParkedCar } from '@/hooks/use-parked-car';
@@ -98,6 +103,7 @@ export function CarSheet({ isPresented, onDismiss, car, me, here, onPark, onForg
               />
             </>
           )}
+          <ElectricCar />
           <ParkingMemory />
         </Column>
       </BottomSheet>
@@ -128,6 +134,65 @@ function ParkingMemory() {
             </ListItem>
           ))}
         </List>
+      )}
+    </Column>
+  );
+}
+
+/** « Ma voiture électrique » : le modèle donne la batterie et la consommation, pour l'autonomie. */
+function ElectricCar() {
+  const { c } = useTheme();
+  const [ev, setEv] = useStored<EvModel | null>('zelo.ve', null);
+  const [picking, setPicking] = useState(false);
+  const [models, setModels] = useState<EvModel[] | null>(null);
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    if (picking && !models) getEvModels().then(setModels, () => setModels([]));
+  }, [picking, models]);
+
+  if (!picking)
+    return (
+      <Column spacing={4}>
+        <Text textStyle={{ ...texte.corpsFort, color: c.texte.principal }}>Voiture électrique</Text>
+        <Text textStyle={{ ...texte.secondaire, color: c.texte.secondaire }}>
+          {ev ? `${evName(ev)} · ${ev.batteryKwh} kWh utiles` : "Indique ton modèle : Zelo estime ta batterie à l'arrivée."}
+        </Text>
+        <Button label={ev ? 'Changer de modèle' : 'Choisir mon modèle'} variant="text" onPress={() => setPicking(true)} />
+      </Column>
+    );
+
+  const found = models ? searchModels(models, query, 8) : [];
+  return (
+    <Column spacing={8}>
+      <TextInput placeholder="Marque, modèle (ex. Zoé 52)" autoFocus onChangeText={setQuery} />
+      {models === null ? (
+        <Text textStyle={{ ...texte.secondaire, color: c.texte.tertiaire }}>Chargement des modèles…</Text>
+      ) : (
+        <List>
+          {found.map((m) => (
+            <ListItem
+              key={m.id}
+              onPress={() => {
+                setEv(m);
+                setPicking(false);
+              }}
+            >
+              <Text textStyle={{ ...texte.corps, color: c.texte.principal }}>{evName(m)}</Text>
+            </ListItem>
+          ))}
+        </List>
+      )}
+      <Text textStyle={{ ...texte.petit, color: c.texte.tertiaire }}>Données Open EV Data (github.com/KilowattApp/open-ev-data)</Text>
+      <Button label="Annuler" variant="text" onPress={() => setPicking(false)} />
+      {ev && (
+        <Button
+          label="Retirer ma voiture électrique"
+          variant="text"
+          onPress={() => {
+            setEv(null);
+            setPicking(false);
+          }}
+        />
       )}
     </Column>
   );

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/cytrafps/zelo/services/api/internal/closure"
+	"github.com/cytrafps/zelo/services/api/internal/evdata"
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/live"
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
@@ -119,6 +120,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /v1/park-ride", a.parkRide)
 	mux.HandleFunc("GET /v1/zfe", a.zfe)
 	mux.HandleFunc("GET /v1/weather", a.weather)
+	mux.HandleFunc("GET /v1/ev-models", evModels)
 	return instrument(mux)
 }
 
@@ -251,6 +253,19 @@ func (a *API) weather(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	writeJSON(w, http.StatusOK, map[string]any{"outlook": out})
+}
+
+// evModels : GET /v1/ev-models — voitures électriques (Open EV Data), une liste figée à chaque
+// version de l'API : l'app la garde en cache et la revalide par ETag.
+func evModels(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("ETag", evdata.ETag)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if r.Header.Get("If-None-Match") == evdata.ETag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(evdata.JSON)
 }
 
 func zoneTouches(z zfe.Zone, b store.BBox) bool {
