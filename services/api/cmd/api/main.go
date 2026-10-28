@@ -140,6 +140,7 @@ func run(log *slog.Logger, once bool) error {
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "zelo_live_clients", Help: "Clients connectés au flux temps réel.",
 	}, func() float64 { return float64(hub.Len()) }))
+	registerPoolMetrics(db)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
@@ -276,4 +277,25 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// registerPoolMetrics expose le pool PostgreSQL : un pool saturé (acquisitions qui attendent)
+// explique une API lente avant que la base elle-même ne le soit.
+func registerPoolMetrics(db *store.Store) {
+	gauge := func(name, help string, v func() float64) {
+		prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: name, Help: help}, v))
+	}
+	counter := func(name, help string, v func() float64) {
+		prometheus.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: name, Help: help}, v))
+	}
+	gauge("zelo_db_pool_acquired_conns", "Connexions PostgreSQL en cours d'utilisation.",
+		func() float64 { return float64(db.PoolStat().AcquiredConns()) })
+	gauge("zelo_db_pool_idle_conns", "Connexions PostgreSQL ouvertes et libres.",
+		func() float64 { return float64(db.PoolStat().IdleConns()) })
+	gauge("zelo_db_pool_max_conns", "Taille maximale du pool PostgreSQL.",
+		func() float64 { return float64(db.PoolStat().MaxConns()) })
+	counter("zelo_db_pool_empty_acquire_total", "Acquisitions qui ont dû attendre une connexion libre.",
+		func() float64 { return float64(db.PoolStat().EmptyAcquireCount()) })
+	counter("zelo_db_pool_acquire_wait_seconds_total", "Temps total passé à attendre une connexion.",
+		func() float64 { return db.PoolStat().AcquireDuration().Seconds() })
 }
