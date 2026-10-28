@@ -33,6 +33,16 @@ export type ChargeStation = {
   observedAt: string | null;
   /** Prix annoncé par l'opérateur ; null s'il ne le publie pas lisiblement. */
   price: { free: boolean; kwh: number; from: boolean } | null;
+  /** Tous les points en « accès réservé » (clients, flotte) : pas pour le public. */
+  reserved: boolean;
+  /** Accessible en fauteuil ; null : inconnu. */
+  pmr: boolean | null;
+  /** Hauteur maximale (m), null si non publiée. */
+  maxHeight: number | null;
+  /** Adaptée aux scooters et motos électriques. */
+  twoWheels: boolean;
+  placement: '' | 'voirie' | 'parking' | 'parking-clients' | 'recharge-rapide';
+  bookable: boolean;
 };
 
 export type Parking = {

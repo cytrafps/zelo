@@ -115,11 +115,12 @@ export function ChargeLayer({ stations, c, onPress }: { stations: ChargeStation[
           const label = s.available === null ? '' : `${s.available}/${s.total}`;
           return point(s.lon, s.lat, {
             id: s.id,
-            state: s.available === null ? 'unknown' : s.available > 0 ? 'free' : 'busy',
+            // Réservée aux clients : grisée comme une borne sans état, le public ne peut pas s'y fier.
+            state: s.reserved || s.available === null ? 'unknown' : s.available > 0 ? 'free' : 'busy',
             label,
-            pin: chargePin(label, (s.available ?? 0) > 0),
+            pin: chargePin(label, !s.reserved && (s.available ?? 0) > 0),
             pinLabel: label,
-            muted: s.available === 0,
+            muted: s.reserved || s.available === 0,
             // Au-dessus : la plus libre, puis sans état publié, les pleines en dessous.
             sort: s.available === null ? 0 : s.available > 0 ? s.available : -100,
           });
