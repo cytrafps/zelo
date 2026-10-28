@@ -21,6 +21,46 @@ export type Step = {
 /** À dire quand il reste `before` mètres jusqu'à la manœuvre. */
 export type Voice = { before: number; text: string };
 
+/** Écart au tracé (m) au-delà duquel on a quitté l'itinéraire, si le GPS est précis. */
+const OFF_ROUTE_M = 30;
+/** Un GPS imprécis élargit le seuil, sans dépasser celui-ci : au-delà, on est forcément ailleurs. */
+const OFF_ROUTE_MAX_M = 80;
+/** Écart (°) entre le cap et le sens du tracé au-delà duquel on roule à contresens. */
+const WRONG_WAY_DEG = 120;
+/** Durée hors de l'itinéraire avant de recalculer : un saut GPS ou un écart d'un instant ne compte pas. */
+export const OFF_ROUTE_FOR_MS = 5_000;
+
+/** Cap (°, 0 = nord) du segment `i` du tracé. */
+export function segmentBearing(coords: readonly [number, number][], i: number) {
+  const a = coords[i];
+  const b = coords[Math.min(i + 1, coords.length - 1)];
+  if (!a || !b) return null;
+  const cos = Math.cos((a[1] * Math.PI) / 180);
+  const dx = (b[0] - a[0]) * cos;
+  const dy = b[1] - a[1];
+  if (dx === 0 && dy === 0) return null;
+  return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Faut-il recalculer ? On a quitté l'itinéraire si l'on s'en écarte plus que le GPS ne se
+ * trompe, ou si l'on roule à contresens (cap opposé au tracé : demi-tour à faire), et cela
+ * depuis `OFF_ROUTE_FOR_MS`. `since` : depuis quand on est dehors (null : sur l'itinéraire).
+ */
+export function deviation(
+  since: number | null,
+  offRoute: number,
+  fix: { heading?: number | null; accuracy?: number | null },
+  bearing: number | null,
+  now: number,
+) {
+  const limit = Math.min(OFF_ROUTE_MAX_M, Math.max(OFF_ROUTE_M, (fix.accuracy ?? 0) + 10));
+  const gap = fix.heading != null && bearing !== null ? Math.abs(((fix.heading - bearing + 540) % 360) - 180) : 0;
+  const off = offRoute > limit || gap > WRONG_WAY_DEG;
+  const from = off ? (since ?? now) : null;
+  return { since: from, reroute: from !== null && now - from >= OFF_ROUTE_FOR_MS };
+}
+
 /** Le temps de dire l'annonce : on la lance un peu avant son point. */
 const VOICE_LEAD_M = 10;
 /** Passé son point de plus que ça (reprise après un recalcul, saut GPS), l'annonce ne vaut plus : « Continuez pendant 600 mètres » à 300 m du virage. */

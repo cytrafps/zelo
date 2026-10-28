@@ -3,7 +3,8 @@
 export type LatLon = { lat: number; lon: number };
 
 /** Position GPS avec, quand on roule, le cap de déplacement (° depuis le nord). */
-export type Fix = LatLon & { heading?: number | null };
+/** `accuracy` : rayon d'incertitude en mètres, quand le GPS le donne. */
+export type Fix = LatLon & { heading?: number | null; accuracy?: number | null };
 
 /** Vitesse (m/s, ~11 km/h) sous laquelle le cap GPS n'a pas de sens : à l'arrêt, il est aléatoire. */
 export const MIN_COURSE_SPEED = 3;
