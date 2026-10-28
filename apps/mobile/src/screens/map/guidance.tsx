@@ -11,15 +11,26 @@ import { areaFuel, areaName, nextArea } from '@/utils/areas';
 import type { TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, type Couleurs } from '@/theme';
 import { course, formatDistance, type Fix, type LatLon } from '@/utils/geo';
-import { cumulative, formatClock, formatDuration, progress, voiceDue, type Lane, type Progress, type Route } from '@/utils/route';
+import {
+  cumulative,
+  deviation,
+  formatClock,
+  formatDuration,
+  progress,
+  segmentBearing,
+  voiceDue,
+  type Lane,
+  type Progress,
+  type Route,
+} from '@/utils/route';
 
 import { laneIcon, maneuverIcon, maneuverSide } from './maneuver';
 
 const ios = Platform.OS === 'ios';
 
-/** Au-delà, on considère qu'on a quitté l'itinéraire (deux positions de suite, pour ignorer un saut GPS). */
-const OFF_ROUTE_M = 50;
 const REROUTE_EVERY_MS = 15_000;
+/** Au départ, le tracé peut commencer par un demi-tour : le contresens ne compte qu'ensuite (m parcourus). */
+const WRONG_WAY_AFTER_M = 100;
 /** Arrivé quand il reste moins que ça. */
 const ARRIVED_M = { drive: 30, walk: 15 } as const;
 
@@ -30,7 +41,7 @@ function useNavigationFix() {
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
     Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, (l) =>
-      setFix({ lat: l.coords.latitude, lon: l.coords.longitude, heading: course(l.coords) }),
+      setFix({ lat: l.coords.latitude, lon: l.coords.longitude, heading: course(l.coords), accuracy: l.coords.accuracy }),
     )
       .then((s) => (cancelled ? s.remove() : (sub = s)))
       .catch(() => {
@@ -74,7 +85,7 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
 
   /** Hauteur du bandeau (il grandit avec les voies) : « Puis » se place juste dessous. */
   const [bannerHeight, setBannerHeight] = useState(110);
-  const offCount = useRef(0);
+  const offSince = useRef<number | null>(null);
   const lastReroute = useRef(0);
   const arrived = useRef<Route | null>(null);
   const [voiceOn, setVoiceOn] = useStored('zelo.voix', true);
@@ -99,9 +110,12 @@ export function Guidance({ route, phase, target, c, top, bottomInset, rerouting,
         Speech.speak(v.text, { language: 'fr-FR' });
       }
     }
-    offCount.current = p.offRoute > OFF_ROUTE_M ? offCount.current + 1 : 0;
-    if (offCount.current >= 2 && Date.now() - lastReroute.current > REROUTE_EVERY_MS) {
-      offCount.current = 0;
+    const traveled = route.distance - p.remaining;
+    const bearing = traveled > WRONG_WAY_AFTER_M ? segmentBearing(route.coordinates, p.segment) : null;
+    const d = deviation(offSince.current, p.offRoute, fix, bearing, Date.now());
+    offSince.current = d.since;
+    if (d.reroute && Date.now() - lastReroute.current > REROUTE_EVERY_MS) {
+      offSince.current = null;
       lastReroute.current = Date.now();
       onReroute(fix);
     }

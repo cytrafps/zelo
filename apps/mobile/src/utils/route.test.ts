@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { along, bounds, cumulative, formatClock, formatDuration, pointAt, progress, voiceDue, type Route } from './route.ts';
+import { along, bounds, cumulative, formatClock, formatDuration, deviation, pointAt, progress, segmentBearing, voiceDue, type Route } from './route.ts';
 
 // Vraie réponse de GET /v1/route : gare de Reims → cathédrale, 1 875 m.
 const route: Route = JSON.parse(readFileSync(new URL('./testdata/gare-cathedrale.json', import.meta.url), 'utf8'));
@@ -107,4 +107,28 @@ test('annonces vocales : une fois chacune, au bon moment, sauf périmées', () =
   // Position sautée au-delà de deux annonces : seule la plus proche est dite.
   assert.deepEqual(voiceDue(voice, 65, 1), { next: 3, text: 'Tournez à droite.' });
   assert.equal(voiceDue(undefined, 10, 0), null);
+});
+
+test('écart : recalcul après 5 s hors de l’itinéraire, seuil élargi par un GPS imprécis', () => {
+  const t0 = 1_000_000;
+  let d = deviation(null, 45, { accuracy: 5 }, null, t0);
+  assert.deepEqual(d, { since: t0, reroute: false });
+  d = deviation(d.since, 50, { accuracy: 5 }, null, t0 + 3000);
+  assert.equal(d.reroute, false);
+  d = deviation(d.since, 50, { accuracy: 5 }, null, t0 + 5000);
+  assert.equal(d.reroute, true);
+  // De retour sur le tracé : le compteur repart de zéro.
+  assert.deepEqual(deviation(t0, 10, { accuracy: 5 }, null, t0 + 6000), { since: null, reroute: false });
+  // GPS à 60 m près : 45 m d'écart ne veut rien dire.
+  assert.equal(deviation(null, 45, { accuracy: 60 }, null, t0).since, null);
+  // Au-delà de 80 m, on est ailleurs quelle que soit la précision annoncée.
+  assert.equal(deviation(null, 90, { accuracy: 200 }, null, t0).since, t0);
+});
+
+test('contresens : sur le tracé mais cap opposé', () => {
+  assert.equal(deviation(null, 5, { heading: 10 }, 190, 0).since, 0);
+  assert.equal(deviation(null, 5, { heading: 350 }, 20, 0).since, null);
+  assert.equal(deviation(null, 5, { heading: null }, 190, 0).since, null);
+  assert.equal(segmentBearing([[4, 49], [4, 49.001]], 0), 0);
+  assert.ok(Math.abs((segmentBearing([[4, 49], [4.001, 49]], 0) ?? 0) - 90) < 1e-9);
 });
