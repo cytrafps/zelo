@@ -95,7 +95,11 @@ export type Route = {
   steps: Step[];
   /** Aires d'autoroute desservies (en voiture), dans l'ordre de passage. */
   areas?: Area[];
+  /** Feux, stops et cédez-le-passage du trajet, posés sur le tracé, dans l'ordre de passage. */
+  controls?: Control[];
 };
+
+export type Control = { kind: NonNullable<Step['control']>; lat: number; lon: number };
 
 export type AreaService = 'restauration' | 'boutique' | 'toilettes' | 'douches' | 'camping-car' | 'pique-nique' | 'jeux';
 

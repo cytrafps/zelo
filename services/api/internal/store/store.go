@@ -416,21 +416,24 @@ func (s *Store) AreasAlong(ctx context.Context, line [][2]float64, within float6
 	})
 }
 
-// Controls : feux et stops à moins de radius mètres d'un des points ([lon, lat]), les
-// manœuvres d'un itinéraire : quelques lignes, même pour un long trajet.
-func (s *Store) Controls(ctx context.Context, points [][2]float64, radius float64) ([]junction.Control, error) {
-	if len(points) == 0 {
+// ControlsAlong : feux, stops et cédez-le-passage à moins de within mètres du tracé.
+func (s *Store) ControlsAlong(ctx context.Context, line [][2]float64, within float64) ([]junction.Control, error) {
+	if len(line) < 2 {
 		return nil, nil
 	}
-	lons, lats := make([]float64, len(points)), make([]float64, len(points))
-	for i, p := range points {
+	lons, lats := make([]float64, len(line)), make([]float64, len(line))
+	for i, p := range line {
 		lons[i], lats[i] = p[0], p[1]
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT DISTINCT j.id, j.kind, ST_Y(j.geom::geometry), ST_X(j.geom::geometry)
-		FROM unnest($1::float8[], $2::float8[]) AS p(lon, lat)
-		JOIN junction_control j ON ST_DWithin(j.geom, ST_SetSRID(ST_MakePoint(p.lon, p.lat), 4326)::geography, $3)`,
-		lons, lats, radius)
+		WITH line AS (
+			SELECT ST_MakeLine(ST_SetSRID(ST_MakePoint(lon, lat), 4326) ORDER BY ord)::geography AS g
+			FROM unnest($1::float8[], $2::float8[]) WITH ORDINALITY AS p(lon, lat, ord)
+		)
+		SELECT j.id, j.kind, ST_Y(j.geom::geometry), ST_X(j.geom::geometry)
+		FROM junction_control j, line
+		WHERE ST_DWithin(j.geom, line.g, $3)`,
+		lons, lats, within)
 	if err != nil {
 		return nil, err
 	}
