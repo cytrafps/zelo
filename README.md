@@ -160,12 +160,17 @@ Une fois, sur la VM (Google Drive, fichiers chiffrés côté VM) :
 
 ```sh
 mkdir -p infra/rclone
-docker run --rm -it -v "$PWD/infra/rclone:/config/rclone" rclone/rclone:1.71 config
-#  1. « n » → nom gdrive, type drive, scope drive.file, puis l'autorisation (lien à ouvrir sur le PC)
-#  2. « n » → nom zelo-sauvegardes, type crypt, remote gdrive:zelo, mots de passe générés
-#     (à garder dans ton gestionnaire de mots de passe : sans eux, les sauvegardes sont illisibles)
+# --user : le fichier de config reste à toi (sinon il appartient à root et devient illisible)
+docker run --rm -it --user "$(id -u):$(id -g)" -v "$PWD/infra/rclone:/config/rclone" rclone/rclone:1.71 config
+#  1. « n » → nom gdrive, type drive (22), scope drive.file (3), pas de navigateur sur la VM (n) :
+#     lancer sur le PC la commande « rclone authorize … » affichée, puis coller le jeton obtenu
+#  2. « n » → nom exact zelo-sauvegardes (ou RCLONE_REMOTE=…: dans infra/.env), type crypt (15),
+#     remote gdrive:zelo, mots de passe générés (g, 256) : à garder dans ton gestionnaire de mots
+#     de passe, sans eux les sauvegardes sont illisibles
+chmod 600 infra/rclone/rclone.conf
 docker compose -f infra/compose.yaml --profile sauvegarde-distante up -d
 docker compose -f infra/compose.yaml logs backup-distant   # « copie distante faite »
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/infra/rclone:/config/rclone" rclone/rclone:1.71 ls zelo-sauvegardes:
 ```
 
 Restaurer une sauvegarde (remplace le contenu de la base) :
