@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,5 +60,50 @@ func TestRouteClosures(t *testing.T) {
 	b := &blockedRouter{}
 	if code := call(b, "car"); code != http.StatusOK || len(b.calls) != 2 || len(b.calls[1].Exclude) != 0 {
 		t.Errorf("sans chemin qui évite la fermeture : nouvel essai sans elle attendu (%d, %d appels)", code, len(b.calls))
+	}
+}
+
+func TestClosuresList(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	now := time.Now()
+	line := [][][2]float64{{{4.0272, 49.2571}, {4.0300, 49.2560}}}
+	cs := []closure.Closure{
+		{ID: "later", Name: "Travaux à venir", From: now.Add(48 * time.Hour), To: now.Add(96 * time.Hour), Lines: line},
+		{ID: "ended", Name: "Travaux finis", To: now.Add(-time.Hour), Lines: line},
+		{ID: "far", Name: "Paris", Lines: [][][2]float64{{{2.37, 48.86}, {2.38, 48.86}}}},
+		{ID: "now", Name: "Rue Buirette", URL: "javascript:alert(1)", From: now.Add(-time.Hour), To: now.Add(time.Hour), Lines: line},
+		{ID: "piétonne", Name: "Rue piétonne la nuit", Lines: line, Periods: []closure.Period{{From: 0, To: 1, Zone: time.UTC}}},
+	}
+	rec := httptest.NewRecorder()
+	New(&fakeStore{}, live.NewHub(0), quiet, Config{Closures: func() []closure.Closure { return cs }}).
+		ServeHTTP(rec, httptest.NewRequest("GET", "/v1/closures?bbox=3.9,49.2,4.1,49.3", nil))
+	var got struct {
+		Items []struct {
+			ID       string
+			Active   bool
+			Periodic bool
+			URL      string
+			To       *time.Time
+		}
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, c := range got.Items {
+		ids = append(ids, c.ID)
+	}
+	// En cours d'abord, puis par date de début ; la rue piétonne (sans début) n'est active
+	// qu'entre 0 h 00 et 0 h 01 UTC, et passe alors devant.
+	if got := strings.Join(ids, " "); got != "now piétonne later" && got != "piétonne now later" {
+		t.Fatalf("ordre %v", ids)
+	}
+	for _, c := range got.Items {
+		if c.ID == "now" && c.URL != "" {
+			t.Errorf("lien non https gardé : %q", c.URL)
+		}
+		if c.ID == "piétonne" && (!c.Periodic || c.To != nil) {
+			t.Errorf("piétonne : %+v", c)
+		}
 	}
 }

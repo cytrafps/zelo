@@ -162,3 +162,9 @@ export const completeDays = (days: FuelDay[]) => days.filter((d) => d.complete);
 
 /** Évolution (euros) du prix moyen sur 7 jours, au dernier jour ; null si l'historique ne remonte pas assez. */
 export const weekChange = (days: FuelDay[]) => days.at(-1)?.week ?? null;
+
+export type ReportState = 'confirme' | 'verifier' | 'nouveau';
+
+/** Confirmé : plus de « oui » que de « non » ; à vérifier : au moins autant de « non » que de « oui ». */
+export const reportState = (r: Report): ReportState =>
+  r.confirmations > r.denials ? 'confirme' : r.denials > 0 ? 'verifier' : 'nouveau';

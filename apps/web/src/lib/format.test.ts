@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { address, ago, formatLitre, formatNumber, formatPercent, parkingName, since, today, updated } from './format';
+import { address, period, within, ago, formatLitre, formatNumber, formatPercent, parkingName, since, today, updated } from './format';
 
 describe('format', () => {
   it('écrit les nombres à la française', () => {
@@ -46,5 +46,15 @@ describe('textes', () => {
     const now = new Date('2026-10-29T10:00:00Z');
     expect(since(new Date('2026-10-29T09:59:50Z'), now)).toBe('à l’instant');
     expect(since(new Date('2026-10-29T09:40:00Z'), now)).toBe('il y a 20 min');
+  });
+
+  it('période d’une fermeture', () => {
+    const now = new Date('2026-10-29T10:00:00Z');
+    expect(period('2026-10-20T06:00:00Z', '2026-11-07T17:00:00Z', now)).toBe('jusqu’au 7 novembre');
+    expect(period('2026-11-10T06:00:00Z', '2026-11-14T17:00:00Z', now)).toBe('10 → 14 nov.');
+    expect(period('2026-11-28T06:00:00Z', '2026-12-02T17:00:00Z', now)).toBe('28 nov. → 2 déc.');
+    expect(period('2026-12-03T06:00:00Z', null, now)).toBe('à partir du 3 décembre');
+    expect(period(null, null, now)).toBe('sans date de fin');
+    expect(within(new Date('2026-10-29T12:00:00Z'), now)).toBe('2 h');
   });
 });

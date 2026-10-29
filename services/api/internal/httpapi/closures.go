@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
+	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/cytrafps/zelo/services/api/internal/route"
@@ -77,4 +81,76 @@ func touches(l [][2]float64, in func([2]float64) bool) bool {
 		}
 	}
 	return false
+}
+
+// closureView : une fermeture publiée dans DiaLog, telle que la sert /v1/closures.
+type closureView struct {
+	ID   string     `json:"id"`
+	Name string     `json:"name"`
+	URL  string     `json:"url"`
+	From *time.Time `json:"from"` // null : depuis toujours
+	To   *time.Time `json:"to"`   // null : sans fin
+	// Periodic : la fermeture ne s'applique qu'à certains créneaux (rue piétonne le week-end…).
+	Periodic bool           `json:"periodic"`
+	Active   bool           `json:"active"` // elle s'applique en ce moment
+	Lines    [][][2]float64 `json:"lines"`  // [lon, lat]
+}
+
+// closures : GET /v1/closures?bbox=… — fermetures DiaLog de la zone qui ne sont pas terminées,
+// en cours d'abord, puis par date de début.
+func (a *API) closures(w http.ResponseWriter, r *http.Request) {
+	b, err := parseBBox(r.URL.Query().Get("bbox"))
+	if err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	in := func(p [2]float64) bool {
+		return p[0] >= b.MinLon && p[0] <= b.MaxLon && p[1] >= b.MinLat && p[1] <= b.MaxLat
+	}
+	now := time.Now()
+	items := []closureView{}
+	if a.cfg.Closures != nil {
+		for _, c := range a.cfg.Closures() {
+			if !c.To.IsZero() && !now.Before(c.To) {
+				continue
+			}
+			inside := false
+			for _, l := range c.Lines {
+				inside = inside || touches(l, in)
+			}
+			if !inside {
+				continue
+			}
+			url := c.URL
+			if !strings.HasPrefix(url, "https://") {
+				url = "" // lien venu du flux DiaLog : jamais de javascript: ni de http en clair
+			}
+			v := closureView{ID: c.ID, Name: c.Name, URL: url, Periodic: len(c.Periods) > 0, Active: c.Active(now), Lines: c.Lines}
+			if !c.From.IsZero() {
+				v.From = &c.From
+			}
+			if !c.To.IsZero() {
+				v.To = &c.To
+			}
+			items = append(items, v)
+		}
+	}
+	slices.SortStableFunc(items, func(x, y closureView) int {
+		if x.Active != y.Active {
+			if x.Active {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Compare(unix(x.From), unix(y.From))
+	})
+	w.Header().Set("Cache-Control", "public, max-age=600")
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func unix(t *time.Time) int64 {
+	if t == nil {
+		return 0
+	}
+	return t.Unix()
 }

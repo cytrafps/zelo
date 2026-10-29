@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import { Icon, type IconName } from '../components/icon';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
-import { api, CENTRE, GRAND_REIMS, type ChargeStation, type Parking, type Report, type ReportKind, streetAt } from '../lib/api';
+import { api, CENTRE, GRAND_REIMS, type ChargeStation, type Parking, type Report, type ReportKind } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
 import { ago, formatCents, formatLitre, formatNumber, formatPercent, parkingName, today, updated } from '../lib/format';
 import { useNow, usePoll } from '../lib/use-poll';
+import { useStreet } from '../lib/use-street';
 import { chargeSummary, cheapest, hourPrice, operatedParkings, recentReports, REPORT_LABEL, reportSummary } from '../lib/stats';
 import { CityMap, type Pin } from '../map/city-map';
 import s from './overview.module.css';
@@ -173,26 +174,6 @@ function ReportRow({ report, now }: { report: Report; now: Date }) {
       <span className={s.reportAge}>{ago(new Date(report.createdAt), now)}</span>
     </div>
   );
-}
-
-// Rue de chaque signalement, demandée une fois (les signalements ne bougent pas).
-const streets = new Map<number, Promise<string | null>>();
-
-function useStreet(r: Report) {
-  const [street, setStreet] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    let p = streets.get(r.id);
-    if (!p) {
-      p = streetAt(r.lat, r.lon).catch(() => null);
-      streets.set(r.id, p);
-    }
-    void p.then((v) => live && setStreet(v));
-    return () => {
-      live = false;
-    };
-  }, [r.id, r.lat, r.lon]);
-  return street;
 }
 
 function exportOverview(stations: ChargeStation[], parkings: Parking[]) {

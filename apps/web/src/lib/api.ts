@@ -84,7 +84,20 @@ export const api = {
   parkings: (b: BBox) => items<Parking>(`/v1/parkings?${bbox(b)}`),
   fuelStations: (b: BBox) => items<FuelStation>(`/v1/fuel-stations?${bbox(b)}`),
   fuelTrend: (b: BBox, fuel: string, days = 30) => items<FuelDay>(`/v1/fuel-trend?${bbox(b)}&fuel=${fuel}&days=${days}`),
+  closures: (b: BBox) => items<Closure>(`/v1/closures?${bbox(b)}`),
   reports: (b: BBox) => items<Report>(`/v1/reports?${bbox(b)}`),
+};
+
+/** Fermeture de rue publiée par la collectivité dans DiaLog (base nationale, arrêtés de circulation). */
+export type Closure = {
+  id: string;
+  name: string;
+  url: string;
+  from: string | null;
+  to: string | null;
+  periodic: boolean;
+  active: boolean;
+  lines: [number, number][][];
 };
 
 /** Rue la plus proche (Géoplateforme de l'IGN, sans clé), pour situer un signalement. */

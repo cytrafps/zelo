@@ -39,6 +39,28 @@ export function address(s: string) {
     .replace(/(?<![\p{L}'’])(Rn|Rd|Zac|Zi|Za|Cc)(?![\p{L}'’])/gu, (w) => w.toUpperCase());
 }
 
+const date = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' });
+const dateCourte = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'Europe/Paris' });
+
+/** Période d'une fermeture : « jusqu'au 7 novembre », « 10 → 14 nov. », « à partir du 3 décembre ». */
+export function period(from: string | null, to: string | null, now: Date) {
+  const f = from ? new Date(from) : null;
+  const t = to ? new Date(to) : null;
+  if (t && (!f || f <= now)) return `jusqu’au ${date.format(t)}`;
+  if (f && t) {
+    const sameMonth = dateCourte.format(f).split(' ').slice(1).join(' ') === dateCourte.format(t).split(' ').slice(1).join(' ');
+    return `${sameMonth ? dateCourte.format(f).split(' ')[0] : dateCourte.format(f)} → ${dateCourte.format(t)}`;
+  }
+  if (f && f > now) return `à partir du ${date.format(f)}`;
+  return 'sans date de fin';
+}
+
+/** Temps restant : « 2 h », « 18 min », « imminente ». */
+export function within(to: Date, now: Date) {
+  const a = ago(now, to);
+  return a === 'à l’instant' ? 'imminente' : a;
+}
+
 /** « mis à jour il y a 2 min » */
 export const updated = (at: Date | null, now: Date) =>
   at === null ? 'chargement…' : `mis à jour ${since(at, now)}`;
