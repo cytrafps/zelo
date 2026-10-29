@@ -4,7 +4,9 @@ package store
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,6 +24,13 @@ import (
 
 //go:embed schema.sql
 var schema string
+
+// schemaHash identifie le schéma embarqué : il n'est rejoué que s'il a changé depuis le dernier
+// démarrage. Rien à numéroter à la main : modifier schema.sql suffit.
+var schemaHash = func() string {
+	sum := sha256.Sum256([]byte(schema))
+	return hex.EncodeToString(sum[:])
+}()
 
 type Store struct {
 	db  *pgxpool.Pool
@@ -75,6 +84,10 @@ func poolConfig(url string) (*pgxpool.Config, error) {
 // se bloqueraient sinon mutuellement (deadlock sur les CREATE … IF NOT EXISTS).
 const schemaLock int64 = 0x7a656c6f + 1
 
+// migrate applique schema.sql s'il a changé. Rejoué à chaque démarrage, chaque ALTER TABLE prenait
+// le verrou ACCESS EXCLUSIVE même pour une colonne déjà là : une lecture en cours (collecte des
+// bornes toutes les 5 min) faisait échouer le démarrage, et bloquait les requêtes derrière lui.
+// Le schéma reste idempotent (IF NOT EXISTS) : revenir à une image plus ancienne le rejoue sans risque.
 func migrate(ctx context.Context, db *pgxpool.Pool) error {
 	return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
 		// Un ALTER TABLE attend que la table soit libre, et toutes les lectures attendent derrière lui :
@@ -85,7 +98,26 @@ func migrate(ctx context.Context, db *pgxpool.Pool) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaLock); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, schema)
+		if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
+			id boolean PRIMARY KEY DEFAULT true CHECK (id),
+			hash text NOT NULL,
+			applied_at timestamptz NOT NULL DEFAULT now()
+		)`); err != nil {
+			return err
+		}
+		var applied string
+		err := tx.QueryRow(ctx, `SELECT hash FROM schema_version`).Scan(&applied)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if applied == schemaHash {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, schema); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO schema_version (hash) VALUES ($1)
+			ON CONFLICT (id) DO UPDATE SET hash = EXCLUDED.hash, applied_at = now()`, schemaHash)
 		return err
 	})
 }
