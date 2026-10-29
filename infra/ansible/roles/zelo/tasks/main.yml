@@ -31,12 +31,12 @@
     k3s kubectl create namespace monitoring --dry-run=client -o yaml | k3s kubectl apply -f -
   args:
     executable: /bin/bash
-  register: monitoring_ns
-  changed_when: "'created' in monitoring_ns.stdout"
+  register: zelo_monitoring_ns
+  changed_when: "'created' in zelo_monitoring_ns.stdout"
 
 - name: Secret admin de Grafana existant
   ansible.builtin.command: k3s kubectl -n monitoring get secret grafana-admin
-  register: grafana_admin_secret
+  register: zelo_grafana_admin_secret
   changed_when: false
   failed_when: false
 
@@ -51,7 +51,7 @@
     executable: /bin/bash
   changed_when: true
   no_log: true
-  when: grafana_admin_secret.rc != 0
+  when: zelo_grafana_admin_secret.rc != 0
 
 # Webhook Discord des alertes : variable alertmanager_discord_webhook (ansible-vault ou -e), jamais
 # versionnée. Sans elle, le secret est à créer à la main (voir deploy/README.md).
@@ -64,8 +64,8 @@
     executable: /bin/bash
   environment:
     WEBHOOK: "{{ alertmanager_discord_webhook }}"
-  register: discord_secret
-  changed_when: "'unchanged' not in discord_secret.stdout"
+  register: zelo_discord_secret
+  changed_when: "'unchanged' not in zelo_discord_secret.stdout"
   no_log: true
   when: alertmanager_discord_webhook is defined
 
