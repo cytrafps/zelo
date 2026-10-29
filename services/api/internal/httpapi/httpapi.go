@@ -64,8 +64,8 @@ type Store interface {
 	TollPointsAlong(ctx context.Context, line [][2]float64, within float64) ([]store.TollPoint, error)
 	AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]store.AreaOnRoute, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
-	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
-	Vote(ctx context.Context, id int64, voter string, up bool, ttl func(kind string) time.Duration) (store.Report, bool, error)
+	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter store.Voter) (store.Report, bool, error)
+	Vote(ctx context.Context, id int64, voter store.Voter, up bool, ttl func(kind string) time.Duration) (store.Report, bool, error)
 }
 
 type Config struct {
@@ -87,6 +87,8 @@ type Config struct {
 	Closures func() []closure.Closure
 	// Zones : zones à faibles émissions de la base nationale (rechargées chaque jour) ; nil : aucune.
 	Zones func() []zfe.Zone
+	// Zone : zone couverte (graphe routier, la Marne) ; la météo n'est servie que dedans. Vide : partout.
+	Zone store.BBox
 	// Weather : prévision au quart d'heure (Open-Meteo, en cache) ; nil : pas de météo.
 	Weather *weather.Cache
 	// Vigilance : dernière carte de Météo-France, et le département de la zone couverte (« 51 ») ;
@@ -107,13 +109,17 @@ type API struct {
 	limiter *ipLimiter // création de signalements
 	votes   *ipLimiter // votes, plus fréquents
 	routes  *ipLimiter // itinéraires (recalculés en roulant)
+	reads   *ipLimiter // lectures coûteuses : météo (appel Open-Meteo), tendance des prix, relais
+	sockets *connLimiter
 }
 
 func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	a := &API{store: s, hub: hub, log: log, cfg: cfg,
 		limiter: newIPLimiter(rate.Every(12*time.Second), 5),
 		votes:   newIPLimiter(rate.Every(3*time.Second), 10),
-		routes:  newIPLimiter(rate.Every(time.Second), 20)}
+		routes:  newIPLimiter(rate.Every(time.Second), 20),
+		reads:   newIPLimiter(rate.Every(time.Second), 30),
+		sockets: &connLimiter{max: maxSocketsPerNet, open: map[string]int{}}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /healthz", a.health)
@@ -184,6 +190,10 @@ var fuels = map[string]bool{"Gazole": true, "SP95": true, "SP98": true, "E10": t
 
 // fuelTrend : GET /v1/fuel-trend?bbox=…&fuel=E10[&days=30] — prix moyen, min et max par jour.
 func (a *API) fuelTrend(w http.ResponseWriter, r *http.Request) {
+	if !a.reads.allow(netKey(a.clientIP(r))) {
+		httpError(w, http.StatusTooManyRequests, "trop de requêtes, réessaie dans un instant")
+		return
+	}
 	q := r.URL.Query()
 	fuel := q.Get("fuel")
 	if !fuels[fuel] {
@@ -261,6 +271,10 @@ func (a *API) zfe(w http.ResponseWriter, r *http.Request) {
 // (Zelo couvre la Marne : un seul département). La météo n'est qu'un conseil : sans prévision, outlook
 // vaut null plutôt qu'une erreur.
 func (a *API) weather(w http.ResponseWriter, r *http.Request) {
+	if !a.reads.allow(netKey(a.clientIP(r))) {
+		httpError(w, http.StatusTooManyRequests, "trop de requêtes, réessaie dans un instant")
+		return
+	}
 	p, err := parsePoint(r.URL.Query().Get("at"))
 	if err != nil {
 		httpError(w, http.StatusBadRequest, "attendu : at=lat,lon")
@@ -276,7 +290,8 @@ func (a *API) weather(w http.ResponseWriter, r *http.Request) {
 		at = time.Unix(sec, 0)
 	}
 	var out *weather.Outlook
-	if a.cfg.Weather != nil {
+	// Hors de la zone couverte, pas de prévision : chaque point ailleurs coûterait un appel Open-Meteo.
+	if a.cfg.Weather != nil && a.inZone(p) {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
 		slots, err := a.cfg.Weather.Get(ctx, p.Lat, p.Lon)
@@ -292,6 +307,12 @@ func (a *API) weather(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	writeJSON(w, http.StatusOK, map[string]any{"outlook": out, "vigilance": alert})
+}
+
+// inZone : le point est dans la zone couverte (Config.Zone) ; sans zone configurée, partout.
+func (a *API) inZone(p route.Point) bool {
+	z := a.cfg.Zone
+	return z == (store.BBox{}) || (p.Lon >= z.MinLon && p.Lon <= z.MaxLon && p.Lat >= z.MinLat && p.Lat <= z.MaxLat)
 }
 
 // evModels : GET /v1/ev-models — voitures électriques (Open EV Data), une liste figée à chaque
@@ -351,7 +372,7 @@ type reportInput struct {
 }
 
 func (a *API) addReport(w http.ResponseWriter, r *http.Request) {
-	if !a.limiter.allow(a.clientIP(r)) {
+	if !a.limiter.allow(netKey(a.clientIP(r))) {
 		httpError(w, http.StatusTooManyRequests, "trop de signalements, réessaie dans une minute")
 		return
 	}
@@ -386,7 +407,7 @@ func (a *API) addReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) vote(w http.ResponseWriter, r *http.Request) {
-	if !a.votes.allow(a.clientIP(r)) {
+	if !a.votes.allow(netKey(a.clientIP(r))) {
 		httpError(w, http.StatusTooManyRequests, "trop de votes, réessaie dans un instant")
 		return
 	}
@@ -418,15 +439,36 @@ func (a *API) vote(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// voter identifie un appareil sans compte : l'identifiant aléatoire envoyé par l'app
-// (X-Zelo-Device), à défaut l'IP. Seule une empreinte est conservée.
-func (a *API) voter(r *http.Request) string {
+// voter identifie qui signale ou vote, sans compte : l'appareil (identifiant aléatoire envoyé par
+// l'app, X-Zelo-Device, à défaut l'IP) et son réseau. Seules des empreintes sont conservées.
+func (a *API) voter(r *http.Request) store.Voter {
+	ip := a.clientIP(r)
 	id := r.Header.Get("X-Zelo-Device")
 	if len(id) < 16 || len(id) > 64 {
-		id = "ip:" + a.clientIP(r)
+		id = "ip:" + ip
 	}
-	sum := sha256.Sum256([]byte("zelo-voter:" + id))
-	return hex.EncodeToString(sum[:16])
+	device := sha256.Sum256([]byte("zelo-voter:" + id))
+	net := sha256.Sum256([]byte("zelo-net:" + netKey(ip)))
+	return store.Voter{Device: hex.EncodeToString(device[:16]), Net: hex.EncodeToString(net[:16])}
+}
+
+// netKey : le réseau d'une adresse, ce qu'un abonné contrôle d'un coup : /24 en IPv4 (une box,
+// un site), /64 en IPv6 (un abonné en reçoit au moins un, soit des milliards d'adresses).
+func netKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap()
+	bits := 24
+	if addr.Is6() {
+		bits = 64
+	}
+	p, err := addr.Prefix(bits)
+	if err != nil {
+		return ip
+	}
+	return p.String()
 }
 
 // heartbeat est envoyé toutes les heartbeatEvery : le client, qui ne voit pas les pings WebSocket,
@@ -437,6 +479,12 @@ var heartbeatEvery = 25 * time.Second
 
 // liveFeed pousse chaque nouveau signalement aux clients connectés.
 func (a *API) liveFeed(w http.ResponseWriter, r *http.Request) {
+	key := netKey(a.clientIP(r))
+	if !a.sockets.acquire(key) {
+		httpError(w, http.StatusTooManyRequests, "trop de connexions depuis ce réseau")
+		return
+	}
+	defer a.sockets.release(key)
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: a.cfg.OriginPatterns})
 	if err != nil {
 		return // Accept a déjà répondu au client
@@ -493,7 +541,7 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusServiceUnavailable, "itinéraires indisponibles")
 		return
 	}
-	if !a.routes.allow(a.clientIP(r)) {
+	if !a.routes.allow(netKey(a.clientIP(r))) {
 		httpError(w, http.StatusTooManyRequests, "trop de calculs d'itinéraire, réessaie dans un instant")
 		return
 	}
@@ -773,7 +821,39 @@ func httpError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// ipLimiter limite les écritures par adresse IP et oublie les IP inactives.
+// maxLimiterKeys : réseaux suivis au plus par limiteur (quelques Mo).
+const maxLimiterKeys = 100_000
+
+// maxSocketsPerNet : connexions au flux en direct par réseau (un foyer, un bureau).
+const maxSocketsPerNet = 20
+
+// connLimiter compte les connexions ouvertes par réseau : une seule machine ne peut pas occuper
+// toutes les places du flux en direct.
+type connLimiter struct {
+	mu   sync.Mutex
+	max  int
+	open map[string]int
+}
+
+func (l *connLimiter) acquire(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.open[key] >= l.max {
+		return false
+	}
+	l.open[key]++
+	return true
+}
+
+func (l *connLimiter) release(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.open[key]--; l.open[key] <= 0 {
+		delete(l.open, key)
+	}
+}
+
+// ipLimiter limite les requêtes par réseau (voir netKey) et oublie les réseaux inactifs.
 type ipLimiter struct {
 	mu        sync.Mutex
 	every     rate.Limit
@@ -805,6 +885,11 @@ func (l *ipLimiter) allow(ip string) bool {
 	}
 	e, ok := l.clients[ip]
 	if !ok {
+		// Mémoire bornée : au-delà de maxLimiterKeys réseaux actifs en 10 min, les nouveaux
+		// attendent (une attaque qui en invente autant ne fait pas grossir la table sans fin).
+		if len(l.clients) >= maxLimiterKeys {
+			return false
+		}
 		e = &limiterEntry{l: rate.NewLimiter(l.every, l.burst)}
 		l.clients[ip] = e
 	}
