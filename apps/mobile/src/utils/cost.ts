@@ -46,16 +46,27 @@ export function formatCost(total: number, people = 1) {
 }
 
 /**
- * Coût total affiché sous un itinéraire : énergie et péage, partagés entre les passagers.
- * null quand on ne connaît ni l'un ni l'autre.
+ * Coût affiché sous un itinéraire : énergie et péage, partagés entre les passagers. `total` n'est
+ * renseigné que si tout est chiffré (énergie connue, péage complet) : c'est lui qui compare les
+ * itinéraires. null quand on ne connaît ni l'un ni l'autre.
  */
 export function routeCost(energy: number | null, toll: { price: number; complete: boolean } | undefined, people = 1) {
   if (energy === null && !toll) return null;
-  const total = (energy ?? 0) + (toll?.price ?? 0);
-  const tollText = toll ? `${toll.complete ? '' : 'au moins '}${euros.format(toll.price)} € de péage` : '';
+  const unpriced = toll && !toll.complete && toll.price === 0;
+  const tollText = !toll ? '' : unpriced ? 'péage non chiffré' : `${toll.complete ? '' : 'au moins '}${euros.format(toll.price)} € de péage`;
+  const total = energy !== null && (!toll || toll.complete) ? energy + (toll?.price ?? 0) : null;
   if (energy === null) return { total, text: tollText };
-  const base = formatCost(total, people);
+  if (unpriced) return { total, text: `${formatCost(energy, people)} + ${tollText}` };
+  const base = formatCost(energy + (toll?.price ?? 0), people);
   return { total, text: toll ? `${base} dont ${tollText}` : base };
+}
+
+/** Index de l'itinéraire le moins cher, s'il l'est d'au moins 50 centimes et que tous sont chiffrés ; sinon -1. */
+export function cheapestRoute(totals: readonly (number | null)[]) {
+  if (totals.length < 2 || totals.some((t) => t === null)) return -1;
+  const all = totals as number[];
+  const lo = Math.min(...all);
+  return Math.max(...all) - lo >= 0.5 ? all.indexOf(lo) : -1;
 }
 
 /** Moyenne des prix au kWh fermes (sans « dès », qui n'est qu'un minimum) ; null sans aucun. */

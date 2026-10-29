@@ -17,7 +17,6 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/overpass"
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
-	"github.com/cytrafps/zelo/services/api/internal/toll"
 )
 
 // Tests d'intégration : ils demandent une vraie base PostGIS (ZELO_TEST_DATABASE_URL),
@@ -491,25 +490,35 @@ func TestFuelTrend(t *testing.T) {
 	}
 }
 
-// Postes de péage : ceux sous le tracé, dans l'ordre de passage, pas ceux d'à côté.
-func TestTollGaresAlong(t *testing.T) {
+// Postes de péage : ceux près du tracé, rattachés ou non ; pas ceux d'à côté. Un import qui en
+// perd plus de la moitié est refusé.
+func TestTollPointsAlong(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	at := func(id string, net, gare int, lon float64, lat float64) TollBooth {
-		return TollBooth{ID: id, Gare: toll.Gare{Net: net, Index: gare}, Lat: lat, Lon: lon}
-	}
-	if err := s.SaveTollBooths(ctx, []TollBooth{
-		at("T-PEAGE-FIN", 2, 9, 5.62, 45.10),
-		at("T-PEAGE-DEBUT", 2, 5, 5.60, 45.10),
-		at("T-PEAGE-COTE", 2, 7, 5.61, 45.1005), // ~55 m du tracé : la chaussée d'en face
-	}); err != nil {
+	if _, err := s.db.Exec(ctx, `DELETE FROM toll_point`); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.TollGaresAlong(ctx, [][2]float64{{5.59, 45.10}, {5.63, 45.10}}, 15)
+	pts := []TollPoint{
+		{ID: "T-PEAGE-A", Gare: "A", Lat: 45.10, Lon: 5.60},
+		{ID: "T-PEAGE-B", Gare: "B", Lat: 45.10, Lon: 5.62},
+		{ID: "T-PEAGE-X", Lat: 45.10, Lon: 5.61},                 // non rattaché
+		{ID: "T-PEAGE-COTE", Gare: "C", Lat: 45.1005, Lon: 5.61}, // ~55 m : la chaussée d'en face
+	}
+	if err := s.SaveTollPoints(ctx, pts); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TollPointsAlong(ctx, [][2]float64{{5.59, 45.10}, {5.63, 45.10}}, 15)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].Index != 5 || got[1].Index != 9 {
-		t.Fatalf("postes franchis : %+v", got)
+	ids := map[string]string{}
+	for _, p := range got {
+		ids[p.ID] = p.Gare
+	}
+	if len(got) != 3 || ids["T-PEAGE-A"] != "A" || ids["T-PEAGE-X"] != "" || ids["T-PEAGE-B"] != "B" {
+		t.Fatalf("postes : %+v", got)
+	}
+	if err := s.SaveTollPoints(ctx, pts[:1]); err == nil {
+		t.Fatal("import de 1 poste rattaché sur 3 accepté")
 	}
 }

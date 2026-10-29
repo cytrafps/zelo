@@ -142,10 +142,10 @@ func run(log *slog.Logger, once bool) error {
 			if err != nil {
 				return 0, err
 			}
-			saved, unmatched := matchBooths(booths)
+			points, unmatched := matchBooths(booths)
 			// Les postes sans gare (nom absent de la grille, sortie ambiguë) : à relire pour compléter.
-			log.Info("péages", "postes", len(booths), "rattachés", len(saved), "sans_gare", unmatched)
-			return len(saved), db.SaveTollBooths(ctx, saved)
+			log.Info("péages", "postes", len(booths), "rattachés", len(booths)-len(unmatched), "sans_gare", unmatched)
+			return len(points), db.SaveTollPoints(ctx, points)
 		}})
 	}
 
@@ -546,20 +546,22 @@ func registerPoolMetrics(db *store.Store) {
 		func() float64 { return db.PoolStat().AcquireDuration().Seconds() })
 }
 
-// matchBooths : postes rattachés à une gare de la grille, et la liste des autres (nom ou sortie).
-func matchBooths(booths []toll.Booth) ([]store.TollBooth, []string) {
-	var saved []store.TollBooth
+// matchBooths : tous les postes, avec leur gare quand on la connaît, et la liste des autres.
+func matchBooths(booths []toll.Booth) ([]store.TollPoint, []string) {
+	points := make([]store.TollPoint, 0, len(booths))
 	var unmatched []string
 	for _, b := range booths {
+		p := store.TollPoint{ID: b.ID, Lat: b.Lat, Lon: b.Lon}
 		if g, ok := toll.Match(b); ok {
-			saved = append(saved, store.TollBooth{ID: b.ID, Gare: g, Lat: b.Lat, Lon: b.Lon})
-			continue
+			p.Gare = g.Name()
+		} else {
+			label := b.Name
+			if label == "" {
+				label = "sortie " + b.Exit + " " + b.ExitName
+			}
+			unmatched = append(unmatched, b.ID+" « "+strings.TrimSpace(label)+" »")
 		}
-		label := b.Name
-		if label == "" {
-			label = "sortie " + b.Exit + " " + b.ExitName
-		}
-		unmatched = append(unmatched, b.ID+" « "+strings.TrimSpace(label)+" »")
+		points = append(points, p)
 	}
-	return saved, unmatched
+	return points, unmatched
 }

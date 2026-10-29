@@ -34,7 +34,7 @@ type fakeStore struct {
 	parkings  []store.Parking
 	vehicle   string
 	trend     string // dernier appel à FuelTrend : « carburant/jours »
-	tolls     []toll.Gare
+	tolls     []store.TollPoint
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -45,7 +45,7 @@ func (f *fakeStore) FuelTrend(_ context.Context, _ store.BBox, fuel string, days
 	f.trend = fmt.Sprintf("%s/%d", fuel, days)
 	return nil, nil
 }
-func (f *fakeStore) TollGaresAlong(context.Context, [][2]float64, float64) ([]toll.Gare, error) {
+func (f *fakeStore) TollPointsAlong(context.Context, [][2]float64, float64) ([]store.TollPoint, error) {
 	return f.tolls, nil
 }
 func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error) {
@@ -228,15 +228,20 @@ func TestVoterFallsBackToIP(t *testing.T) {
 }
 
 type fakeRouter struct {
-	err  error
-	got  []route.Point
-	mode route.Mode
-	opts route.Options
+	tolled bool // le trajet emprunte une route à péage
+	err    error
+	got    []route.Point
+	mode   route.Mode
+	opts   route.Options
 }
 
 func (f *fakeRouter) Routes(_ context.Context, from, to route.Point, mode route.Mode, opts route.Options) ([]route.Route, error) {
 	f.got, f.mode, f.opts = []route.Point{from, to}, mode, opts
-	return []route.Route{{Distance: 1875, Duration: 449, Coordinates: [][2]float64{{4.0245, 49.2591}, {4.0341, 49.2535}}}}, f.err
+	r := route.Route{Distance: 1875, Duration: 449, Coordinates: [][2]float64{{4.0245, 49.2591}, {4.0341, 49.2535}}}
+	if f.tolled {
+		r = route.WithToll(r)
+	}
+	return []route.Route{r}, f.err
 }
 
 func TestRoute(t *testing.T) {
@@ -424,29 +429,39 @@ func TestFuelTrendValidatesParams(t *testing.T) {
 	}
 }
 
-// Péage : calculé pour la classe du véhicule demandé (voiture ou moto), absent à vélo.
+// Péage : calculé pour la classe du véhicule demandé (voiture ou moto) sur un trajet à péage ;
+// rien sur un trajet sans péage.
 func TestRouteToll(t *testing.T) {
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	thillois, ok1 := toll.Match(toll.Booth{Name: "Péage de Thillois"})
-	taissy, ok2 := toll.Match(toll.Booth{Name: "Péage de Taissy"})
-	if !ok1 || !ok2 {
-		t.Fatal("gares de test introuvables")
-	}
-	fs := &fakeStore{tolls: []toll.Gare{thillois, taissy}}
-	h := New(fs, live.NewHub(0), quiet, Config{Router: &fakeRouter{}})
+	thillois, _ := toll.Match(toll.Booth{Name: "Péage de Thillois"})
+	taissy, _ := toll.Match(toll.Booth{Name: "Péage de Taissy"})
+	// Les deux postes sous le tracé du faux routeur (4,0245 49,2591 → 4,0341 49,2535).
+	fs := &fakeStore{tolls: []store.TollPoint{
+		{Gare: thillois.Name(), Lat: 49.2591, Lon: 4.0245},
+		{Gare: taissy.Name(), Lat: 49.2535, Lon: 4.0341},
+	}}
 	for _, c := range []struct {
-		mode string
-		want string
+		mode   string
+		tolled bool
+		want   string
 	}{
-		{"car", `"toll":{"price":2.8,"complete":true`},
-		{"moto", `"toll":{"price":1.5,"complete":true`},
-		{"bike", ""},
+		{"car", true, `"toll":{"price":2.8,"complete":true`},
+		{"moto", true, `"toll":{"price":1.5,"complete":true`},
+		{"car", false, ""},
 	} {
+		h := New(fs, live.NewHub(0), quiet, Config{Router: &fakeRouter{tolled: c.tolled}})
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?from=49.2591,4.0245&to=49.2535,4.0341&mode="+c.mode, nil))
 		body := rec.Body.String()
 		if rec.Code != 200 || (c.want == "" && strings.Contains(body, `"toll"`)) || (c.want != "" && !strings.Contains(body, c.want)) {
-			t.Errorf("%s : %d %s", c.mode, rec.Code, body)
+			t.Errorf("%s péage=%v : %d %s", c.mode, c.tolled, rec.Code, body)
 		}
+	}
+	// Trajet à péage sans poste connu : péage non chiffré, pas « sans péage ».
+	h := New(&fakeStore{}, live.NewHub(0), quiet, Config{Router: &fakeRouter{tolled: true}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?from=49.2591,4.0245&to=49.2535,4.0341&mode=car", nil))
+	if !strings.Contains(rec.Body.String(), `"toll":{"price":0,"complete":false`) {
+		t.Errorf("péage non chiffré : %s", rec.Body.String())
 	}
 }

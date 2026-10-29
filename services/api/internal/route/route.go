@@ -91,8 +91,8 @@ type Route struct {
 	// Toll : péage du trajet, pour le véhicule demandé ; absent sans péage (voir toll.Compute).
 	Toll *toll.Fare `json:"toll,omitempty"`
 
-	// motorway[i] : le segment i → i+1 du tracé est sur autoroute.
-	motorway []bool
+	// motorway[i] : le segment i → i+1 du tracé est sur autoroute ; tolled[i] : il est à péage.
+	motorway, tolled []bool
 }
 
 type Client struct {
@@ -292,19 +292,19 @@ func (o osrmRoute) route() (Route, error) {
 	if err != nil {
 		return Route{}, fmt.Errorf("valhalla: tracé: %w", err)
 	}
-	r := Route{Distance: o.Distance, Duration: o.Duration, Coordinates: pts, motorway: make([]bool, len(pts))}
+	r := Route{Distance: o.Distance, Duration: o.Duration, Coordinates: pts, motorway: make([]bool, len(pts)), tolled: make([]bool, len(pts))}
 	for _, leg := range o.Legs {
 		// La classe d'un carrefour vaut jusqu'au suivant.
 		var marks []struct {
-			at   int
-			fast bool
+			at        int
+			fast, pay bool
 		}
 		for _, st := range leg.Steps {
 			for _, x := range st.Intersections {
 				marks = append(marks, struct {
-					at   int
-					fast bool
-				}{x.GeometryIndex, slices.Contains(x.Classes, "motorway")})
+					at        int
+					fast, pay bool
+				}{x.GeometryIndex, slices.Contains(x.Classes, "motorway"), slices.Contains(x.Classes, "toll")})
 			}
 		}
 		for i, m := range marks {
@@ -313,7 +313,7 @@ func (o osrmRoute) route() (Route, error) {
 				end = marks[i+1].at
 			}
 			for k := max(m.at, 0); k < end && k < len(pts); k++ {
-				r.motorway[k] = m.fast
+				r.motorway[k], r.tolled[k] = m.fast, m.pay
 			}
 		}
 		base := len(r.Steps)

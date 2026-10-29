@@ -15,7 +15,7 @@ import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
 import { forVehicle, sameTarget, sheltered, targetPoint } from '@/utils/targets';
-import { FUELS, fuelLabel, HOME_KWH, LITRE_STEPS, routeCost, tripCost, type ChargeAt, type Combustion, type Fuel } from '@/utils/cost';
+import { cheapestRoute, FUELS, fuelLabel, HOME_KWH, LITRE_STEPS, routeCost, tripCost, type ChargeAt, type Combustion, type Fuel } from '@/utils/cost';
 import { arrivalPercent, LOW_PERCENT, type EvModel } from '@/utils/ev';
 import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
 
@@ -69,14 +69,9 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   const origin = trip.routes[0]?.coordinates[0];
   const energy = useEnergyPrice(source, origin ? { lat: origin[1], lon: origin[0] } : null);
   const per100 = ev ? ev.kwhPer100km : combustion?.litresPer100;
-  const costOf = car && energy && per100 ? (meters: number) => tripCost(per100, energy.price, meters) : null;
+  const costOf = car && energy && energy !== 'error' && per100 ? (meters: number) => tripCost(per100, energy.price, meters) : null;
   const costs = trip.routes.map((r) => (vehicle === 'bike' ? null : routeCost(costOf ? costOf(r.distance) : null, r.toll, people)));
-  // « Le moins cher » : seulement si les itinéraires diffèrent d'au moins 50 centimes et que tous ont un coût.
-  const totals = costs.map((x) => x?.total ?? null);
-  const cheapest =
-    totals.length > 1 && totals.every((x) => x !== null) && Math.max(...(totals as number[])) - Math.min(...(totals as number[])) >= 0.5
-      ? totals.indexOf(Math.min(...(totals as number[])))
-      : -1;
+  const cheapest = cheapestRoute(costs.map((x) => x?.total ?? null));
 
   const share = () => {
     const route = trip.routes[trip.selected];
@@ -423,7 +418,13 @@ function CostNotice(props: {
         </View>
       </MenuView>
       <Text style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
-        {energy ? `${unitPrice.format(energy.price)} €/${unit} · ${energy.where}` : 'Prix en cours…'}
+        {energy === undefined
+          ? 'Prix en cours…'
+          : energy === 'error'
+            ? 'Prix indisponible, vérifie ta connexion'
+            : energy === null
+              ? 'Aucun prix publié autour de toi'
+              : `${unitPrice.format(energy.price)} €/${unit} · ${energy.where}`}
       </Text>
     </View>
   );
