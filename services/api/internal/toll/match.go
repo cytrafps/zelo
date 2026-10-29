@@ -38,6 +38,26 @@ type gareKeys struct {
 	plaza, main, exit string
 }
 
+// byName : gare de la grille par son nom exact (les noms sont uniques, voir TestGareNamesUnique).
+var byName = func() map[string]Gare {
+	m := map[string]Gare{}
+	for n, net := range Sanef {
+		for i, g := range net.Gares {
+			m[g] = Gare{n, i}
+		}
+	}
+	return m
+}()
+
+// Lookup : la gare de ce nom dans la grille en vigueur.
+func Lookup(name string) (Gare, bool) {
+	g, ok := byName[name]
+	return g, ok
+}
+
+// Name : nom de la gare dans la grille.
+func (g Gare) Name() string { return Sanef[g.Net].Gares[g.Index] }
+
 var index = func() (out []gareKeys) {
 	for n, net := range Sanef {
 		for i, g := range net.Gares {
@@ -59,28 +79,39 @@ var index = func() (out []gareKeys) {
 // Thillois », « Reims Sud »), puis par la sortie toute proche : son numéro, départagé par son nom
 // quand deux autoroutes ont le même. Rien de sûr : pas de gare.
 func Match(b Booth) (Gare, bool) {
+	// Une gare « REIMS (péage de Courcy) » ne se reconnaît qu'à « Courcy » : « Reims » seul
+	// désigne aussi Reims Nord, Sud, Ouest, Est.
+	accepts := func(k gareKeys, name string, prefix bool) bool {
+		eq := func(a string) bool { return a != "" && (a == name || prefix && strings.HasPrefix(a+" ", name+" ")) }
+		return eq(k.plaza) || k.plaza == "" && eq(k.main)
+	}
 	if name := key(b.Name); name != "" {
-		var found []Gare
+		var exact []Gare
 		for _, k := range index {
-			if name == k.plaza || name == k.main {
-				found = append(found, k.Gare)
+			if accepts(k, name, false) {
+				exact = append(exact, k.Gare)
 			}
 		}
-		if len(found) == 1 {
-			return found[0], true
+		if len(exact) == 1 {
+			return exact[0], true
 		}
-		// Nom plus court que celui de la grille (« Châlons-en-Champagne » pour « Châlons-en-Champagne
-		// / La Veuve ») : ses mots forment le début du nom d'une seule gare.
-		if len(found) == 0 {
-			for _, k := range index {
-				if strings.HasPrefix(k.main+" ", name+" ") || strings.HasPrefix(k.plaza+" ", name+" ") {
-					found = append(found, k.Gare)
-				}
-			}
-			if len(found) == 1 {
-				return found[0], true
+		if len(exact) > 1 {
+			return Gare{}, false
+		}
+		// Début de nom (« Châlons-en-Champagne » pour « … / La Veuve ») : seulement si une seule
+		// gare de toute la grille commence ainsi, nom de ville ou de péage.
+		var starts []gareKeys
+		for _, k := range index {
+			if strings.HasPrefix(k.main+" ", name+" ") || k.plaza != "" && strings.HasPrefix(k.plaza+" ", name+" ") {
+				starts = append(starts, k)
 			}
 		}
+		if len(starts) == 1 && accepts(starts[0], name, true) {
+			return starts[0].Gare, true
+		}
+		// Un poste nommé que la grille ne connaît pas n'est pas rattaché par la sortie voisine :
+		// le nom dit justement que c'est autre chose.
+		return Gare{}, false
 	}
 	if b.Exit == "" {
 		return Gare{}, false
@@ -91,21 +122,19 @@ func Match(b Booth) (Gare, bool) {
 			found = append(found, k)
 		}
 	}
-	if len(found) > 1 {
-		words := strings.Fields(key(b.ExitName + " " + b.Name))
-		var named []gareKeys
-		for _, k := range found {
-			for _, w := range words {
-				if len(w) > 2 && strings.Contains(" "+k.main+" "+k.plaza+" ", " "+w+" ") {
-					named = append(named, k)
-					break
-				}
+	// Le numéro seul ne suffit jamais : le nom de la sortie doit aussi désigner la gare.
+	words := strings.Fields(key(b.ExitName))
+	var named []gareKeys
+	for _, k := range found {
+		for _, w := range words {
+			if len(w) > 2 && strings.Contains(" "+k.main+" "+k.plaza+" ", " "+w+" ") {
+				named = append(named, k)
+				break
 			}
 		}
-		found = named
 	}
-	if len(found) == 1 {
-		return found[0].Gare, true
+	if len(named) == 1 {
+		return named[0].Gare, true
 	}
 	return Gare{}, false
 }

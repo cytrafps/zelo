@@ -18,7 +18,6 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
-	"github.com/cytrafps/zelo/services/api/internal/toll"
 )
 
 //go:embed schema.sql
@@ -398,39 +397,60 @@ func (s *Store) SaveControls(ctx context.Context, controls []junction.Control) e
 	})
 }
 
-// TollBooth : un poste de péage et la gare de la grille qu'il désigne.
-type TollBooth struct {
+// TollPoint : un poste de péage et le nom de sa gare dans la grille (vide : non rattaché).
+type TollPoint struct {
 	ID       string
-	Gare     toll.Gare
+	Gare     string
 	Lat, Lon float64
 }
 
-// SaveTollBooths remplace les postes de péage rattachés.
-func (s *Store) SaveTollBooths(ctx context.Context, booths []TollBooth) error {
-	if len(booths) == 0 {
+// SaveTollPoints remplace les postes de péage. Un import qui rattache moins de la moitié des postes
+// de la fois précédente (renommages en masse dans OSM, grille changée) est refusé : mieux vaut les
+// anciens rattachements, à relire dans le journal, qu'une table presque vide.
+func (s *Store) SaveTollPoints(ctx context.Context, points []TollPoint) error {
+	matched := 0
+	for _, p := range points {
+		if p.Gare != "" {
+			matched++
+		}
+	}
+	if matched == 0 {
 		return errors.New("aucun poste de péage rattaché : import ignoré pour ne pas vider la table")
 	}
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_tb (id text, net int, gare int, lon float8, lat float8) ON COMMIT DROP`); err != nil {
+		var before int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM toll_point WHERE gare IS NOT NULL`).Scan(&before); err != nil {
 			return err
 		}
-		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_tb"}, []string{"id", "net", "gare", "lon", "lat"},
-			pgx.CopyFromSlice(len(booths), func(i int) ([]any, error) {
-				b := booths[i]
-				return []any{b.ID, b.Gare.Net, b.Gare.Index, b.Lon, b.Lat}, nil
+		if matched*2 < before {
+			return fmt.Errorf("%d postes rattachés contre %d avant : import refusé", matched, before)
+		}
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_tp (id text, gare text, lon float8, lat float8) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_tp"}, []string{"id", "gare", "lon", "lat"},
+			pgx.CopyFromSlice(len(points), func(i int) ([]any, error) {
+				p := points[i]
+				var gare any
+				if p.Gare != "" {
+					gare = p.Gare
+				}
+				return []any{p.ID, gare, p.Lon, p.Lat}, nil
 			})); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `
-			DELETE FROM toll_booth;
-			INSERT INTO toll_booth (id, net, gare, geom)
-			SELECT DISTINCT ON (id) id, net, gare, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography FROM tmp_tb;`)
+			DELETE FROM toll_point;
+			INSERT INTO toll_point (id, gare, geom)
+			SELECT DISTINCT ON (id) id, gare, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography FROM tmp_tp;`)
 		return err
 	})
 }
 
-// TollGaresAlong : gares des postes de péage à moins de `within` mètres du tracé, dans l'ordre de passage.
-func (s *Store) TollGaresAlong(ctx context.Context, line [][2]float64, within float64) ([]toll.Gare, error) {
+// TollPointsAlong : postes de péage à moins de `within` mètres du tracé (sans ordre : le trajet
+// les ordonne). Un premier filtre en degrés sur l'index évite la distance géodésique à chaque poste
+// de l'emprise du tracé.
+func (s *Store) TollPointsAlong(ctx context.Context, line [][2]float64, within float64) ([]TollPoint, error) {
 	if len(line) < 2 {
 		return nil, nil
 	}
@@ -443,14 +463,15 @@ func (s *Store) TollGaresAlong(ctx context.Context, line [][2]float64, within fl
 			SELECT ST_MakeLine(ST_SetSRID(ST_MakePoint(lon, lat), 4326) ORDER BY ord) AS g
 			FROM unnest($1::float8[], $2::float8[]) WITH ORDINALITY AS p(lon, lat, ord)
 		)
-		SELECT t.net, t.gare FROM toll_booth t, line
-		WHERE ST_DWithin(t.geom, line.g::geography, $3)
-		ORDER BY ST_LineLocatePoint(line.g, t.geom::geometry)`,
+		SELECT t.id, coalesce(t.gare, ''), ST_Y(t.geom::geometry), ST_X(t.geom::geometry)
+		FROM toll_point t, line
+		WHERE ST_DWithin(t.geom::geometry, line.g, $3 / 70000.0)
+		  AND ST_DWithin(t.geom, line.g::geography, $3)`,
 		lons, lats, within)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[toll.Gare])
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[TollPoint])
 }
 
 // SaveAreas remplace les aires d'autoroute de la zone importée.

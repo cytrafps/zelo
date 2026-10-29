@@ -23,10 +23,11 @@ type Booth struct {
 // exitWithin (m) : une sortie plus loin que ça n'est pas celle du poste.
 const exitWithin = 2000
 
-// Query : postes de péage et sorties d'autoroute numérotées de la zone.
+// Query : postes de péage posés sur une autoroute ou une bretelle (pas ceux d'un parking ou d'une
+// voie privée), et sorties d'autoroute numérotées de la zone.
 func Query(b overpass.BBox) string {
 	f := b.Filter()
-	return `[out:json][timeout:120];(nwr["barrier"="toll_booth"]` + f + `;node["highway"="motorway_junction"]["ref"]` + f + `;);out center tags;`
+	return `[out:json][timeout:120];way["highway"~"^motorway(_link)?$"]` + f + `->.m;(node(w.m)["barrier"="toll_booth"];node["highway"="motorway_junction"]["ref"]` + f + `;);out;`
 }
 
 func Fetch(ctx context.Context, client *http.Client, endpoint string, b overpass.BBox) ([]Booth, error) {

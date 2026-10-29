@@ -61,7 +61,7 @@ type Store interface {
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(ctx context.Context, b store.BBox, limit int, vehicle string) ([]store.Parking, error)
 	ControlsAlong(ctx context.Context, line [][2]float64, within float64) ([]junction.Control, error)
-	TollGaresAlong(ctx context.Context, line [][2]float64, within float64) ([]toll.Gare, error)
+	TollPointsAlong(ctx context.Context, line [][2]float64, within float64) ([]store.TollPoint, error)
 	AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]store.AreaOnRoute, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
 	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
@@ -582,23 +582,31 @@ func (a *API) annotate(ctx context.Context, routes []route.Route, areas bool) {
 	}
 }
 
-// tollReach (m) : un poste de péage à cette distance du tracé est franchi (la voie de péage est
-// sous la ligne, pas à côté ; le poste d'en face, sur l'autre chaussée, reste plus loin).
-const tollReach = 15
-
-// tolls : péage de chaque trajet, d'après les gares de la grille franchies dans l'ordre.
+// tolls : péage de chaque trajet à péage, d'après les postes franchis dans l'ordre. Un trajet à
+// péage dont rien n'a pu être chiffré (postes pas encore importés, base indisponible) reçoit un
+// péage incomplet à 0 : « péage non chiffré », jamais « sans péage ».
 func (a *API) tolls(ctx context.Context, routes []route.Route, mode route.Mode) {
 	class := toll.Car
 	if mode == route.Motorcycle {
 		class = toll.Moto
 	}
 	for i := range routes {
-		gares, err := a.store.TollGaresAlong(ctx, routes[i].Coordinates, tollReach)
+		r := &routes[i]
+		if !r.HasToll() {
+			continue
+		}
+		found, err := a.store.TollPointsAlong(ctx, r.Coordinates, route.TollReach)
 		if err != nil {
 			a.log.Warn("péages", "err", err)
-			return
 		}
-		routes[i].Toll = toll.Compute(class, gares)
+		points := make([]route.TollPoint, len(found))
+		for k, p := range found {
+			points[k] = route.TollPoint{Gare: p.Gare, Lat: p.Lat, Lon: p.Lon}
+		}
+		r.Toll = toll.Compute(class, route.TollPassages(r, points))
+		if r.Toll == nil || err != nil {
+			r.Toll = &toll.Fare{Gares: []string{}}
+		}
 	}
 }
 

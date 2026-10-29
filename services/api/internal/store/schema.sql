@@ -142,11 +142,13 @@ CREATE INDEX IF NOT EXISTS service_area_geom ON service_area USING gist (geom);
 ALTER TABLE parking ADD COLUMN IF NOT EXISTS vehicle text NOT NULL DEFAULT 'car';
 ALTER TABLE parking ADD COLUMN IF NOT EXISTS covered boolean NOT NULL DEFAULT false;
 
--- Postes de péage d'OSM rattachés à une gare de la grille (toll.Sanef) : réseau et indice.
-CREATE TABLE IF NOT EXISTS toll_booth (
+-- Postes de péage d'OSM posés sur une autoroute, et le nom de leur gare dans la grille (toll.Sanef) ;
+-- NULL : non rattaché (le trajet qui le franchit a un péage incomplet). Un nom plutôt qu'un indice :
+-- une nouvelle grille ne fait pas désigner une autre gare aux postes déjà importés.
+DROP TABLE IF EXISTS toll_booth;
+CREATE TABLE IF NOT EXISTS toll_point (
     id    text PRIMARY KEY,
-    net   integer NOT NULL,
-    gare  integer NOT NULL,
+    gare  text,
     geom  geography(Point, 4326) NOT NULL
 );
-CREATE INDEX IF NOT EXISTS toll_booth_geom ON toll_booth USING gist (geom);
+CREATE INDEX IF NOT EXISTS toll_point_geom ON toll_point USING gist ((geom::geometry));
