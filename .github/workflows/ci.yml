@@ -29,8 +29,8 @@ jobs:
     env:
       ZELO_TEST_DATABASE_URL: postgres://zelo:zelo@localhost:5432/zelo?sslmode=disable
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: services/api/go.mod
           cache-dependency-path: services/api/go.sum
@@ -54,17 +54,21 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-api
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # historique complet : le déploiement vérifie l'ordre des commits
+          filter: blob:none
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - if: github.event_name == 'push'
-        uses: docker/login-action@v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: tag
         run: echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: services/api
           push: ${{ github.event_name == 'push' }}
@@ -76,21 +80,9 @@ jobs:
           cache-to: type=gha,mode=max
       - if: github.event_name == 'push'
         name: Déployer le nouveau tag (Argo CD)
-        working-directory: deploy/overlays/homelab
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Le tag est réécrit sur la dernière version de main à chaque essai : jamais de conflit
-          # avec un autre commit de déploiement.
-          for i in 1 2 3; do
-            git fetch -q origin main && git reset -q --hard origin/main
-            sed -i "/name: ghcr.io\/cytrafps\/zelo-api$/{n;s|newTag: .*|newTag: ${{ steps.tag.outputs.sha }}|}" kustomization.yaml
-            git diff --quiet && exit 0
-            git commit -qam "deploy: api ${{ steps.tag.outputs.sha }} [skip ci]"
-            git push -q origin HEAD:main && exit 0
-            sleep 5
-          done
-          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/deploy-tag.sh "$IMAGE" ${{ steps.tag.outputs.sha }} api
 
   web:
     runs-on: ubuntu-latest
@@ -98,8 +90,8 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -122,17 +114,21 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-web
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # historique complet : le déploiement vérifie l'ordre des commits
+          filter: blob:none
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - if: github.event_name == 'push'
-        uses: docker/login-action@v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: tag
         run: echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: apps/web
           push: ${{ github.event_name == 'push' }}
@@ -144,38 +140,38 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
       - if: github.event_name == 'push'
         name: Déployer le nouveau tag (Argo CD)
-        working-directory: deploy/overlays/homelab
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          for i in 1 2 3; do
-            git fetch -q origin main && git reset -q --hard origin/main
-            sed -i "/name: ghcr.io\/cytrafps\/zelo-web$/{n;s|newTag: .*|newTag: ${{ steps.tag.outputs.sha }}|}" kustomization.yaml
-            git diff --quiet && exit 0
-            git commit -qam "deploy: web ${{ steps.tag.outputs.sha }} [skip ci]"
-            git push -q origin HEAD:main && exit 0
-            sleep 5
-          done
-          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/deploy-tag.sh "$IMAGE" ${{ steps.tag.outputs.sha }} web
 
   # Manifestes Kubernetes : rendu Kustomize, schémas (CRD comprises) et règles Prometheus.
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Outils
         run: |
           mkdir -p "$HOME/bin" && cd "$HOME/bin"
-          curl -sSfL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz | tar xz
-          curl -sSfL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
-          curl -sSfL https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz | tar xz --strip-components=1 prometheus-3.5.0.linux-amd64/promtool
+          # Sommes de contrôle relevées sur les pages de publication : un binaire modifié est refusé.
+          curl -sSfLO https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz
+          curl -sSfLO https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz
+          curl -sSfLO https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz
+          sha256sum -c <<'SUMS'
+          ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8  kustomize_v5.7.1_linux_amd64.tar.gz
+          c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3  kubeconform-linux-amd64.tar.gz
+          e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a  prometheus-3.5.0.linux-amd64.tar.gz
+          SUMS
+          tar xzf kustomize_v5.7.1_linux_amd64.tar.gz
+          tar xzf kubeconform-linux-amd64.tar.gz kubeconform
+          tar xzf prometheus-3.5.0.linux-amd64.tar.gz --strip-components=1 prometheus-3.5.0.linux-amd64/promtool
+          rm ./*.tar.gz
           echo "$HOME/bin" >> "$GITHUB_PATH"
       - name: Kustomize + kubeconform
         run: |
           kustomize build deploy/overlays/homelab > rendered.yaml
           kubeconform -strict -summary -kubernetes-version 1.33.0 \
             -schema-location default \
-            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
             rendered.yaml deploy/argocd/*.yaml
       - name: Règles Prometheus
         run: |
@@ -187,11 +183,12 @@ jobs:
   infra:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Outils
         run: |
           mkdir -p "$HOME/bin"
           curl -sSfL https://releases.hashicorp.com/terraform/1.13.4/terraform_1.13.4_linux_amd64.zip -o tf.zip
+          echo "98aa516201e948306698efd9954ab4cc0d1227c2578ba56245898b5f679e590b  tf.zip" | sha256sum -c
           unzip -q tf.zip terraform -d "$HOME/bin" && rm tf.zip
           echo "$HOME/bin" >> "$GITHUB_PATH"
           pipx install ansible-core==2.21.5 && pipx inject ansible-core ansible-lint==26.10.1 --include-apps
@@ -215,8 +212,8 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
