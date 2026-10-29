@@ -26,5 +26,11 @@ export const retryLater = <K extends string>(p: Pending<K>, now: number): Pendin
   nextAt: now + Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** p.tries),
 });
 
+/**
+ * Un échec vaut d'être réessayé : pas de réponse (status null), serveur en panne (5xx), trop de
+ * requêtes (429) ou délai dépassé (408). Les autres refus (400, 422…) ne passeront pas mieux plus tard.
+ */
+export const retryable = (status: number | null) => status === null || status >= 500 || status === 429 || status === 408;
+
 /** Prochain essai (ms), ou null si la file est vide. */
 export const nextAttempt = (queue: readonly Pending[]) => (queue.length ? Math.min(...queue.map((p) => p.nextAt)) : null);

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { enqueue, MAX_AGE_MS, nextAttempt, retryLater, split } from './outbox.ts';
+import { enqueue, MAX_AGE_MS, nextAttempt, retryable, retryLater, split } from './outbox.ts';
 
 test('file des signalements : envoi immédiat, essais espacés, abandon des trop vieux', () => {
   let q = enqueue([], { kind: 'bouchon', lat: 49.25, lon: 4.03 }, 1000);
@@ -17,4 +17,9 @@ test('file des signalements : envoi immédiat, essais espacés, abandon des trop
   assert.deepEqual(split(q, 1000 + MAX_AGE_MS), { due: [], keep: [] });
   assert.equal(nextAttempt(q), 6000);
   assert.equal(nextAttempt([]), null);
+});
+
+test('retryable : réseau absent, serveur en panne ou saturé ; pas un refus définitif', () => {
+  for (const s of [null, 500, 502, 503, 429, 408]) assert.equal(retryable(s), true, String(s));
+  for (const s of [400, 403, 404, 413, 422]) assert.equal(retryable(s), false, String(s));
 });

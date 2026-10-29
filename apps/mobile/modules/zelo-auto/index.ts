@@ -2,8 +2,8 @@ import { requireOptionalNativeModule, type EventSubscription } from 'expo';
 
 /** Événement noté à la connexion ou à la déconnexion d'Android Auto (horodatages en ms). */
 export type CarEvent =
-  | { kind: 'parked'; at: number; lat?: number; lon?: number; accuracy?: number; fixAt?: number }
-  | { kind: 'departed'; at: number };
+  | { kind: 'parked'; at: number; lat?: number; lon?: number; accuracy?: number; fixAt?: number; via?: 'auto' | 'bluetooth' }
+  | { kind: 'departed'; at: number; via?: 'auto' | 'bluetooth' };
 
 /** Appareil Bluetooth appairé ; `car` : autoradio ou kit mains libres. */
 export type PairedDevice = { address: string; name: string; car: boolean };
@@ -13,7 +13,7 @@ type Native = {
   pairedDevices(): PairedDevice[];
   carDevice(): string | null;
   setCarDevice(address: string | null): void;
-  takeCarEvent(): CarEvent | null;
+  takeCarEvents(): CarEvent[];
   addListener(event: 'onCarEvent', listener: (e: CarEvent) => void): EventSubscription;
 };
 
@@ -23,8 +23,8 @@ const native = requireOptionalNativeModule<Native>('ZeloAuto');
 /** Donne l'adresse de l'API à l'écran Android Auto, qui tourne en natif, sans JavaScript. */
 export const setApiUrl = (url: string) => native?.setApiUrl(url);
 
-/** Dernier événement Android Auto pas encore lu (il est effacé), ou null. */
-export const takeCarEvent = (): CarEvent | null => native?.takeCarEvent() ?? null;
+/** Événements pas encore lus, du plus ancien au plus récent (ils sont effacés). */
+export const takeCarEvents = (): CarEvent[] => native?.takeCarEvents() ?? [];
 
 /** Prévient à chaque connexion ou déconnexion pendant que l'app tourne. */
 export const onCarEvent = (listener: (e: CarEvent) => void) => native?.addListener('onCarEvent', listener);

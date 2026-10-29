@@ -33,7 +33,9 @@ export function useStored<T>(key: string, fallback: T) {
   useEffect(() => {
     if (saved.current === value) return;
     saved.current = value;
-    void Storage.setItem(key, JSON.stringify(value));
+    Storage.setItem(key, JSON.stringify(value)).catch(() => {
+      // Disque plein ou base indisponible : la valeur reste en mémoire pour cette session.
+    });
     for (const on of listeners.get(key) ?? []) on(value);
   }, [key, value]);
   const set = useCallback((next: T | ((prev: T) => T)) => {

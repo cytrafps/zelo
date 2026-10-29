@@ -1,24 +1,53 @@
 import { SymbolView } from 'expo-symbols';
-import { Fragment } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import type { ParkRide, TransitLine } from '@/api/zelo';
+import { getParkRides, type ParkRide, type TransitLine } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
 import { espace, police, rayon, texte, type Couleurs } from '@/theme';
-import { formatDistance } from '@/utils/geo';
+import { formatDistance, type LatLon } from '@/utils/geo';
 import { formatClock } from '@/utils/route';
 import { nextJourney, rides, stopName, titleCase } from '@/utils/transit';
 
 const ios = Platform.OS === 'ios';
 const clock = (iso: string) => formatClock(new Date(iso));
 
-type Props = { relay: ParkRide; c: Couleurs; bottomInset: number; onAlighted: () => void; onClose: () => void };
+type Props = { relay: ParkRide; destination: LatLon; c: Couleurs; bottomInset: number; onAlighted: () => void; onClose: () => void };
+
+/** Départs relus toutes les minutes : ceux de l'aperçu datent du départ en voiture. */
+const REFRESH_MS = 60_000;
+/** Au-delà, les départs en temps réel ne sont plus « temps réel ». */
+const FRESH_MS = 3 * 60_000;
 
 /** Garé au parking relais : les trams et bus à prendre, les correspondances, puis la marche reprend. */
-export function TransitCard({ relay, c, bottomInset, onAlighted, onClose }: Props) {
+export function TransitCard({ relay, destination, c, bottomInset, onAlighted, onClose }: Props) {
   const now = useNow(10_000);
-  const journey = nextJourney(relay.journeys, now);
-  const next = journey ? relay.journeys[relay.journeys.indexOf(journey) + 1] : undefined;
+  // `at` : 0 tant que les départs n'ont pas été relus depuis l'aperçu.
+  const [live, setLive] = useState({ journeys: relay.journeys, at: 0 });
+  const id = relay.parking.id;
+  useEffect(() => {
+    const ctl = new AbortController();
+    const refresh = () =>
+      getParkRides(destination, null, ctl.signal).then(
+        (list) => {
+          const r = list.find((o) => o.parking.id === id);
+          if (r) setLive({ journeys: r.journeys, at: Date.now() });
+        },
+        () => {
+          // Hors réseau : on garde les départs connus, qui ne sont alors plus dits « temps réel ».
+        },
+      );
+    void refresh();
+    const timer = setInterval(refresh, REFRESH_MS);
+    return () => {
+      clearInterval(timer);
+      ctl.abort();
+    };
+  }, [destination, id]);
+  const journeys = live.journeys;
+  const fresh = now - live.at < FRESH_MS;
+  const journey = nextJourney(journeys, now);
+  const next = journey ? journeys[journeys.indexOf(journey) + 1] : undefined;
   const first = journey ? rides(journey)[0] : undefined;
   const wait = first ? Math.max(0, Math.round((Date.parse(first.depart) - now) / 60_000)) : 0;
 
@@ -52,8 +81,8 @@ export function TransitCard({ relay, c, bottomInset, onAlighted, onClose }: Prop
             {clock(first.depart)}
             <Text style={[styles.wait, { color: `#${first.line.color}` }]}>{wait === 0 ? '  à quai' : `  dans ${wait} min`}</Text>
           </Text>
-          <Text style={[texte.petit, { color: first.realtime ? c.recharge.base : c.texte.secondaire }]}>
-            {first.realtime ? '● Temps réel' : 'Horaire théorique'}
+          <Text style={[texte.petit, { color: first.realtime && fresh ? c.recharge.base : c.texte.secondaire }]}>
+            {!first.realtime ? 'Horaire théorique' : fresh ? '● Temps réel' : 'Temps réel non actualisé'}
           </Text>
           <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>
             {`Arrêt ${stopName(first.from.name)} · ${formatDistance(journey.boardWalk)} à pied`}

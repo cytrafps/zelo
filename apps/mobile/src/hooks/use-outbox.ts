@@ -3,13 +3,16 @@ import { AppState } from 'react-native';
 
 import { ApiError, postReport, type Report, type ReportKind } from '@/api/zelo';
 import { useStored } from '@/hooks/use-stored';
-import { enqueue, MAX_AGE_MS, nextAttempt, retryLater, split, type Pending } from '@/utils/outbox';
+import { enqueue, MAX_AGE_MS, nextAttempt, retryable, retryLater, split, type Pending } from '@/utils/outbox';
 
 /**
- * Envoi des signalements, même sans réseau : un envoi qui échoue faute de connexion est gardé sur
- * le téléphone et réessayé, de plus en plus espacé, puis abandonné au bout de 15 min. Un refus
- * de l'API (ApiError) n'est pas réessayé : il est renvoyé à l'appelant.
+ * Envoi des signalements, même sans réseau : un envoi qui échoue faute de connexion, ou que le
+ * serveur ne peut pas traiter pour l'instant (5xx, 429), est gardé sur le téléphone et réessayé,
+ * de plus en plus espacé, puis abandonné au bout de 15 min. Un refus définitif de l'API (400,
+ * 422…) n'est pas réessayé : il est renvoyé à l'appelant.
  */
+
+const status = (e: unknown) => (e instanceof ApiError ? e.status : null);
 export function useOutbox(onSent: (r: Report) => void) {
   const [queue, setQueue] = useStored<Pending<ReportKind>[]>('zelo.signalements-en-attente', []);
   const flushing = useRef(false);
@@ -24,7 +27,7 @@ export function useOutbox(onSent: (r: Report) => void) {
       try {
         sent(await postReport(p.kind, p.lat, p.lon));
       } catch (e) {
-        if (!(e instanceof ApiError)) later.push(retryLater(p, Date.now()));
+        if (retryable(status(e))) later.push(retryLater(p, Date.now()));
       }
     }
     const now = Date.now();
@@ -44,12 +47,12 @@ export function useOutbox(onSent: (r: Report) => void) {
     return () => sub.remove();
   }, []);
 
-  /** Le signalement créé, ou null s'il attend le réseau. */
+  /** Le signalement créé, ou null s'il attend d'être réessayé. */
   const send = async (kind: ReportKind, lat: number, lon: number): Promise<Report | null> => {
     try {
       return await postReport(kind, lat, lon);
     } catch (e) {
-      if (e instanceof ApiError) throw e;
+      if (!retryable(status(e))) throw e;
       setQueue((q) => enqueue(q, { kind, lat, lon }, Date.now()));
       return null;
     }

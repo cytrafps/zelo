@@ -27,8 +27,8 @@ class ZeloAutoModule : Module() {
       Settings.setApiUrl(context, url)
     }
 
-    Function("takeCarEvent") {
-      appContext.reactContext?.let { CarWatch.take(it)?.toMap() }
+    Function("takeCarEvents") {
+      appContext.reactContext?.let { context -> CarWatch.take(context).map { it.toMap() } } ?: emptyList()
     }
 
     // « Retenir où je me gare » : la voiture est un appareil Bluetooth appairé, choisi par l'utilisateur.

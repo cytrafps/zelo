@@ -122,7 +122,10 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Zelo-Device': deviceId() };
+  // L'identifiant de l'appareil ne sert qu'aux signalements et aux votes : envoyé avec un
+  // itinéraire ou une météo, il relierait départs et arrivées d'une même personne.
+  const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' };
+  if (init.method === 'POST') headers['X-Zelo-Device'] = deviceId();
   return fetchWithin(API_URL + path, { ...init, headers }, async (res) => {
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
