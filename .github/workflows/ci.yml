@@ -92,6 +92,72 @@ jobs:
           done
           exit 1
 
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx vite build
+
+  # Même chemin que l'API : image construite sur une PR, publiée sur main, tag écrit pour Argo CD.
+  web-image:
+    runs-on: ubuntu-latest
+    needs: web
+    concurrency:
+      group: web-image-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        with:
+          context: apps/web
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - if: github.event_name == 'push'
+        name: Déployer le nouveau tag (Argo CD)
+        working-directory: deploy/overlays/homelab
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            sed -i "/name: ghcr.io\/cytrafps\/zelo-web$/{n;s|newTag: .*|newTag: ${{ steps.tag.outputs.sha }}|}" kustomization.yaml
+            git diff --quiet && exit 0
+            git commit -qam "deploy: web ${{ steps.tag.outputs.sha }} [skip ci]"
+            git push -q origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1
+
   # Manifestes Kubernetes : rendu Kustomize, schémas (CRD comprises) et règles Prometheus.
   deploy:
     runs-on: ubuntu-latest

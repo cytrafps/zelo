@@ -1,0 +1,70 @@
+/* Jetons de la page « 09 · Web — Tableau de bord ville » (Figma). */
+:root {
+  --encre: #1c1b19;
+  --texte-2: #6e6a63;
+  --texte-3: #8a857d;
+  --fond: #f2f0ec;
+  --fond-barre: #faf9f7;
+  --carte-fond: #e8e4dc;
+  --surface: #ffffff;
+  --trait: rgba(28, 27, 25, 0.06);
+  --trait-fort: rgba(28, 27, 25, 0.15);
+  --survol: rgba(28, 27, 25, 0.07);
+  --vert: #1e8e3e;
+  --ambre: #e8a100;
+  --rouge: #d7263d;
+  --sarcelle: #0e7c86;
+  --rayon: 16px;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--encre);
+  background: var(--fond);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fond);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sarcelle);
+  outline-offset: 2px;
+}
+
+/* Icônes de la maquette en masque : la couleur suit `color` (actif, survol). */
+.icone {
+  display: inline-block;
+  flex: none;
+  background-color: currentColor;
+  mask: var(--src) center / contain no-repeat;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

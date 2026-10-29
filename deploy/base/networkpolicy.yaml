@@ -52,3 +52,21 @@ spec:
               app.kubernetes.io/name: api
       ports:
         - port: 8002
+---
+# Le tableau de bord n'est joint que par le contrôleur d'entrée.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system # Traefik sur K3s
+      ports:
+        - port: 8080

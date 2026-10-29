@@ -1,5 +1,6 @@
 # Environnement « homelab » : K3s + Traefik, déployé par Argo CD (deploy/argocd/zelo.yaml).
-# La CI met à jour les tags des images (commits « deploy: ») : l'API à chaque fusion sur main,
+# La CI met à jour les tags des images (commits « deploy: ») : l'API et le tableau de bord à
+# chaque fusion sur main,
 # Valhalla chaque semaine avec les données OpenStreetMap du jour.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -24,8 +25,19 @@ patches:
         path: /metadata/annotations
         value:
           traefik.ingress.kubernetes.io/router.middlewares: zelo-compress@kubernetescrd
+  - target: { kind: Ingress, name: web }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: ville.zelo.lan
+      - op: add
+        path: /metadata/annotations
+        value:
+          traefik.ingress.kubernetes.io/router.middlewares: zelo-compress@kubernetescrd
 images:
   - name: ghcr.io/cytrafps/zelo-api
     newTag: sha-39f1ffc
+  - name: ghcr.io/cytrafps/zelo-web
+    newTag: latest
   - name: ghcr.io/cytrafps/zelo-valhalla
     newTag: osm-20261028-0be4282

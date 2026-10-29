@@ -1,0 +1,131 @@
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 248px;
+  flex: none;
+  min-height: 100vh;
+  padding: 24px 16px;
+  background: var(--fond-barre);
+  border-right: 1px solid var(--trait);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 24px 8px;
+}
+
+/* Icône d'app : symbole posé avec les marges de la maquette (2,69 % 6,5 % 7,15 % 3,33 %). */
+.appIcon {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(#2e2c29, #121110);
+  overflow: hidden;
+  flex: none;
+}
+
+.appIcon img {
+  position: absolute;
+  left: 3.33%;
+  top: 2.69%;
+  width: 90.17%;
+  height: 90.16%;
+}
+
+.name {
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.sub {
+  font-size: 13px;
+  color: var(--texte-2);
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--texte-2);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.link:hover {
+  background: rgba(28, 27, 25, 0.04);
+  color: var(--encre);
+}
+
+.link[aria-current='page'] {
+  background: var(--survol);
+  color: var(--encre);
+  font-weight: 600;
+}
+
+.account {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 8px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--sarcelle);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accountName {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.accountSub {
+  font-size: 12px;
+  color: var(--texte-2);
+}
+
+/* Tablette et téléphone : la barre devient une bande horizontale qui défile. */
+@media (max-width: 900px) {
+  .bar {
+    position: static;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    padding: 12px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--trait);
+  }
+  .logo {
+    padding: 0 12px 0 0;
+  }
+  .link {
+    flex: none;
+  }
+  .account {
+    display: none;
+  }
+}

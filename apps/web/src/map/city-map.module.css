@@ -1,0 +1,39 @@
+.map {
+  position: relative;
+  height: 330px;
+  background: var(--carte-fond);
+  border-radius: 0 0 var(--rayon) var(--rayon);
+  overflow: hidden;
+}
+
+.map :global(.maplibregl-ctrl-attrib) {
+  font-size: 11px;
+}
+
+/* Pastille de parking de la maquette : rond de couleur « P », valeur à droite. */
+.pin {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  font: 600 13px Inter, system-ui, sans-serif;
+  color: var(--encre);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.pinP {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  background: var(--encre);
+}

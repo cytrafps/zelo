@@ -1,5 +1,6 @@
 # Environnement de développement : `docker compose -f infra/compose.yaml up --build`
-# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics, Valhalla sur :8002
+# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics, Valhalla sur :8002,
+# tableau de bord ville sur http://localhost:8090
 #
 # Accès depuis Internet en HTTPS (téléphone en 4G…), sans ouvrir de port, par Cloudflare Tunnel :
 #   --profile tunnel-rapide   adresse https://….trycloudflare.com aléatoire, sans compte (tests)
@@ -37,6 +38,13 @@ services:
         condition: service_healthy
       valhalla:
         condition: service_started # l'API démarre sans attendre : seuls les itinéraires patientent
+
+  # Tableau de bord ville sur http://localhost:8090 (nginx relaie /v1 vers l'API).
+  web:
+    build: ../apps/web
+    ports: ["8090:8080"]
+    restart: unless-stopped
+    depends_on: [api]
 
   # Itinéraires. Au premier démarrage, télécharge l'extrait OpenStreetMap de la Marne et construit
   # le graphe routier (~1 min, 600 Mo de mémoire au plus) ; ensuite il redémarre en moins d'une seconde.
