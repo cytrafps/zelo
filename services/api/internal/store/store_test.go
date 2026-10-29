@@ -58,6 +58,48 @@ func TestConcurrentStartup(t *testing.T) {
 	}
 }
 
+// Schéma inchangé : le démarrage ne prend aucun verrou sur les tables, même pendant une lecture
+// (avant, l'ALTER rejoué attendait la fin de la collecte et le démarrage échouait en 5 s).
+// Schéma modifié : il est rejoué et sa nouvelle empreinte enregistrée.
+func TestMigrateOnlyWhenSchemaChanges(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	reader, err := s.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Rollback(ctx)
+	if _, err := reader.Exec(ctx, `SELECT count(*) FROM charge_point`); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	again, err := Open(ctx, os.Getenv("ZELO_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatalf("démarrage pendant une lecture : %v", err)
+	}
+	again.Close()
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("démarrage en %v : il a attendu un verrou", d)
+	}
+	if err := reader.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.db.Exec(ctx, `UPDATE schema_version SET hash = 'ancien'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(ctx, s.db); err != nil {
+		t.Fatal(err)
+	}
+	var hash string
+	if err := s.db.QueryRow(ctx, `SELECT hash FROM schema_version`).Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	if hash != schemaHash {
+		t.Fatalf("empreinte %q, attendu %q", hash, schemaHash)
+	}
+}
+
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // Un signalement enregistré par une instance atteint les auditeurs de toutes les instances.
