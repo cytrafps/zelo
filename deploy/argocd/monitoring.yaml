@@ -12,16 +12,46 @@ spec:
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
-    targetRevision: 77.*
+    # Version exacte : une mise à jour (CRD, Prometheus) est une PR relue, pas une surprise.
+    targetRevision: 77.14.0
     helm:
       releaseName: monitoring
       valuesObject:
         grafana:
+          # Mot de passe admin généré par Ansible (rôle zelo), au lieu de « prom-operator » par défaut.
+          admin:
+            existingSecret: grafana-admin
+            userKey: user
+            passwordKey: password
           sidecar:
             dashboards:
               enabled: true
               label: grafana_dashboard
               searchNamespace: ALL
+        # Alertes envoyées sur Discord. Le webhook est un secret (alertmanager-discord, clé « webhook »),
+        # créé par Ansible ou à la main, jamais versionné ; tant qu'il manque, Alertmanager attend.
+        alertmanager:
+          alertmanagerSpec:
+            secrets: [alertmanager-discord]
+          config:
+            route:
+              receiver: discord
+              group_by: [alertname]
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 12h
+              routes:
+                # Watchdog : alerte permanente qui prouve que la chaîne marche ; pas à envoyer.
+                - receiver: "null"
+                  matchers: [alertname = "Watchdog"]
+                - receiver: "null"
+                  matchers: [alertname = "InfoInhibitor"]
+            receivers:
+              - name: "null"
+              - name: discord
+                discord_configs:
+                  - webhook_url_file: /etc/alertmanager/secrets/alertmanager-discord/webhook
+                    send_resolved: true
         prometheus:
           prometheusSpec:
             retention: 15d

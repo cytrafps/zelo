@@ -89,9 +89,13 @@ spec:
           livenessProbe:
             httpGet: { path: /livez, port: http }
             periodSeconds: 15
+          # /healthz attend jusqu'à 2 s la base : au-delà du délai d'1 s par défaut, une base lente
+          # retirait tous les pods ensemble.
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           startupProbe:
             httpGet: { path: /livez, port: http }
             periodSeconds: 2

@@ -25,6 +25,50 @@
   no_log: true
   when: zelo_db_secret.rc != 0
 
+- name: Espace de noms monitoring
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl create namespace monitoring --dry-run=client -o yaml | k3s kubectl apply -f -
+  args:
+    executable: /bin/bash
+  register: monitoring_ns
+  changed_when: "'created' in monitoring_ns.stdout"
+
+- name: Secret admin de Grafana existant
+  ansible.builtin.command: k3s kubectl -n monitoring get secret grafana-admin
+  register: grafana_admin_secret
+  changed_when: false
+  failed_when: false
+
+# Comme la base : généré une fois, jamais versionné. Le lire :
+# kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.password}' | base64 -d
+- name: Mot de passe admin de Grafana
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl -n monitoring create secret generic grafana-admin \
+      --from-literal=user=admin --from-literal=password="$(openssl rand -hex 24)"
+  args:
+    executable: /bin/bash
+  changed_when: true
+  no_log: true
+  when: grafana_admin_secret.rc != 0
+
+# Webhook Discord des alertes : variable alertmanager_discord_webhook (ansible-vault ou -e), jamais
+# versionnée. Sans elle, le secret est à créer à la main (voir deploy/README.md).
+- name: Webhook Discord des alertes
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl -n monitoring create secret generic alertmanager-discord \
+      --from-literal=webhook="$WEBHOOK" --dry-run=client -o yaml | k3s kubectl apply -f -
+  args:
+    executable: /bin/bash
+  environment:
+    WEBHOOK: "{{ alertmanager_discord_webhook }}"
+  register: discord_secret
+  changed_when: "'unchanged' not in discord_secret.stdout"
+  no_log: true
+  when: alertmanager_discord_webhook is defined
+
 # Supervision d'abord : ses CRD (ServiceMonitor, PrometheusRule) servent à l'application Zelo.
 - name: Applications Argo CD
   ansible.builtin.command: k3s kubectl apply -f -
@@ -32,6 +76,7 @@
     stdin: "{{ lookup('ansible.builtin.file', repo_root ~ '/deploy/argocd/' ~ item) }}"
   loop:
     - monitoring.yaml
+    - project.yaml
     - zelo.yaml
   register: zelo_argocd_apps
   changed_when: "'unchanged' not in zelo_argocd_apps.stdout"

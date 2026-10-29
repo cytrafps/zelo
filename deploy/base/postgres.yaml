@@ -31,11 +31,20 @@ spec:
       labels:
         app.kubernetes.io/name: db
     spec:
+      automountServiceAccountToken: false # la base n'appelle pas l'API Kubernetes
       securityContext:
         fsGroup: 70 # utilisateur postgres de l'image Alpine
+        # Démarre directement en postgres : l'entrypoint de l'image sait le faire, sans passer par root.
+        runAsUser: 70
+        runAsGroup: 70
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: postgres
           image: postgis/postgis:17-3.5-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
           env:
             - name: POSTGRES_USER
               value: zelo

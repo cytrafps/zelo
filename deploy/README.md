@@ -24,7 +24,7 @@ flowchart LR
 | `base/` | API (Deployment, Service), PostGIS (StatefulSet + volume 5 Go), Ingress, NetworkPolicy |
 | `monitoring/` | ServiceMonitor, alertes (`alerts.yaml`, testées par `alerts_test.yml`), tableau de bord Grafana |
 | `overlays/homelab/` | Environnement réel : domaine, zone d'import (Grand Reims), tag d'image écrit par la CI |
-| `argocd/` | Applications Argo CD : `monitoring.yaml` (kube-prometheus-stack) et `zelo.yaml` |
+| `argocd/` | Applications Argo CD : `monitoring.yaml` (kube-prometheus-stack), `zelo.yaml`, et le projet `project.yaml` qui limite Zelo à son espace de noms |
 
 ## Choix
 
@@ -35,14 +35,17 @@ flowchart LR
   - Limite connue : le quota de signalements par IP est compté par réplique, donc jusqu'à 2 fois plus permissif. Un compteur dans PostgreSQL ou Redis le rendra global si besoin.
 - **Sondes séparées.** `livez` ne dépend pas de la base : une panne de PostgreSQL rend l'API « non prête », sans la faire redémarrer en boucle. `healthz` vérifie la base et sert de readiness.
 - **Durcissement.**
-  - Conteneur non root, système de fichiers en lecture seule, aucune capacité, seccomp `RuntimeDefault`, pas de jeton de service monté.
-  - Les NetworkPolicy n'ouvrent la base qu'à l'API, et l'API qu'à Traefik et à Prometheus.
+  - Conteneur non root, système de fichiers en lecture seule, aucune capacité, seccomp `RuntimeDefault`, pas de jeton de service monté. PostgreSQL aussi tourne en non root (sans système de fichiers en lecture seule).
+  - Pod Security `baseline` imposé sur l'espace de noms, `restricted` signalé.
+  - NetworkPolicy fermées par défaut, en entrée comme en sortie. La base n'est ouverte qu'à l'API, l'API qu'à Traefik et à Prometheus. En sortie, l'API ne joint que la base, Valhalla, le DNS et Internet en 80/443.
+  - Argo CD applique Zelo dans le projet `zelo` : uniquement l'espace de noms `zelo`, sans rôles ni liaisons. Un manifeste poussé sur `main` ne peut donc pas prendre la main sur le cluster.
   - Seuls `/v1` et `/healthz` sont exposés par l'Ingress, donc `/metrics` reste interne.
 - **Secret hors Git.** Le mot de passe de la base est créé à la main, une fois. Plus tard, Sealed Secrets ou SOPS permettront de le versionner chiffré.
 - **Alertes.**
   - API injoignable.
   - Données non rafraîchies depuis 3 cycles de leur source : 30 min pour le carburant, 15 min pour l'état des bornes, 72 h pour les parkings.
   - Collecte en échec 3 fois en une heure.
+  - Elles sont envoyées sur Discord. Le webhook est le secret `alertmanager-discord` (clé `webhook`) dans `monitoring`, créé par Ansible (`-e alertmanager_discord_webhook=…`) ou à la main. Tant qu'il manque, Alertmanager ne démarre pas.
 
 ## Installation sur le homelab
 
@@ -63,8 +66,14 @@ kubectl -n zelo create secret generic zelo-db --from-literal=password="$(openssl
 # Facultatif : vigilances Météo-France (clé « API Key » de DonneesPubliquesVigilance sur portail-api.meteofrance.fr)
 kubectl -n zelo create secret generic zelo-meteofrance --from-literal=api-key='…'
 
-# 4. Applications (monitoring d'abord : ses CRD servent à Zelo)
+# 4. Supervision : mot de passe Grafana et webhook Discord des alertes (Discord : salon → Intégrations → Webhooks)
+kubectl create namespace monitoring
+kubectl -n monitoring create secret generic grafana-admin --from-literal=user=admin --from-literal=password="$(openssl rand -hex 24)"
+kubectl -n monitoring create secret generic alertmanager-discord --from-literal=webhook='https://discord.com/api/webhooks/…'
+
+# 5. Applications (monitoring d'abord : ses CRD servent à Zelo)
 kubectl apply -f deploy/argocd/monitoring.yaml
+kubectl apply -f deploy/argocd/project.yaml
 kubectl apply -f deploy/argocd/zelo.yaml
 ```
 
@@ -74,7 +83,7 @@ Ensuite :
 
 - **API** : fais pointer `api.zelo.lan` vers l'IP de la VM (DNS local ou fichier hosts), puis ouvre `http://api.zelo.lan/healthz`.
 - **Argo CD** : `kubectl -n argocd port-forward svc/argocd-server 8443:443`. Le mot de passe `admin` se lit avec `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
-- **Grafana** : `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80`, tableau de bord « Zelo · API ». Le mot de passe `admin` se lit avec `kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d`.
+- **Grafana** : `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80`, tableau de bord « Zelo · API ». Le mot de passe `admin` se lit avec `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.password}' | base64 -d`.
 
 Pour exposer l'API sur Internet en HTTPS sans ouvrir de port, on prévoit un Cloudflare Tunnel, avec `TRUST_PROXY=true` pour lire la vraie IP des clients.
 
