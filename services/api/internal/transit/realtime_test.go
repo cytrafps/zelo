@@ -68,12 +68,22 @@ func TestRealtime(t *testing.T) {
 		t.Fatalf("retard non appliqué : %+v (théorique %+v)", leg, static)
 	}
 
-	gone := feed(t, &gtfs.TripUpdate{Trip: &gtfs.TripDescriptor{TripId: proto.String(id), ScheduleRelationship: gtfs.TripDescriptor_CANCELED.Enum()}})
+	gone := feed(t, &gtfs.TripUpdate{Trip: &gtfs.TripDescriptor{TripId: proto.String(id), StartDate: proto.String("20261103"), ScheduleRelationship: gtfs.TripDescriptor_CANCELED.Enum()}})
 	for _, j := range tt.Plan([]Access{{neufchatel, 0}}, []Access{{opera, 0}}, after, time.Hour, 3, gone) {
 		for _, l := range j.Legs {
 			if l.From.ID == neufchatel && l.Depart.Equal(static.Depart) && l.Line != nil && l.Line.Mode == "tram" {
 				t.Fatalf("course supprimée encore proposée : %+v", l)
 			}
+		}
+	}
+
+	// Le même identifiant de course revient le lendemain : ni le retard ni la suppression du mardi
+	// ne s'appliquent au mercredi.
+	wed := time.Date(2026, 11, 4, 8, 3, 0, 0, Paris)
+	wedStatic := tt.Plan([]Access{{neufchatel, 0}}, []Access{{opera, 0}}, wed, time.Hour, 1, nil)[0].Legs[0]
+	for name, f := range map[string]*Realtime{"retard": rt, "suppression": gone} {
+		if leg := tt.Plan([]Access{{neufchatel, 0}}, []Access{{opera, 0}}, wed, time.Hour, 1, f)[0].Legs[0]; !leg.Depart.Equal(wedStatic.Depart) {
+			t.Errorf("%s du mardi appliqué(e) le mercredi : %+v (théorique %+v)", name, leg, wedStatic)
 		}
 	}
 

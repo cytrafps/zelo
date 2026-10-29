@@ -19,6 +19,11 @@ type Report struct {
 	Denials       int       `json:"denials"`
 }
 
+// Voter : qui signale ou vote, sans compte. Device : l'appareil (un vote par appareil). Net : son
+// réseau (/24 IPv4, /64 IPv6), qui ne compte qu'une fois : inventer des identifiants d'appareil ne
+// donne pas plus de voix. Deux empreintes, jamais l'adresse elle-même.
+type Voter struct{ Device, Net string }
+
 var (
 	ErrReportNotFound = errors.New("signalement introuvable ou expiré")
 	ErrOwnReport      = errors.New("on ne vote pas pour son propre signalement")
@@ -29,8 +34,8 @@ const (
 	// MergeRadius : un signalement du même type à moins de 150 m est un doublon ; il compte
 	// comme une confirmation du signalement existant au lieu d'en créer un second.
 	MergeRadius = 150.0
-	// Un signalement disparaît dès qu'au moins 2 personnes l'infirment et qu'elles sont plus
-	// nombreuses que celles qui le confirment.
+	// Un signalement disparaît dès qu'au moins 2 réseaux différents l'infirment et qu'ils sont plus
+	// nombreux que ceux qui le confirment.
 	minDenials = 2
 )
 
@@ -38,7 +43,7 @@ const reportColumns = `id, kind, ST_Y(geom::geometry), ST_X(geom::geometry), cre
 
 // AddReport enregistre un signalement, ou confirme le doublon proche s'il en existe un
 // (created = false). L'événement part à toutes les instances (NOTIFY) dans la même transaction.
-func (s *Store) AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (r Report, created bool, err error) {
+func (s *Store) AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter Voter) (r Report, created bool, err error) {
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		// Recherche puis verrouillage en deux temps : FOR UPDATE ne se combine pas au tri KNN (<->).
 		var dup int64
@@ -65,9 +70,9 @@ func (s *Store) AddReport(ctx context.Context, kind string, lat, lon float64, tt
 		}
 		created = true
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO report (kind, geom, expires_at, reporter)
-			VALUES ($1, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, now() + make_interval(secs => $4), $5)
-			RETURNING `+reportColumns, kind, lat, lon, ttl.Seconds(), voter).Scan(reportFields(&r)...); err != nil {
+			INSERT INTO report (kind, geom, expires_at, reporter, reporter_net)
+			VALUES ($1, ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography, now() + make_interval(secs => $4), $5, $6)
+			RETURNING `+reportColumns, kind, lat, lon, ttl.Seconds(), voter.Device, voter.Net).Scan(reportFields(&r)...); err != nil {
 			return err
 		}
 		return notify(ctx, tx, LiveEvent{Type: "report", Report: &r})
@@ -78,7 +83,7 @@ func (s *Store) AddReport(ctx context.Context, kind string, lat, lon float64, tt
 // Vote enregistre « toujours là » (up) ou « plus là » pour un appareil ; un nouveau vote du
 // même appareil remplace le précédent. Une confirmation prolonge le signalement de ttl/2 ;
 // assez d'infirmations le retirent (removed = true).
-func (s *Store) Vote(ctx context.Context, id int64, voter string, up bool, ttl func(kind string) time.Duration) (r Report, removed bool, err error) {
+func (s *Store) Vote(ctx context.Context, id int64, voter Voter, up bool, ttl func(kind string) time.Duration) (r Report, removed bool, err error) {
 	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
 		var kind string
 		if err := tx.QueryRow(ctx, `SELECT kind FROM report WHERE id = $1 AND expires_at > now() FOR UPDATE`, id).Scan(&kind); err != nil {
@@ -94,24 +99,27 @@ func (s *Store) Vote(ctx context.Context, id int64, voter string, up bool, ttl f
 }
 
 // vote suppose la ligne du signalement verrouillée (FOR UPDATE) par l'appelant.
-func vote(ctx context.Context, tx pgx.Tx, id int64, voter string, up bool, ttl time.Duration) (Report, bool, error) {
+func vote(ctx context.Context, tx pgx.Tx, id int64, voter Voter, up bool, ttl time.Duration) (Report, bool, error) {
 	var reporter string
 	if err := tx.QueryRow(ctx, `SELECT reporter FROM report WHERE id = $1`, id).Scan(&reporter); err != nil {
 		return Report{}, false, err
 	}
-	if reporter != "" && reporter == voter {
+	if reporter != "" && reporter == voter.Device {
 		return Report{}, false, ErrOwnReport
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO report_vote (report_id, voter, up) VALUES ($1, $2, $3)
-		ON CONFLICT (report_id, voter) DO UPDATE SET up = EXCLUDED.up, voted_at = now()`, id, voter, up); err != nil {
+		INSERT INTO report_vote (report_id, voter, up, net) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (report_id, voter) DO UPDATE SET up = EXCLUDED.up, net = EXCLUDED.net, voted_at = now()`, id, voter.Device, up, voter.Net); err != nil {
 		return Report{}, false, err
 	}
 	var r Report
+	// Une voix par réseau ; le réseau de l'auteur ne confirme pas son propre signalement.
 	err := tx.QueryRow(ctx, `
 		WITH v AS (
-			SELECT count(*) FILTER (WHERE up) AS yes, count(*) FILTER (WHERE NOT up) AS no
-			FROM report_vote WHERE report_id = $1
+			SELECT count(DISTINCT net) FILTER (WHERE up AND (rep.reporter_net = '' OR net <> rep.reporter_net)) AS yes,
+			       count(DISTINCT net) FILTER (WHERE NOT up) AS no
+			FROM report_vote, (SELECT reporter_net FROM report WHERE id = $1) rep
+			WHERE report_id = $1
 		)
 		UPDATE report SET
 			confirmations = v.yes,

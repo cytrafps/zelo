@@ -67,7 +67,9 @@ func (a *API) exclusions(ctx context.Context, from, to route.Point, mode route.M
 		return out
 	}
 	for _, r := range reports {
-		if r.Kind == "route_fermee" && r.Confirmations >= r.Denials {
+		// Un signalement seul ne barre pas une rue pour tout le monde : il faut qu'un autre réseau
+		// l'ait confirmé, et pas plus d'infirmations que de confirmations.
+		if r.Kind == "route_fermee" && r.Confirmations >= 1 && r.Confirmations >= r.Denials {
 			add(route.Around(route.Point{Lat: r.Lat, Lon: r.Lon}, closedRadius))
 		}
 	}
