@@ -29,6 +29,9 @@ func TestMatch(t *testing.T) {
 		{Booth{Name: "Reims Sud"}, "REIMS SUD N°23"},
 		{Booth{Name: "Péage de Courcy"}, "REIMS (péage de Courcy)"},
 		{Booth{Name: "Péage de Reims"}, ""}, // « Reims » : Courcy ne se reconnaît qu'à son nom de péage
+		// Nom donné par OSM aux barrières de Taissy : « Reims Est » désigne une seule gare.
+		{Booth{Name: "Péage de Reims Est"}, "REIMS EST (péage de Taissy)"},
+		{Booth{Name: "Reims Nord"}, "REIMS NORD (péage d'Ormes)"},
 		{Booth{Name: "Châlons-en-Champagne"}, "CHÂLONS-EN-CHAMPAGNE / LA VEUVE N°24"},
 		{Booth{Name: "La Neuvillette"}, "LA NEUVILLETTE N°15"},
 		{Booth{Name: "Saint-Quentin"}, ""},       // Nord ou Sud : on ne choisit pas
