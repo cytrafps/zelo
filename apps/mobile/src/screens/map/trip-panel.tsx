@@ -17,7 +17,7 @@ import { along, cumulative, formatClock, formatDuration, type Area, type Route }
 import { forVehicle, sameTarget, sheltered, targetPoint } from '@/utils/targets';
 import { cheapestRoute, FUELS, fuelLabel, HOME_KWH, LITRE_STEPS, routeCost, tripCost, type ChargeAt, type Combustion, type Fuel } from '@/utils/cost';
 import { arrivalPercent, LOW_PERCENT, type EvModel } from '@/utils/ev';
-import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
+import { CRITAIR, critairLabel, paris, refused, ruleActive, zoneAt, zoneCrossed, type Critair, type Zone } from '@/utils/zfe';
 
 const ios = Platform.OS === 'ios';
 
@@ -212,7 +212,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
           trip={trip}
           vehicle={vehicle}
           options={options}
-          day={localDay(start)}
+          arrive={start + (trip.routes[trip.selected]?.duration ?? 0) * 1000}
           c={c}
           onPark={(target) => onChange({ target })}
         />
@@ -487,31 +487,38 @@ function WeatherNotice(props: { trip: Trip; options: TripTarget[]; arrive: numbe
 const VIGILANCE_COLOR = { jaune: '#FFE600', orange: '#FF8C00', rouge: '#E4002B' } as const;
 
 /**
- * ZFE : là où la voiture s'arrête (parking, borne, relais, ou la destination pour une dépose)
- * est-il interdit à sa vignette ? On la demande une fois (elle reste sur le téléphone), puis on
- * propose de se garer hors zone.
+ * ZFE : là où la voiture s'arrête (parking, borne, relais, ou la destination pour une dépose),
+ * ou le trajet qui y mène, est-il interdit à sa vignette à l'heure d'arrivée ? On la demande une
+ * fois (elle reste sur le téléphone), puis on propose de se garer hors zone. Jour et heures en
+ * heure de Paris, pas celle du téléphone.
  */
 function ZfeNotice(props: {
   zones: readonly Zone[];
   trip: Trip;
   vehicle: Vehicle;
   options: TripTarget[];
-  day: string;
+  /** Heure d'arrivée (ms). */
+  arrive: number;
   c: Couleurs;
   onPark: (t: TripTarget) => void;
 }) {
-  const { zones, trip, vehicle, options, day, c, onPark } = props;
+  const { zones, trip, vehicle, options, arrive, c, onPark } = props;
+  const day = paris(arrive).day;
   const [vignette, setVignette] = useStored<Critair | null>('zelo.critair', null);
   const [editing, setEditing] = useState(false);
   if (vehicle === 'bike') return null;
-  const zone = zoneAt(zones, targetPoint(trip.target, trip.destination), day);
+  const stopZone = zoneAt(zones, targetPoint(trip.target, trip.destination), day);
+  // Arrêt hors zone, mais le trajet la traverse : la circulation y est interdite aussi.
+  const zone = stopZone ?? zoneCrossed(zones, trip.routes[trip.selected]?.coordinates ?? [], day);
   const rule = zone?.[vehicle === 'moto' ? 'moto' : 'car'];
   if (!zone || !rule) return null;
 
   if (!vignette || editing)
     return (
       <View style={styles.notice}>
-        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Ton arrêt est dans la ${zone.name}. Ta vignette Crit'Air ?`}</Text>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>
+          {`${stopZone ? 'Ton arrêt est dans' : 'Ton trajet traverse'} la ${zone.name}. Ta vignette Crit'Air ?`}
+        </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
           {CRITAIR.map((v) => (
             <Pressable
@@ -532,14 +539,29 @@ function ZfeNotice(props: {
     );
 
   if (!refused(vignette, rule)) return null;
+  const hours = rule.hours && rule.hours !== '24/7' ? ` (${rule.hours})` : '';
+  // Horaires compris et hors plage à l'arrivée : on le dit sans alerter. Format inconnu (null) :
+  // la règle est tenue pour permanente, horaires affichés.
+  if (ruleActive(rule.hours, arrive) === false)
+    return (
+      <View style={styles.notice}>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>
+          {`${critairLabel(vignette)} : interdite dans la ${zone.name}${hours}, mais pas à ton heure d’arrivée.`}
+        </Text>
+      </View>
+    );
   const inZone = (t: TripTarget) => zoneAt([zone], targetPoint(t, trip.destination), day) !== undefined;
   // Hors zone : le parking relais d'abord (on finit en tram ou en bus), puis le plus proche.
-  const outside = [...options.filter((t) => t.kind === 'parkride'), ...options].find((t) => t.kind !== 'dropoff' && !inZone(t));
-  const hours = rule.hours && rule.hours !== '24/7' ? ` (${rule.hours})` : '';
+  // Si seul le trajet traverse la zone, changer d'arrêt n'y change rien : pas de proposition.
+  const outside = stopZone
+    ? [...options.filter((t) => t.kind === 'parkride'), ...options].find((t) => t.kind !== 'dropoff' && !inZone(t))
+    : undefined;
   return (
     <View style={[styles.notice, { backgroundColor: c.fond.attenue }]}>
       <Text style={[texte.corps, { color: c.alerte.base }]}>
-        {`${critairLabel(vignette)} : interdite dans la ${zone.name}${hours}.`}
+        {stopZone
+          ? `${critairLabel(vignette)} : interdite dans la ${zone.name}${hours}.`
+          : `${critairLabel(vignette)} : ce trajet traverse la ${zone.name}, interdite${hours}.`}
       </Text>
       <View style={styles.noticeRow}>
         {outside && (
