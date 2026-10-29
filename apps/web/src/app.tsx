@@ -6,7 +6,6 @@ import { ApiPage } from './pages/api';
 import { ChargePage } from './pages/charge';
 import { FuelPage } from './pages/fuel';
 import { Overview } from './pages/overview';
-import { ReportsPage } from './pages/reports';
 import { ParkingPage } from './pages/parking';
 import { ReportsPage } from './pages/reports';
 
