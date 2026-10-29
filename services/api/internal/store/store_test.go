@@ -58,6 +58,48 @@ func TestConcurrentStartup(t *testing.T) {
 	}
 }
 
+// Schéma inchangé : le démarrage ne prend aucun verrou sur les tables, même pendant une lecture
+// (avant, l'ALTER rejoué attendait la fin de la collecte et le démarrage échouait en 5 s).
+// Schéma modifié : il est rejoué et sa nouvelle empreinte enregistrée.
+func TestMigrateOnlyWhenSchemaChanges(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	reader, err := s.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Rollback(ctx)
+	if _, err := reader.Exec(ctx, `SELECT count(*) FROM charge_point`); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	again, err := Open(ctx, os.Getenv("ZELO_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatalf("démarrage pendant une lecture : %v", err)
+	}
+	again.Close()
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("démarrage en %v : il a attendu un verrou", d)
+	}
+	if err := reader.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.db.Exec(ctx, `UPDATE schema_version SET hash = 'ancien'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(ctx, s.db); err != nil {
+		t.Fatal(err)
+	}
+	var hash string
+	if err := s.db.QueryRow(ctx, `SELECT hash FROM schema_version`).Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	if hash != schemaHash {
+		t.Fatalf("empreinte %q, attendu %q", hash, schemaHash)
+	}
+}
+
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // Un signalement enregistré par une instance atteint les auditeurs de toutes les instances.
@@ -74,7 +116,7 @@ func TestReportReachesEveryInstance(t *testing.T) {
 	// Position propre à chaque exécution : sinon le signalement d'un essai précédent (base réutilisée
 	// en local) serait confirmé au lieu d'être créé.
 	lat := 49.2 + float64(time.Now().UnixNano()%1000)/10_000
-	r, _, err := a.AddReport(ctx, "bouchon", lat, 4.03, time.Minute, "test-a")
+	r, _, err := a.AddReport(ctx, "bouchon", lat, 4.03, time.Minute, Voter{"test-a", "net-a"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,42 +198,59 @@ func TestReportReliability(t *testing.T) {
 	// Types propres à cette exécution : les signalements des exécutions précédentes ne comptent pas.
 	run := fmt.Sprint(time.Now().UnixNano())
 	accident, travaux := "accident-"+run, "travaux-"+run
+	v := func(name string) Voter { return Voter{Device: name, Net: "net-" + name} } // chacun chez soi
 
-	r, created, err := s.AddReport(ctx, accident, lat, lon, time.Hour, "alice")
+	r, created, err := s.AddReport(ctx, accident, lat, lon, time.Hour, v("alice"))
 	if err != nil || !created {
 		t.Fatalf("création : %v (created=%v)", err, created)
 	}
 
 	// Doublon à ~50 m : c'est une confirmation, pas un nouveau signalement.
-	dup, created, err := s.AddReport(ctx, accident, lat+0.0004, lon, time.Hour, "bob")
+	dup, created, err := s.AddReport(ctx, accident, lat+0.0004, lon, time.Hour, v("bob"))
 	if err != nil || created || dup.ID != r.ID || dup.Confirmations != 1 {
 		t.Fatalf("doublon : %+v created=%v err=%v", dup, created, err)
 	}
 	// Autre type au même endroit : signalement distinct.
-	if other, created, err := s.AddReport(ctx, travaux, lat, lon, time.Hour, "bob"); err != nil || !created || other.ID == r.ID {
+	if other, created, err := s.AddReport(ctx, travaux, lat, lon, time.Hour, v("bob")); err != nil || !created || other.ID == r.ID {
 		t.Fatalf("autre type : %+v created=%v err=%v", other, created, err)
 	}
 
-	if _, _, err := s.Vote(ctx, r.ID, "alice", false, ttl); !errors.Is(err, ErrOwnReport) {
+	if _, _, err := s.Vote(ctx, r.ID, v("alice"), false, ttl); !errors.Is(err, ErrOwnReport) {
 		t.Fatalf("vote sur son signalement : %v", err)
 	}
 
 	// Une confirmation prolonge : il reste au moins ttl/2.
-	conf, _, err := s.Vote(ctx, r.ID, "carol", true, ttl)
+	conf, _, err := s.Vote(ctx, r.ID, v("carol"), true, ttl)
 	if err != nil || conf.Confirmations != 2 || time.Until(conf.ExpiresAt) < 29*time.Minute {
 		t.Fatalf("confirmation : %+v err=%v", conf, err)
 	}
 
 	// Bob change d'avis : son vote est remplacé, pas ajouté.
-	if v, _, err := s.Vote(ctx, r.ID, "bob", false, ttl); err != nil || v.Confirmations != 1 || v.Denials != 1 {
+	if v, _, err := s.Vote(ctx, r.ID, v("bob"), false, ttl); err != nil || v.Confirmations != 1 || v.Denials != 1 {
 		t.Fatalf("changement d'avis : %+v err=%v", v, err)
 	}
 	// 2 « plus là » contre 1 confirmation : retiré.
-	if v, removed, err := s.Vote(ctx, r.ID, "dave", false, ttl); err != nil || !removed {
+	if v, removed, err := s.Vote(ctx, r.ID, v("dave"), false, ttl); err != nil || !removed {
 		t.Fatalf("aurait dû être retiré : %+v err=%v", v, err)
 	}
-	if _, _, err := s.Vote(ctx, r.ID, "frank", true, ttl); !errors.Is(err, ErrReportNotFound) {
+	if _, _, err := s.Vote(ctx, r.ID, v("frank"), true, ttl); !errors.Is(err, ErrReportNotFound) {
 		t.Fatalf("vote sur un signalement retiré : %v", err)
+	}
+
+	// Un seul réseau, plusieurs identifiants inventés : une seule voix, le signalement reste.
+	r2, _, err := s.AddReport(ctx, accident, lat+0.01, lon, time.Hour, v("alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, device := range []string{"fake-1", "fake-2", "fake-3"} {
+		got, removed, err := s.Vote(ctx, r2.ID, Voter{Device: device, Net: "net-mallory"}, false, ttl)
+		if err != nil || removed || got.Denials != 1 {
+			t.Fatalf("%s : %+v removed=%v err=%v", device, got, removed, err)
+		}
+	}
+	// Le réseau de l'auteur (un autre téléphone chez lui) ne confirme pas.
+	if got, _, err := s.Vote(ctx, r2.ID, Voter{Device: "alice-tablette", Net: "net-alice"}, true, ttl); err != nil || got.Confirmations != 0 {
+		t.Fatalf("confirmation depuis le réseau de l'auteur : %+v err=%v", got, err)
 	}
 }
 
@@ -520,5 +579,38 @@ func TestTollPointsAlong(t *testing.T) {
 	}
 	if err := s.SaveTollPoints(ctx, pts[:1]); err == nil {
 		t.Fatal("import de 1 poste rattaché sur 3 accepté")
+	}
+}
+
+// Flux carburant vide ou tronqué : refusé, les prix d'avant restent. Un prix qui revient compte
+// à partir d'aujourd'hui dans la tendance.
+func TestFuelFeedGuard(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if err := s.SaveFuel(ctx, nil); err == nil {
+		t.Fatal("flux vide accepté")
+	}
+	paris, _ := time.LoadLocation("Europe/Paris")
+	old := time.Now().In(paris).AddDate(0, 0, -5)
+	box := BBox{5.70, 45.20, 5.72, 45.22}
+	st := func(id string, prices ...fuel.Price) fuel.Station {
+		return fuel.Station{ID: id, Lat: 45.21, Lon: 5.71, Prices: prices}
+	}
+	e10 := fuel.Price{Fuel: "E10", Value: 1.8, UpdatedAt: old}
+	if err := s.SaveFuel(ctx, []fuel.Station{st("T-RETOUR", e10)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveFuel(ctx, []fuel.Station{st("T-RETOUR")}); err != nil { // E10 retiré aujourd'hui
+		t.Fatal(err)
+	}
+	if err := s.SaveFuel(ctx, []fuel.Station{st("T-RETOUR", e10)}); err != nil { // il revient, même date
+		t.Fatal(err)
+	}
+	days, err := s.FuelTrend(ctx, box, "E10", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(days) != 1 || days[0].Stations != 1 {
+		t.Fatalf("prix revenu absent de la tendance du jour : %+v", days)
 	}
 }

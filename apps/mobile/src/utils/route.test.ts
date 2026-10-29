@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { along, bounds, cumulative, formatClock, formatDuration, deviation, pointAt, progress, segmentBearing, voiceDue, type Route } from './route.ts';
+import { along, arrival, bounds, cumulative, formatClock, formatDuration, deviation, pointAt, progress, segmentBearing, voiceDue, type Route } from './route.ts';
 
 // Vraie réponse de GET /v1/route : gare de Reims → cathédrale, 1 875 m.
 const route: Route = JSON.parse(readFileSync(new URL('./testdata/gare-cathedrale.json', import.meta.url), 'utf8'));
@@ -131,4 +131,18 @@ test('contresens : sur le tracé mais cap opposé', () => {
   assert.equal(deviation(null, 5, { heading: null }, 190, 0).since, null);
   assert.equal(segmentBearing([[4, 49], [4, 49.001]], 0), 0);
   assert.ok(Math.abs((segmentBearing([[4, 49], [4.001, 49]], 0) ?? 0) - 90) < 1e-9);
+});
+
+test("arrival : sur le tracé, à vol d'oiseau quand le GPS se perd, et au calme près du bout", () => {
+  assert.equal(arrival('drive', 25, 200), 'arrived');
+  // Parking souterrain : 400 m de rampes restent sur le tracé, le bout est à 50 m.
+  assert.equal(arrival('drive', 400, 50), 'arrived');
+  // Précision médiocre : la marge suit, sans dépasser 100 m.
+  assert.equal(arrival('drive', 400, 90, 95), 'arrived');
+  assert.equal(arrival('drive', 400, 120, 500), 'near');
+  assert.equal(arrival('drive', 400, 140), 'near');
+  assert.equal(arrival('drive', 400, 160), 'en-route');
+  assert.equal(arrival('walk', 30, 18), 'arrived');
+  assert.equal(arrival('walk', 30, 35, 80), 'arrived');
+  assert.equal(arrival('walk', 30, 45, 80), 'en-route');
 });

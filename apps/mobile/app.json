@@ -21,7 +21,9 @@
       "package": "app.zelo",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
@@ -38,7 +40,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Zelo utilise ta position pour centrer la carte et placer tes signalements."
+          "locationWhenInUsePermission": "Zelo utilise ta position pour centrer la carte, placer tes signalements et te guider, y compris quand une autre app est au premier plan pendant un guidage.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-sqlite",

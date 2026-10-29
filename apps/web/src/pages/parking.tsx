@@ -130,7 +130,7 @@ function exportParkings(rows: Parking[]) {
     ['parking', 'exploitant', 'latitude', 'longitude', 'places', 'pmr', 'tarif_1h_euros', 'hauteur_max_m', 'p+r'],
     ...rows.map((p) => {
       const cents = hourPrice(p);
-      return [p.name, p.operator, p.lat, p.lon, p.capacity ?? '', p.disabled ?? '', cents === null ? '' : (cents / 100).toFixed(2), p.maxHeight ?? '', p.parkRide ? 'oui' : 'non'];
+      return [p.name, p.operator, p.lat, p.lon, p.capacity ?? '', p.disabled ?? '', cents === null ? '' : cents / 100, p.maxHeight ?? '', p.parkRide ? 'oui' : 'non'];
     }),
   ]);
 }

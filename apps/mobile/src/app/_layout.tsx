@@ -1,6 +1,8 @@
 import { Stack } from 'expo-router';
 
 import { API_URL } from '@/api/zelo';
+// Définit la tâche de suivi du guidage, qui doit exister avant tout rendu.
+import '@/location/navigation-task';
 
 import { setApiUrl } from '../../modules/zelo-auto';
 

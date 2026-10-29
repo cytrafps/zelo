@@ -22,12 +22,13 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/toll"
+	"github.com/cytrafps/zelo/services/api/internal/weather"
 )
 
 // fakeStore imite la base, y compris la diffusion NOTIFY vers le hub.
 type fakeStore struct {
 	added     []store.Report
-	reporters []string
+	reporters []store.Voter
 	hub       *live.Hub
 	controls  []junction.Control
 	areas     []store.AreaOnRoute
@@ -67,7 +68,7 @@ func (f *fakeStore) AreasAlong(context.Context, [][2]float64, float64) ([]store.
 func (f *fakeStore) Reports(context.Context, store.BBox, int) ([]store.Report, error) {
 	return f.added, nil
 }
-func (f *fakeStore) AddReport(_ context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error) {
+func (f *fakeStore) AddReport(_ context.Context, kind string, lat, lon float64, ttl time.Duration, voter store.Voter) (store.Report, bool, error) {
 	r := store.Report{ID: int64(len(f.added) + 1), Kind: kind, Lat: lat, Lon: lon, ExpiresAt: time.Now().Add(ttl)}
 	f.added = append(f.added, r)
 	f.reporters = append(f.reporters, voter)
@@ -75,11 +76,11 @@ func (f *fakeStore) AddReport(_ context.Context, kind string, lat, lon float64, 
 	f.hub.Broadcast(msg)
 	return r, true, nil
 }
-func (f *fakeStore) Vote(_ context.Context, id int64, voter string, up bool, _ func(string) time.Duration) (store.Report, bool, error) {
+func (f *fakeStore) Vote(_ context.Context, id int64, voter store.Voter, up bool, _ func(string) time.Duration) (store.Report, bool, error) {
 	if id < 1 || int(id) > len(f.added) {
 		return store.Report{}, false, store.ErrReportNotFound
 	}
-	if f.reporters[id-1] == voter {
+	if f.reporters[id-1].Device == voter.Device {
 		return store.Report{}, false, store.ErrOwnReport
 	}
 	r := f.added[id-1]
@@ -463,5 +464,78 @@ func TestRouteToll(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?from=49.2591,4.0245&to=49.2535,4.0341&mode=car", nil))
 	if !strings.Contains(rec.Body.String(), `"toll":{"price":0,"complete":false`) {
 		t.Errorf("péage non chiffré : %s", rec.Body.String())
+	}
+}
+
+func TestNetKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"203.0.113.7":            "203.0.113.0/24",
+		"203.0.113.250":          "203.0.113.0/24",
+		"::ffff:203.0.113.7":     "203.0.113.0/24",
+		"2001:db8:1:2:aa::1":     "2001:db8:1:2::/64",
+		"2001:db8:1:2:ffff::999": "2001:db8:1:2::/64",
+		"pas une ip":             "pas une ip",
+	} {
+		if got := netKey(in); got != want {
+			t.Errorf("netKey(%q) = %q, attendu %q", in, got, want)
+		}
+	}
+}
+
+// Deux identifiants d'appareil inventés depuis le même réseau : deux appareils, un seul réseau.
+func TestVoterNetwork(t *testing.T) {
+	a := &API{}
+	req := func(device, ip string) *http.Request {
+		r := httptest.NewRequest("POST", "/v1/reports/1/votes", nil)
+		r.RemoteAddr = ip + ":1234"
+		r.Header.Set("X-Zelo-Device", device)
+		return r
+	}
+	v1, v2 := a.voter(req("aaaaaaaaaaaaaaaa1", "2001:db8::1")), a.voter(req("bbbbbbbbbbbbbbbb2", "2001:db8::ffff"))
+	if v1.Device == v2.Device || v1.Net != v2.Net {
+		t.Fatalf("%+v %+v", v1, v2)
+	}
+	if v3 := a.voter(req("aaaaaaaaaaaaaaaa1", "2001:db9::1")); v3.Net == v1.Net {
+		t.Fatal("deux /64 différents : deux réseaux")
+	}
+}
+
+func TestLiveSocketsPerNetwork(t *testing.T) {
+	l := &connLimiter{max: 2, open: map[string]int{}}
+	if !l.acquire("n") || !l.acquire("n") || l.acquire("n") {
+		t.Fatal("3e connexion du même réseau acceptée")
+	}
+	if !l.acquire("autre") {
+		t.Fatal("autre réseau refusé")
+	}
+	l.release("n")
+	if !l.acquire("n") {
+		t.Fatal("place libérée non réutilisée")
+	}
+}
+
+// Hors de la zone couverte, aucune prévision demandée à Open-Meteo.
+func TestWeatherOutsideZone(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	calls := 0
+	cache := &weather.Cache{TTL: time.Minute, Fetch: func(context.Context, float64, float64) ([]weather.Slot, error) {
+		calls++
+		return nil, errors.New("hors test")
+	}}
+	h := New(&fakeStore{}, live.NewHub(0), quiet, Config{Weather: cache, Zone: store.BBox{MinLon: 3.38, MinLat: 48.51, MaxLon: 5.04, MaxLat: 49.41}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/weather?at=43.30,5.37", nil)) // Marseille
+	if rec.Code != 200 || calls != 0 || !strings.Contains(rec.Body.String(), `"outlook":null`) {
+		t.Fatalf("%d appels, %d %s", calls, rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/weather?at=49.25,4.03", nil)) // Reims
+	if calls != 1 {
+		t.Fatalf("Reims : %d appel(s), 1 attendu", calls)
+	}
+	// L'échec est resservi sans rappeler Open-Meteo pendant ErrorTTL.
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/v1/weather?at=49.25,4.03", nil))
+	if calls != 1 {
+		t.Fatalf("échec rappelé : %d appels", calls)
 	}
 }

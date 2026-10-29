@@ -4,7 +4,9 @@ package store
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,6 +24,13 @@ import (
 
 //go:embed schema.sql
 var schema string
+
+// schemaHash identifie le schéma embarqué : il n'est rejoué que s'il a changé depuis le dernier
+// démarrage. Rien à numéroter à la main : modifier schema.sql suffit.
+var schemaHash = func() string {
+	sum := sha256.Sum256([]byte(schema))
+	return hex.EncodeToString(sum[:])
+}()
 
 type Store struct {
 	db  *pgxpool.Pool
@@ -75,6 +84,10 @@ func poolConfig(url string) (*pgxpool.Config, error) {
 // se bloqueraient sinon mutuellement (deadlock sur les CREATE … IF NOT EXISTS).
 const schemaLock int64 = 0x7a656c6f + 1
 
+// migrate applique schema.sql s'il a changé. Rejoué à chaque démarrage, chaque ALTER TABLE prenait
+// le verrou ACCESS EXCLUSIVE même pour une colonne déjà là : une lecture en cours (collecte des
+// bornes toutes les 5 min) faisait échouer le démarrage, et bloquait les requêtes derrière lui.
+// Le schéma reste idempotent (IF NOT EXISTS) : revenir à une image plus ancienne le rejoue sans risque.
 func migrate(ctx context.Context, db *pgxpool.Pool) error {
 	return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
 		// Un ALTER TABLE attend que la table soit libre, et toutes les lectures attendent derrière lui :
@@ -85,7 +98,26 @@ func migrate(ctx context.Context, db *pgxpool.Pool) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, schemaLock); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, schema)
+		if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
+			id boolean PRIMARY KEY DEFAULT true CHECK (id),
+			hash text NOT NULL,
+			applied_at timestamptz NOT NULL DEFAULT now()
+		)`); err != nil {
+			return err
+		}
+		var applied string
+		err := tx.QueryRow(ctx, `SELECT hash FROM schema_version`).Scan(&applied)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if applied == schemaHash {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, schema); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO schema_version (hash) VALUES ($1)
+			ON CONFLICT (id) DO UPDATE SET hash = EXCLUDED.hash, applied_at = now()`, schemaHash)
 		return err
 	})
 }
@@ -123,8 +155,25 @@ const center = `ST_SetSRID(ST_MakePoint(($1 + $3) / 2, ($2 + $4) / 2), 4326)::ge
 
 // --- Écritures : COPY dans une table temporaire puis upsert, en une transaction.
 
+// minFuelShare : un flux qui compte moins de 70 % des stations connues est tronqué ou cassé ; on
+// garde les prix d'avant plutôt que d'effacer ceux des stations manquantes.
+const minFuelShare = 0.7
+
+// minFuelGuard : en dessous, pas de comparaison (base de test, zone minuscule) ; un flux vide reste refusé.
+const minFuelGuard = 20
+
 func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
+	if len(stations) == 0 {
+		return errors.New("flux carburant vide : import ignoré pour ne pas effacer les prix")
+	}
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		var known int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM fuel_station`).Scan(&known); err != nil {
+			return err
+		}
+		if known >= minFuelGuard && float64(len(stations)) < minFuelShare*float64(known) {
+			return fmt.Errorf("flux carburant de %d stations pour %d connues : import refusé", len(stations), known)
+		}
 		if _, err := tx.Exec(ctx, `
 			CREATE TEMP TABLE tmp_station (id text, lon float8, lat float8, address text, city text, postcode text) ON COMMIT DROP;
 			CREATE TEMP TABLE tmp_price (station_id text, fuel text, price numeric(6,3), updated_at timestamptz) ON COMMIT DROP;`); err != nil {
@@ -176,8 +225,15 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 				ON CONFLICT (station_id, fuel) DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at
 				WHERE fuel_price.updated_at IS DISTINCT FROM EXCLUDED.updated_at
 				RETURNING station_id, fuel, price, updated_at)
+			-- Un prix qui revient après un « retiré » (carburant remis, station absente d'un flux)
+			-- compte à partir du jour de son retour, même s'il porte une date plus ancienne : sinon la
+			-- ligne « retiré » masquerait le prix jusqu'à son prochain changement.
 			INSERT INTO fuel_price_day (station_id, fuel, day, price)
-			SELECT station_id, fuel, (updated_at AT TIME ZONE 'Europe/Paris')::date, price FROM changed
+			SELECT c.station_id, c.fuel, CASE
+					WHEN EXISTS (SELECT 1 FROM fuel_price_day h WHERE h.station_id = c.station_id AND h.fuel = c.fuel
+						AND h.price IS NULL AND h.day >= (c.updated_at AT TIME ZONE 'Europe/Paris')::date)
+					THEN (now() AT TIME ZONE 'Europe/Paris')::date
+					ELSE (c.updated_at AT TIME ZONE 'Europe/Paris')::date END, c.price FROM changed c
 			ON CONFLICT (station_id, fuel, day) DO UPDATE SET price = EXCLUDED.price
 			WHERE fuel_price_day.price IS DISTINCT FROM EXCLUDED.price;
 
@@ -190,9 +246,10 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 // chaque station et carburant, le changement qui précède la fenêtre (le prix de son premier jour).
 func (s *Store) PruneFuelHistory(ctx context.Context) (int64, error) {
 	tag, err := s.db.Exec(ctx, `
-		DELETE FROM fuel_price_day d WHERE d.day < current_date - 35 AND EXISTS (
-			SELECT 1 FROM fuel_price_day n WHERE n.station_id = d.station_id AND n.fuel = d.fuel
-				AND n.day > d.day AND n.day <= current_date - 35)`)
+		WITH cut AS (SELECT (now() AT TIME ZONE 'Europe/Paris')::date - 35 AS d)
+		DELETE FROM fuel_price_day h USING cut WHERE h.day < cut.d AND EXISTS (
+			SELECT 1 FROM fuel_price_day n WHERE n.station_id = h.station_id AND n.fuel = h.fuel
+				AND n.day > h.day AND n.day <= cut.d)`)
 	return tag.RowsAffected(), err
 }
 
@@ -319,6 +376,8 @@ func (s *Store) SaveChargeStatus(ctx context.Context, statuses []irve.Status) er
 			INSERT INTO charge_status (id, state, occupancy, observed_at)
 			SELECT DISTINCT ON (t.id) t.id, t.state, t.occupancy, t.observed_at
 			FROM tmp_cs t JOIN charge_point c ON c.id = t.id
+			-- Un horodatage dans le futur figerait l'état : jamais remplacé, toujours « récent ».
+			WHERE t.observed_at <= now() + interval '10 minutes'
 			ORDER BY t.id, t.observed_at DESC
 			ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, occupancy = EXCLUDED.occupancy, observed_at = EXCLUDED.observed_at
 			WHERE charge_status.observed_at < EXCLUDED.observed_at;

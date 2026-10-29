@@ -96,6 +96,9 @@ CREATE INDEX IF NOT EXISTS parking_geom ON parking USING gist (geom);
 
 -- Fiabilité des signalements : votes « toujours là / plus là » (un par appareil et par signalement).
 ALTER TABLE report ADD COLUMN IF NOT EXISTS reporter text NOT NULL DEFAULT '';
+-- Réseau de l'auteur et des votants (empreinte du /24 IPv4 ou du /64 IPv6) : un réseau ne compte
+-- qu'une fois, quel que soit le nombre d'identifiants d'appareil qu'il invente.
+ALTER TABLE report ADD COLUMN IF NOT EXISTS reporter_net text NOT NULL DEFAULT '';
 ALTER TABLE report ADD COLUMN IF NOT EXISTS confirmations integer NOT NULL DEFAULT 0;
 ALTER TABLE report ADD COLUMN IF NOT EXISTS denials integer NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS report_vote (
@@ -105,6 +108,7 @@ CREATE TABLE IF NOT EXISTS report_vote (
     voted_at   timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (report_id, voter)
 );
+ALTER TABLE report_vote ADD COLUMN IF NOT EXISTS net text NOT NULL DEFAULT '';
 
 -- Prix au kWh annoncé dans le champ libre « tarification » (null : non publié lisiblement).
 ALTER TABLE charge_point ADD COLUMN IF NOT EXISTS price_kwh real;

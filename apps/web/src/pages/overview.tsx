@@ -191,7 +191,7 @@ function exportOverview(stations: ChargeStation[], parkings: Parking[]) {
     ...stations.map((st) => ['borne', st.name, st.lat, st.lon, st.total, st.available ?? '', '']),
     ...parkings.map((p) => {
       const cents = hourPrice(p);
-      return ['parking', p.name, p.lat, p.lon, p.capacity ?? '', '', cents === null ? '' : (cents / 100).toFixed(2)];
+      return ['parking', p.name, p.lat, p.lon, p.capacity ?? '', '', cents === null ? '' : cents / 100];
     }),
   ]);
 }

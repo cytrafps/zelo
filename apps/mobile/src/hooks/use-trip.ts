@@ -27,6 +27,8 @@ export type Trip = {
   walk: Route | null;
   /** Heure de départ choisie (ms) ; null : maintenant. */
   depart: number | null;
+  /** Guidage lancé sur un tracé calculé pour un départ plus tard : à recalculer pour maintenant. */
+  stale: boolean;
   loading: boolean;
   error: string | null;
 };
@@ -67,6 +69,7 @@ export function useTrip() {
     return ctl;
   };
 
+  /** Aperçu : itinéraires jusqu'au point d'arrêt et marche jusqu'à la destination, ensemble. */
   const load = useCallback(async ({ from, destination, target, depart, avoid, vehicle }: Request, alternates: number) => {
     const ctl = abortable();
     setTrip((t) => (t ? { ...t, target, depart, loading: true, error: null } : t));
@@ -87,7 +90,8 @@ export function useTrip() {
           : getRoutes(walkFrom, destination, 'walk', {}, ctl.signal).then((r) => r[0]),
       ]);
       if (ctl.signal.aborted) return;
-      setTrip((t) => (t ? { ...t, routes, selected: 0, walk, loading: false } : t));
+      // Guidage lancé entre-temps : cette réponse ne vaut plus.
+      setTrip((t) => (t?.phase === 'preview' ? { ...t, routes, selected: 0, walk, loading: false } : t));
     } catch (e) {
       if (!ctl.signal.aborted) setTrip((t) => (t ? { ...t, loading: false, error: message(e) } : t));
     }
@@ -99,7 +103,7 @@ export function useTrip() {
    */
   const open = useCallback((destination: Place) => {
     request.current?.abort();
-    setTrip({ destination, target: { kind: 'dropoff' }, options: [], phase: 'preview', routes: [], selected: 0, walk: null, depart: null, loading: true, error: null });
+    setTrip({ destination, target: { kind: 'dropoff' }, options: [], phase: 'preview', routes: [], selected: 0, walk: null, depart: null, stale: false, loading: true, error: null });
     return ++seq.current;
   }, []);
 
@@ -108,7 +112,7 @@ export function useTrip() {
     (token: number, from: Fix, destination: Place, options: TripTarget[]) => {
       if (token !== seq.current) return; // fermé, ou une autre destination choisie entre-temps
       const target = stopFor(vehicle, options);
-      setTrip({ destination, target, options, phase: 'preview', routes: [], selected: 0, walk: null, depart: null, loading: true, error: null });
+      setTrip({ destination, target, options, phase: 'preview', routes: [], selected: 0, walk: null, depart: null, stale: false, loading: true, error: null });
       void load({ from, destination, target, depart: null, avoid, vehicle }, 2);
     },
     [load, avoid, vehicle],
@@ -142,29 +146,49 @@ export function useTrip() {
   /** Lance le guidage sur l'itinéraire choisi : on part maintenant. */
   const go = useCallback(
     (i: number) =>
-      setTrip((t) => (t && t.routes[i] ? { ...t, phase: 'drive', routes: [t.routes[i]], selected: 0, depart: null } : t)),
+      setTrip((t) =>
+        t && t.routes[i] ? { ...t, phase: 'drive', routes: [t.routes[i]], selected: 0, depart: null, stale: t.depart !== null } : t,
+      ),
     [],
   );
 
-  /** Hors itinéraire : nouveau calcul depuis la position actuelle, sans alternatives. */
+  /**
+   * Hors itinéraire (ou tracé périmé) : nouveau calcul depuis la position actuelle, sans
+   * alternatives. En voiture, seul le trajet jusqu'au point d'arrêt change : la marche est gardée.
+   * Une réponse arrivée après la fin de la phase (garé entre-temps) est ignorée ; un échec garde
+   * l'ancien tracé, la position suivante relancera le calcul.
+   */
   const reroute = useCallback(
     async (from: Fix) => {
-      if (!trip) return;
-      if (trip.phase !== 'walk') return load({ from, destination: trip.destination, target: trip.target, depart: null, avoid, vehicle }, 0);
+      if (!trip || (trip.phase !== 'drive' && trip.phase !== 'walk')) return;
+      const phase = trip.phase;
       const ctl = abortable();
+      setTrip((t) => (t?.phase === phase ? { ...t, loading: true } : t));
       try {
-        const [walk] = await getRoutes(from, trip.destination, 'walk', {}, ctl.signal);
+        const [route] =
+          phase === 'drive'
+            ? await getRoutes(
+                from,
+                targetPoint(trip.target, trip.destination),
+                vehicle,
+                { alternates: 0, heading: from.heading, avoid: vehicle === 'bike' ? [] : avoid },
+                ctl.signal,
+              )
+            : await getRoutes(from, trip.destination, 'walk', {}, ctl.signal);
         if (ctl.signal.aborted) return;
-        setTrip((t) => (t && t.phase === 'walk' ? { ...t, routes: [walk], walk } : t));
+        setTrip((t) =>
+          t?.phase === phase ? { ...t, routes: [route], selected: 0, walk: phase === 'walk' ? route : t.walk, loading: false, stale: false } : t,
+        );
       } catch {
-        // On garde l'ancien tracé : la position suivante relancera le calcul.
+        if (!ctl.signal.aborted) setTrip((t) => (t?.phase === phase ? { ...t, loading: false } : t));
       }
     },
-    [load, trip, avoid, vehicle],
+    [trip, avoid, vehicle],
   );
 
   /** Arrivé au point d'arrêt : la suite se fait à pied, s'il y a lieu. */
   const parked = useCallback(() => {
+    request.current?.abort();
     setTrip((t) => {
       if (t?.target.kind === 'parkride') return { ...t, phase: 'transit' };
       return t && t.walk ? { ...t, phase: 'walk', routes: [t.walk], selected: 0 } : null;
@@ -173,6 +197,7 @@ export function useTrip() {
 
   /** Descendu du tram : la marche jusqu'à la destination commence. */
   const alighted = useCallback(() => {
+    request.current?.abort();
     setTrip((t) => (t && t.phase === 'transit' && t.walk ? { ...t, phase: 'walk', routes: [t.walk], selected: 0 } : null));
   }, []);
 

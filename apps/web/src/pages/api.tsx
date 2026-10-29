@@ -85,9 +85,9 @@ export function ApiPage() {
           </button>
         </section>
         <section className={`${s.limits} ${ui.side}`} aria-label="Limites">
-          <span className={s.label}>Limites par adresse IP</span>
+          <span className={s.label}>Limites par réseau (une box, un abonnement IPv6)</span>
           <span>
-            <b>Lecture</b> : sans limite, réponses mises en cache
+            <b>Lecture</b> : sans limite, réponses mises en cache · <b>météo, tendance, relais</b> : 1 par seconde
           </span>
           <span>
             <b>Itinéraires</b> : 1 par seconde · <b>signalements</b> : 1 toutes les 12 s

@@ -220,6 +220,7 @@ func run(log *slog.Logger, once bool) error {
 		Realtime:            realtime.Load,
 		Vigilance:           vigil.Load,
 		VigilanceDepartment: envOr("VIGILANCE_DEPARTMENT", "51"),
+		Zone:                store.BBox{MinLon: areasBox.MinLon, MinLat: areasBox.MinLat, MaxLon: areasBox.MaxLon, MaxLat: areasBox.MaxLat},
 		Weather: &weather.Cache{TTL: 15 * time.Minute, Fetch: func(ctx context.Context, lat, lon float64) ([]weather.Slot, error) {
 			return weather.Fetch(ctx, weatherClient, envOr("WEATHER_URL", weather.BaseURL), lat, lon)
 		}},
