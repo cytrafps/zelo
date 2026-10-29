@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata" // l'image de l'API n'a pas de base de fuseaux horaires
 )
 
 // FeedURL : toutes les réglementations publiées dans DiaLog (environ 80 Mo).
@@ -33,14 +34,25 @@ type Closure struct {
 	Name  string // « Rue Buirette, de la place Drouet d'Erlon jusqu'à la rue Jeanne d'Arc »
 	URL   string // l'arrêté sur DiaLog
 	Lines [][][2]float64
-	From  time.Time // zéro : depuis toujours
-	To    time.Time // zéro : sans fin
+	// From, To, Periods : vue d'ensemble pour l'affichage (début le plus tôt, fin la plus tardive,
+	// zéro si l'une des validités n'a pas de début ou de fin). Sans Windows, ils décident aussi seuls.
+	From time.Time // zéro : depuis toujours
+	To   time.Time // zéro : sans fin
 	// Periods : créneaux où la fermeture s'applique ; vide, elle s'applique en continu.
 	Periods []Period
+	// Windows : chaque validité de l'arrêté, avec ses propres dates et créneaux. Les fusionner
+	// appliquerait les créneaux d'une validité pendant les dates d'une autre.
+	Windows []Window
 }
 
-// Period : créneau récurrent (heures dans le fuseau `Zone` publié, souvent UTC), les jours
-// donnés ou tous les jours. Un créneau qui finit avant de commencer passe minuit.
+// Window : une validité de l'arrêté.
+type Window struct {
+	From, To time.Time // zéro : sans début, sans fin
+	Periods  []Period  // vide : en continu
+}
+
+// Period : créneau récurrent, en heure de Paris, les jours donnés ou tous les jours. Un créneau
+// qui finit avant de commencer passe minuit.
 type Period struct {
 	Days     []time.Weekday
 	From, To int // minutes depuis minuit
@@ -49,13 +61,25 @@ type Period struct {
 
 // Active : la fermeture s'applique-t-elle à l'instant t ?
 func (c Closure) Active(t time.Time) bool {
-	if (!c.From.IsZero() && t.Before(c.From)) || (!c.To.IsZero() && !t.Before(c.To)) {
+	if len(c.Windows) == 0 {
+		return Window{From: c.From, To: c.To, Periods: c.Periods}.active(t)
+	}
+	for _, w := range c.Windows {
+		if w.active(t) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w Window) active(t time.Time) bool {
+	if (!w.From.IsZero() && t.Before(w.From)) || (!w.To.IsZero() && !t.Before(w.To)) {
 		return false
 	}
-	if len(c.Periods) == 0 {
+	if len(w.Periods) == 0 {
 		return true
 	}
-	for _, p := range c.Periods {
+	for _, p := range w.Periods {
 		if p.active(t) {
 			return true
 		}
@@ -212,22 +236,39 @@ func (reg regulation) closure(o order, zone BBox) (Closure, bool) {
 	if targeted || !inZone {
 		return Closure{}, false
 	}
-	for _, v := range validities {
-		from, _ := time.Parse(time.RFC3339, v.Start)
-		to, _ := time.Parse(time.RFC3339, v.End)
-		if c.From.IsZero() || (!from.IsZero() && from.Before(c.From)) {
+	for i, v := range validities {
+		from, err1 := parseTime(v.Start)
+		to, err2 := parseTime(v.End)
+		if errors.Join(err1, err2) != nil {
+			return Closure{}, false // date illisible : mieux vaut ne pas fermer la rue que la fermer à tort
+		}
+		w := Window{From: from, To: to}
+		for _, p := range v.Periods {
+			q, ok := period(p.From, p.To, p.Days, from)
+			if !ok {
+				// Créneau illisible : sans lui, la fermeture s'appliquerait en continu.
+				return Closure{}, false
+			}
+			w.Periods = append(w.Periods, q)
+		}
+		c.Windows = append(c.Windows, w)
+		c.Periods = append(c.Periods, w.Periods...)
+		if i == 0 || (!c.From.IsZero() && (from.IsZero() || from.Before(c.From))) {
 			c.From = from
 		}
-		if !to.IsZero() && to.After(c.To) {
+		if i == 0 || (!c.To.IsZero() && (to.IsZero() || to.After(c.To))) {
 			c.To = to
-		}
-		for _, p := range v.Periods {
-			if q, ok := period(p.From, p.To, p.Days); ok {
-				c.Periods = append(c.Periods, q)
-			}
 		}
 	}
 	return c, true
+}
+
+// parseTime : heure RFC 3339, ou zéro si absente.
+func parseTime(s string) (time.Time, error) {
+	if s = strings.TrimSpace(s); s == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, s)
 }
 
 var weekdays = map[string]time.Weekday{
@@ -235,18 +276,44 @@ var weekdays = map[string]time.Weekday{
 	"thursday": time.Thursday, "friday": time.Friday, "saturday": time.Saturday,
 }
 
+// Paris : les arrêtés de la zone sont pris en heure de Paris.
+var Paris = func() *time.Location {
+	l, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		panic(err) // time/tzdata est embarqué : n'arrive pas
+	}
+	return l
+}()
+
 // period lit « 23:00:00+00:00 » → « 06:00:00+00:00 » et les jours anglais de DATEX.
-func period(from, to string, days []string) (Period, bool) {
+//
+// DiaLog saisit des heures de Paris et les publie converties en UTC avec le décalage du moment de
+// la saisie, mais garde le jour saisi : « lundi 00:00–07:00 » devient « monday 23:00Z–06:00Z ».
+// Lues telles quelles, elles fermaient la rue le mardi de 0 h à 7 h, et une heure plus tard en été.
+// On retrouve l'heure saisie avec le décalage de Paris au début de la validité (`ref`), puis le
+// créneau s'applique en heure de Paris, le jour indiqué.
+func period(from, to string, days []string, ref time.Time) (Period, bool) {
 	f, err1 := time.Parse("15:04:05Z07:00", strings.TrimSpace(from))
 	t, err2 := time.Parse("15:04:05Z07:00", strings.TrimSpace(to))
 	if errors.Join(err1, err2) != nil {
 		return Period{}, false
 	}
-	p := Period{From: f.Hour()*60 + f.Minute(), To: t.Hour()*60 + t.Minute(), Zone: f.Location()}
+	if ref.IsZero() {
+		ref = time.Now()
+	}
+	_, paris := ref.In(Paris).Zone()
+	wall := func(v time.Time) int {
+		_, own := v.Zone()
+		m := v.Hour()*60 + v.Minute() + (paris-own)/60
+		return ((m % 1440) + 1440) % 1440
+	}
+	p := Period{From: wall(f), To: wall(t), Zone: Paris}
 	for _, d := range days {
-		if w, ok := weekdays[strings.TrimSpace(d)]; ok {
-			p.Days = append(p.Days, w)
+		w, ok := weekdays[strings.TrimSpace(d)]
+		if !ok {
+			return Period{}, false
 		}
+		p.Days = append(p.Days, w)
 	}
 	return p, true
 }
