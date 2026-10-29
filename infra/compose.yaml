@@ -31,12 +31,18 @@ services:
       DATABASE_URL: postgres://zelo:zelo@db:5432/zelo?sslmode=disable
       # Bornes limitées à la zone de Reims pour le développement ; vide = toute la France.
       IMPORT_BBOX: "3.85,49.15,4.25,49.35"
-      # true derrière Cloudflare : l'IP du client (quota de signalements) est lue dans CF-Connecting-IP.
+      # true derrière Cloudflare : l'IP du client (quota de signalements) est lue dans CF-Connecting-IP,
+      # seulement pour une connexion venue du réseau « proxys » (cloudflared, nginx du tableau de bord) :
+      # le port 8080 publié sur le réseau local ne peut pas choisir son IP.
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      TRUSTED_PROXIES: 172.30.0.0/24
+      # /metrics à part, jamais publié : le tunnel relaie tout le port 8080.
+      METRICS_ADDR: ":9090"
       VALHALLA_URL: http://valhalla:8002
       # Vigilances Météo-France (facultatif) : METEOFRANCE_API_KEY=… dans infra/.env, jamais commité.
       METEOFRANCE_API_KEY: ${METEOFRANCE_API_KEY:-}
     ports: ["8080:8080"]
+    networks: [default, proxys]
     restart: unless-stopped
     depends_on:
       db:
@@ -48,6 +54,7 @@ services:
   web:
     build: ../apps/web
     ports: ["8090:8080"]
+    networks: [proxys]
     restart: unless-stopped
     depends_on: [api]
 
@@ -107,6 +114,7 @@ services:
   tunnel-rapide:
     image: cloudflare/cloudflared:2026.9.3
     command: tunnel --no-autoupdate --url http://api:8080
+    networks: [proxys]
     profiles: [tunnel-rapide]
     restart: unless-stopped
     depends_on: [api]
@@ -116,9 +124,17 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-} # à définir dans infra/.env (voir README)
+    networks: [proxys]
     profiles: [tunnel]
     restart: unless-stopped
     depends_on: [api]
+
+# Proxys de confiance de l'API (TRUSTED_PROXIES) : seuls eux peuvent lui donner l'IP d'un client.
+networks:
+  proxys:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   db:

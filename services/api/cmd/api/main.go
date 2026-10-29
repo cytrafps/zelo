@@ -182,6 +182,10 @@ func run(log *slog.Logger, once bool) error {
 	if err != nil {
 		return fmt.Errorf("TRUSTED_PROXIES: %w", err)
 	}
+	if os.Getenv("TRUST_PROXY") == "true" && len(trusted) == 0 {
+		// Sinon n'importe quel client choisirait son IP par CF-Connecting-IP (quotas contournés).
+		return errors.New("TRUST_PROXY=true demande TRUSTED_PROXIES (réseau de cloudflared)")
+	}
 	hub := live.NewHub(maxLive)
 	go db.Listen(ctx, log, hub.Broadcast)
 	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -205,7 +209,21 @@ func run(log *slog.Logger, once bool) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	// METRICS_ADDR : /metrics sur un port à part, jamais publié (Compose, où un tunnel relaie tout
+	// le port de l'API). Vide : sur le port de l'API, que l'Ingress du cluster ne publie pas.
+	if addr := os.Getenv("METRICS_ADDR"); addr != "" {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.Handler())
+		metricsSrv := &http.Server{Addr: addr, Handler: metricsMux, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("métriques", "err", err)
+			}
+		}()
+		defer metricsSrv.Close()
+	} else {
+		mux.Handle("/metrics", promhttp.Handler())
+	}
 	weatherClient := &http.Client{Timeout: 4 * time.Second}
 	var vigil atomic.Pointer[vigilance.Map]
 	if key := os.Getenv("METEOFRANCE_API_KEY"); key != "" {

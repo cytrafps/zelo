@@ -22,6 +22,34 @@
     mode: "0600"
   notify: Redémarrer K3s
 
+# Traefik voit l'IP réelle des clients (quotas de signalements par réseau) : avec la politique
+# « Cluster » par défaut, ServiceLB la remplace par celle d'un nœud et tout le monde partage le même
+# quota. « Local » ne sert que les nœuds qui portent un Traefik : il tourne donc sur chacun.
+- name: Dossier des manifestes appliqués par K3s
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/server/manifests
+    state: directory
+    mode: "0700"
+
+- name: Traefik sur chaque nœud, IP cliente conservée
+  ansible.builtin.copy:
+    dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    content: |
+      # Géré par Ansible (infra/ansible/roles/k3s).
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChartConfig
+      metadata:
+        name: traefik
+        namespace: kube-system
+      spec:
+        valuesContent: |-
+          deployment:
+            kind: DaemonSet
+          service:
+            spec:
+              externalTrafficPolicy: Local
+    mode: "0600"
+
 - name: Télécharger l'installeur de K3s
   ansible.builtin.get_url:
     url: https://get.k3s.io

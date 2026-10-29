@@ -69,11 +69,13 @@ type Store interface {
 }
 
 type Config struct {
-	// TrustProxy : toute connexion vient d'un proxy de confiance (Cloudflare Tunnel sur l'hôte).
+	// TrustProxy : les proxys de confiance sont des Cloudflare Tunnel (cloudflared), qui écrasent
+	// toujours CF-Connecting-IP. L'en-tête n'est lu que pour une connexion venue de TrustedProxies :
+	// d'ailleurs (port publié sur le réseau local), un client choisirait son IP.
 	TrustProxy bool
-	// TrustedProxies : adresses des proxys de confiance (Traefik dans le cluster). Pour une
-	// connexion qui en vient, l'IP cliente est lue dans X-Forwarded-For (jamais dans
-	// CF-Connecting-IP, que Traefik laisse passer tel quel).
+	// TrustedProxies : adresses des proxys de confiance (Traefik dans le cluster, cloudflared dans
+	// Compose). Sans TrustProxy, l'IP cliente est lue dans X-Forwarded-For, jamais dans
+	// CF-Connecting-IP, que Traefik laisse passer tel quel.
 	TrustedProxies []netip.Prefix
 	// OriginPatterns autorisés pour le WebSocket depuis un navigateur (tableau de bord web).
 	OriginPatterns []string
@@ -769,15 +771,15 @@ func (a *API) clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	addr := remote.Addr().Unmap()
+	if !a.trusted(addr) {
+		return addr.String()
+	}
 	if a.cfg.TrustProxy {
 		// Cloudflare Tunnel : il écrase toujours CF-Connecting-IP, un client ne peut pas le choisir.
+		// Sans lui, la requête vient d'un autre proxy de confiance (nginx du tableau de bord).
 		if ip, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); err == nil {
 			return ip.Unmap().String()
 		}
-		return addr.String()
-	}
-	if !a.trusted(addr) {
-		return addr.String()
 	}
 	// X-Forwarded-For : chaque proxy ajoute à droite l'adresse qu'il a vue. On remonte depuis la
 	// droite tant que c'est un proxy de confiance ; la première autre adresse est le client.

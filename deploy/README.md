@@ -76,7 +76,7 @@ Ensuite :
 - **Argo CD** : `kubectl -n argocd port-forward svc/argocd-server 8443:443`. Le mot de passe `admin` se lit avec `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
 - **Grafana** : `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80`, tableau de bord « Zelo · API ». Le mot de passe `admin` se lit avec `kubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d`.
 
-Pour exposer l'API sur Internet en HTTPS sans ouvrir de port, on prévoit un Cloudflare Tunnel, avec `TRUST_PROXY=true` pour lire la vraie IP des clients.
+Pour exposer l'API sur Internet en HTTPS sans ouvrir de port, on prévoit un Cloudflare Tunnel, avec `TRUST_PROXY=true` et le réseau de cloudflared dans `TRUSTED_PROXIES` pour lire la vraie IP des clients. Traefik tourne en DaemonSet avec `externalTrafficPolicy: Local` (rôle Ansible `k3s`) : sans ça, il ne voit que l'IP d'un nœud et tous les clients partagent le même quota.
 
 ## Vérifier en local
 
