@@ -38,6 +38,6 @@ images:
   - name: ghcr.io/cytrafps/zelo-api
     newTag: sha-f135f00
   - name: ghcr.io/cytrafps/zelo-web
-    newTag: sha-f135f00
+    newTag: sha-70cfd94
   - name: ghcr.io/cytrafps/zelo-valhalla
     newTag: osm-20261028-0be4282
