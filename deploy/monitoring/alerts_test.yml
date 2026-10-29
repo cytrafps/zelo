@@ -79,3 +79,29 @@ tests:
       - eval_time: 25m
         alertname: ZeloErreursServeur
         exp_alerts: []
+  # Dernière sauvegarde réussie au temps 0 : rien à 20 h, alerte à 27 h (seuil 26 h, puis 10 min).
+  - interval: 1m
+    input_series:
+      - series: 'kube_cronjob_status_last_successful_time{namespace="zelo", cronjob="sauvegarde-db"}'
+        values: '0x1700'
+      - series: 'kube_job_status_failed{namespace="zelo", job_name="sauvegarde-db-29000000"}'
+        values: '0x50 1x50'
+    alert_rule_test:
+      - eval_time: 20h
+        alertname: ZeloSauvegardeAncienne
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: ZeloSauvegardeAncienne
+        exp_alerts:
+          - exp_labels: { severity: critical, namespace: zelo, cronjob: sauvegarde-db }
+            exp_annotations:
+              summary: "Dernière sauvegarde réussie de la base il y a 1d 3h 0m 0s."
+      - eval_time: 30m
+        alertname: ZeloSauvegardeEnEchec
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: ZeloSauvegardeEnEchec
+        exp_alerts:
+          - exp_labels: { severity: warning, namespace: zelo, job_name: sauvegarde-db-29000000 }
+            exp_annotations:
+              summary: "La sauvegarde sauvegarde-db-29000000 a échoué (dump ou copie distante) : voir ses journaux."

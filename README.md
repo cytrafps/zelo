@@ -176,6 +176,17 @@ docker compose -f infra/compose.yaml exec -T db pg_restore -U zelo -d zelo --cle
 docker compose -f infra/compose.yaml start api
 ```
 
+Sur le cluster K3s, le CronJob `sauvegarde-db` (`deploy/base/backup.yaml`) fait le même `pg_dump` à
+3 h dans le volume `sauvegardes`, et la même copie rclone si le secret `zelo-rclone` existe. Les
+alertes `ZeloSauvegardeAncienne` (plus de 26 h) et `ZeloSauvegardeEnEchec` préviennent sur Discord.
+
+```sh
+# Même configuration rclone que ci-dessus (fichier infra/rclone/rclone.conf)
+kubectl -n zelo create secret generic zelo-rclone --from-file=rclone.conf=infra/rclone/rclone.conf --from-literal=remote=zelo-sauvegardes:
+kubectl -n zelo create job --from=cronjob/sauvegarde-db sauvegarde-essai   # essai tout de suite
+kubectl -n zelo logs job/sauvegarde-essai --all-containers   # « sauvegarde … », « copie distante faite »
+```
+
 ## API
 
 | Méthode et route | Description |
