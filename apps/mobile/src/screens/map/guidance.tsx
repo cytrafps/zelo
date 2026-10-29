@@ -25,6 +25,8 @@ import {
   type Route,
 } from '@/utils/route';
 
+import { onNavigationFix, startNavigationUpdates, stopNavigationUpdates } from '@/location/navigation-task';
+
 import { laneIcon, maneuverIcon, maneuverSide } from './maneuver';
 
 const ios = Platform.OS === 'ios';
@@ -33,13 +35,18 @@ const REROUTE_EVERY_MS = 15_000;
 /** Au départ, le tracé peut commencer par un demi-tour : le contresens ne compte qu'ensuite (m parcourus). */
 const WRONG_WAY_AFTER_M = 100;
 
-/** Position précise pendant le guidage seulement (la carte d'accueil se contente d'une précision moyenne). */
+/**
+ * Position précise pendant le guidage seulement (la carte d'accueil se contente d'une précision
+ * moyenne). Le suivi continue en arrière-plan ; s'il ne peut pas démarrer, on se replie sur un
+ * suivi au premier plan seulement et `background` le dit.
+ */
 function useNavigationFix() {
   const [fix, setFix] = useState<TimedFix | null>(null);
+  const [background, setBackground] = useState(true);
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
-    Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, (l) => {
+    const take = (l: Location.LocationObject) => {
       const next = {
         lat: l.coords.latitude,
         lon: l.coords.longitude,
@@ -49,17 +56,28 @@ function useNavigationFix() {
       };
       // Même objet si la position est écartée : rien ne se recalcule.
       setFix((prev) => keepFix(prev, next));
-    })
-      .then((s) => (cancelled ? s.remove() : (sub = s)))
-      .catch(() => {
+    };
+    const off = onNavigationFix(take);
+    void startNavigationUpdates().then(async (ok) => {
+      if (cancelled) return void (ok && stopNavigationUpdates());
+      if (ok) return;
+      setBackground(false);
+      try {
+        const s = await Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 }, take);
+        if (cancelled) s.remove();
+        else sub = s;
+      } catch {
         // Localisation coupée : le bandeau garde la dernière manœuvre connue.
-      });
+      }
+    });
     return () => {
       cancelled = true;
+      off();
       sub?.remove();
+      void stopNavigationUpdates();
     };
   }, []);
-  return fix;
+  return { fix, background };
 }
 
 type Props = {
@@ -83,7 +101,7 @@ type Props = {
 export function Guidance(props: Props) {
   const { route, phase, target, c, top, bottomInset, rerouting, stale, onReroute, onFix, onArrive, onClose } = props;
   useKeepAwake();
-  const fix = useNavigationFix();
+  const { fix, background } = useNavigationFix();
   const now = useNow(10_000);
   const cum = useMemo(() => cumulative(route.coordinates), [route]);
   // Chaque position est placée en partant du segment de la précédente (même tracé seulement).
@@ -181,6 +199,11 @@ export function Guidance(props: Props) {
         </View>
       )}
 
+      {!background && (
+        <View style={[styles.then, styles.warning, { top: top + bannerHeight + espace[2] + (then && !rerouting ? 40 : 0) }]}>
+          <Text style={styles.thenStreet}>Garde Zelo à l’écran : en arrière-plan, le guidage s’arrête.</Text>
+        </View>
+      )}
       {/* Le GPS ne suffit pas toujours à voir qu'on est garé : on peut le dire. */}
       {fix && where === 'near' && phase === 'drive' && target.kind !== 'dropoff' ? (
         <Pressable
@@ -352,6 +375,7 @@ const styles = StyleSheet.create({
   parkedText: { color: '#FFFFFF', fontFamily: police, fontSize: 17, fontWeight: '600' },
   areaName: { fontFamily: police, fontSize: 15, fontWeight: '600' },
   areaFacts: { fontFamily: police, fontSize: 13, fontVariant: ['tabular-nums'] },
+  warning: { backgroundColor: 'rgba(160,82,0,0.95)' },
   thenLabel: { color: 'rgba(255,255,255,0.7)', fontFamily: police, fontSize: 14 },
   thenStreet: { color: '#FFFFFF', fontFamily: police, fontSize: 14, fontWeight: '600', flexShrink: 1 },
   bar: {
