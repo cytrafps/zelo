@@ -5,6 +5,8 @@ import * as maplibregl from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef } from 'react';
 
+import { Boundary } from '../components/boundary';
+
 import s from './city-map.module.css';
 import { mapStyle } from './style';
 
@@ -13,13 +15,43 @@ export type Pin = { id: string; lat: number; lon: number; label: string; color?:
 maplibregl.setWorkerUrl(workerUrl);
 
 const REIMS: [number, number] = [4.0325, 49.2565];
+
+/** MapLibre 6 exige WebGL 2 : sans lui (vieux navigateur, accélération coupée), pas de carte. */
+let webgl2: boolean | undefined;
+function canDraw() {
+  if (webgl2 === undefined) {
+    try {
+      const gl = document.createElement('canvas').getContext('webgl2');
+      webgl2 = gl !== null;
+      // Les navigateurs limitent le nombre de contextes : celui du test est rendu tout de suite.
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch {
+      webgl2 = false;
+    }
+  }
+  return webgl2;
+}
 const MIN_RELIEF_ZOOM = 14.3;
 
 /**
  * Carte 3D de Reims (même style que l'app) avec des pastilles. Les pastilles sont des marqueurs
  * HTML : quelques dizaines au plus, au rendu identique à la maquette.
  */
-export function CityMap({ pins, label }: { pins: Pin[]; label: string }) {
+export function CityMap(props: { pins: Pin[]; label: string }) {
+  const fallback = (
+    <div className={`${s.map} ${s.unavailable}`} role="note">
+      Carte indisponible dans ce navigateur (WebGL 2 désactivé ou absent). Les chiffres et les listes restent à jour.
+    </div>
+  );
+  if (!canDraw()) return fallback;
+  return (
+    <Boundary fallback={fallback}>
+      <MapView {...props} />
+    </Boundary>
+  );
+}
+
+function MapView({ pins, label }: { pins: Pin[]; label: string }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
 
