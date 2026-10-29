@@ -1,5 +1,5 @@
 import { distance } from './geo';
-import type { ChargeStation, FuelStation, Parking, Report, ReportKind } from './api';
+import type { ChargeStation, FuelDay, FuelStation, Parking, Report, ReportKind } from './api';
 
 /** Points de charge libres parmi ceux dont l'état est publié depuis moins de 24 h. */
 export function chargeSummary(stations: ChargeStation[]) {
@@ -133,4 +133,43 @@ export function chargeOffer(stations: ChargeStation[]) {
     }
   }
   return { fast, fastStations, avgKwh: priced ? sum / priced : null, priced };
+}
+
+const WEEK_MS = 7 * 86_400_000;
+
+/** Stations dont les prix ont été relevés depuis moins de 7 jours (plus vieux : station sans doute fermée). */
+export const freshFuel = (stations: FuelStation[], now: Date) =>
+  stations.filter((s) => Date.parse(s.updatedAt) >= now.getTime() - WEEK_MS);
+
+/** Moyenne, minimum et maximum d'un carburant sur des stations ; null si aucune ne le vend. */
+export function fuelStats(stations: FuelStation[], fuel: string) {
+  const prices = stations.map((s) => s.prices[fuel]).filter((p): p is number => p !== undefined);
+  if (!prices.length) return null;
+  return {
+    avg: prices.reduce((a, b) => a + b, 0) / prices.length,
+    min: Math.min(...prices),
+    max: Math.max(...prices),
+    count: prices.length,
+  };
+}
+
+/**
+ * Jours d'historique jugés complets : l'historique se constitue au fil des imports, les
+ * premiers jours ne portent que sur les stations dont le prix a changé depuis. Un jour compte
+ * s'il couvre au moins 90 % des stations du dernier jour.
+ */
+export function completeDays(days: FuelDay[]) {
+  const last = days.at(-1);
+  if (!last) return [];
+  return days.filter((d) => d.stations >= 0.9 * last.stations);
+}
+
+/** Évolution (euros) du prix moyen sur 7 jours ; null si l'historique ne remonte pas assez. */
+export function weekChange(days: FuelDay[]) {
+  const ok = completeDays(days);
+  const last = ok.at(-1);
+  if (!last) return null;
+  const target = new Date(`${last.day}T12:00:00Z`).getTime() - WEEK_MS;
+  const before = ok.find((d) => new Date(`${d.day}T12:00:00Z`).getTime() === target);
+  return before ? last.avg - before.avg : null;
 }

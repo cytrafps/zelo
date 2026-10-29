@@ -56,6 +56,7 @@ var ReportTTL = map[string]time.Duration{
 type Store interface {
 	Ping(context.Context) error
 	FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error)
+	FuelTrend(ctx context.Context, b store.BBox, fuel string, days int) ([]store.FuelDay, error)
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(ctx context.Context, b store.BBox, limit int, vehicle string) ([]store.Parking, error)
 	ControlsAlong(ctx context.Context, line [][2]float64, within float64) ([]junction.Control, error)
@@ -115,6 +116,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /healthz", a.health)
 	mux.HandleFunc("GET /v1/fuel-stations", a.fuelStations)
+	mux.HandleFunc("GET /v1/fuel-trend", a.fuelTrend)
 	mux.HandleFunc("GET /v1/charge-stations", a.chargeStations)
 	mux.HandleFunc("GET /v1/parkings", a.parkings)
 	mux.HandleFunc("GET /v1/reports", a.reports)
@@ -173,6 +175,30 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) fuelStations(w http.ResponseWriter, r *http.Request) {
 	list(a, w, r, a.store.FuelStations, 60)
+}
+
+var fuels = map[string]bool{"Gazole": true, "SP95": true, "SP98": true, "E10": true, "E85": true, "GPLc": true}
+
+// fuelTrend : GET /v1/fuel-trend?bbox=…&fuel=E10[&days=30] — prix moyen, min et max par jour.
+func (a *API) fuelTrend(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	fuel := q.Get("fuel")
+	if !fuels[fuel] {
+		httpError(w, http.StatusBadRequest, "fuel : Gazole, SP95, SP98, E10, E85 ou GPLc")
+		return
+	}
+	days := 30
+	if v := q.Get("days"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 35 {
+			httpError(w, http.StatusBadRequest, "days : entre 1 et 35")
+			return
+		}
+		days = n
+	}
+	list(a, w, r, func(ctx context.Context, b store.BBox, _ int) ([]store.FuelDay, error) {
+		return a.store.FuelTrend(ctx, b, fuel, days)
+	}, 600)
 }
 
 func (a *API) chargeStations(w http.ResponseWriter, r *http.Request) {

@@ -2,7 +2,7 @@ import t from '../components/table.module.css';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, type ChargeStation, GRAND_REIMS, type Report } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { ago, formatNumber, formatPercent, updated } from '../lib/format';
+import { formatNumber, formatPercent, since, updated } from '../lib/format';
 import { chargeOffer, chargeSummary, nearestStation, stationState, type StationState } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
 import s from './parking.module.css';
@@ -129,7 +129,7 @@ function Broken({ report, stations, now }: { report: Report; stations: ChargeSta
         {st ? `${st.name || 'Station sans nom'} · ${st.total} point${st.total > 1 ? 's' : ''}` : 'Borne hors station connue'}
       </p>
       <p className={s.text} style={{ fontSize: 13 }}>
-        Signalé il y a {ago(new Date(report.createdAt), now)}
+        Signalé {since(new Date(report.createdAt), now)}
         {confirmed}
       </p>
     </div>

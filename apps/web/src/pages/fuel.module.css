@@ -1,0 +1,56 @@
+.station {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.city {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--texte-2);
+}
+
+.low {
+  color: var(--vert);
+  font-weight: 600;
+}
+
+.high {
+  color: var(--rouge);
+  font-weight: 600;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 96px;
+}
+
+.bars i {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  background: #d4d0c8;
+}
+
+.bars i.today {
+  background: var(--encre);
+}
+
+.bars i.pending {
+  background: repeating-linear-gradient(-45deg, rgba(28, 27, 25, 0.05) 0 4px, transparent 4px 8px);
+  height: 100%;
+}
+
+.trendLine {
+  font-size: 13px;
+  color: var(--texte-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--texte-2);
+}

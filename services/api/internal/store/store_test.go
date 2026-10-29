@@ -414,3 +414,55 @@ func TestChargeStationAccess(t *testing.T) {
 		t.Errorf("publique : %+v", public)
 	}
 }
+
+// Historique des prix : le prix d'un jour est le dernier changement à cette date ou avant ;
+// un nouvel import le jour même remplace le prix du jour au lieu d'en ajouter un.
+func TestFuelTrend(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	paris, _ := time.LoadLocation("Europe/Paris")
+	noon := func(daysAgo int) time.Time {
+		y, m, d := time.Now().In(paris).AddDate(0, 0, -daysAgo).Date()
+		return time.Date(y, m, d, 12, 0, 0, 0, paris)
+	}
+	box := BBox{5.50, 45.00, 5.52, 45.02} // à l'écart des autres tests
+	a := fuel.Station{ID: "T-TREND-A", Lat: 45.01, Lon: 5.51, Prices: []fuel.Price{{Fuel: "E10", Value: 1.800, UpdatedAt: noon(10)}}}
+	b := fuel.Station{ID: "T-TREND-B", Lat: 45.011, Lon: 5.511, Prices: []fuel.Price{{Fuel: "E10", Value: 1.700, UpdatedAt: noon(3)}}}
+	save := func() {
+		t.Helper()
+		if err := s.SaveFuel(ctx, []fuel.Station{a, b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	a.Prices[0] = fuel.Price{Fuel: "E10", Value: 1.760, UpdatedAt: noon(1)}
+	save()
+	a.Prices[0] = fuel.Price{Fuel: "E10", Value: 1.740, UpdatedAt: noon(1).Add(time.Hour)}
+	save()
+
+	got, err := s.FuelTrend(ctx, box, "E10", 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := func(daysAgo int) string { return noon(daysAgo).Format("2006-01-02") }
+	want := map[string]FuelDay{
+		day(10): {Avg: 1.800, Min: 1.800, Max: 1.800, Stations: 1},
+		day(4):  {Avg: 1.800, Min: 1.800, Max: 1.800, Stations: 1},
+		day(3):  {Avg: 1.750, Min: 1.700, Max: 1.800, Stations: 2},
+		day(1):  {Avg: 1.720, Min: 1.700, Max: 1.740, Stations: 2},
+		day(0):  {Avg: 1.720, Min: 1.700, Max: 1.740, Stations: 2},
+	}
+	if len(got) != 11 || got[0].Day != day(10) || got[10].Day != day(0) {
+		t.Fatalf("jours : %+v", got)
+	}
+	for _, g := range got {
+		w, ok := want[g.Day]
+		if !ok {
+			continue
+		}
+		w.Day = g.Day
+		if fmt.Sprintf("%.3f %.3f %.3f %d", g.Avg, g.Min, g.Max, g.Stations) != fmt.Sprintf("%.3f %.3f %.3f %d", w.Avg, w.Min, w.Max, w.Stations) {
+			t.Errorf("%s : %+v, attendu %+v", g.Day, g, w)
+		}
+	}
+}

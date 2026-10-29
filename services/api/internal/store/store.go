@@ -168,8 +168,55 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 			ON CONFLICT (station_id, fuel) DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at
 			WHERE fuel_price.updated_at IS DISTINCT FROM EXCLUDED.updated_at;
 
+			INSERT INTO fuel_price_day (station_id, fuel, day, price)
+			SELECT station_id, fuel, (updated_at AT TIME ZONE 'Europe/Paris')::date, price FROM fuel_price
+			ON CONFLICT (station_id, fuel, day) DO UPDATE SET price = EXCLUDED.price
+			WHERE fuel_price_day.price IS DISTINCT FROM EXCLUDED.price;
+
+			DELETE FROM fuel_price_day d WHERE d.day < current_date - `+historyDays+` AND EXISTS (
+				SELECT 1 FROM fuel_price_day n WHERE n.station_id = d.station_id AND n.fuel = d.fuel
+					AND n.day > d.day AND n.day <= current_date - `+historyDays+`);
+
 			DELETE FROM fuel_station WHERE seen_at < now() - interval '7 days';`)
 		return err
+	})
+}
+
+// historyDays : profondeur de l'historique des prix des carburants (fuel_price_day).
+const historyDays = "35"
+
+// FuelDay : prix d'un carburant sur une zone, un jour donné (prix en vigueur en fin de journée).
+type FuelDay struct {
+	Day      string  `json:"day"` // AAAA-MM-JJ, heure de Paris
+	Avg      float64 `json:"avg"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+	Stations int     `json:"stations"`
+}
+
+// FuelTrend renvoie, pour chacun des derniers jours (aujourd'hui compris), la moyenne, le
+// minimum et le maximum des prix en vigueur dans la zone. Un jour sans aucun prix connu est
+// absent ; Stations dit sur combien de stations porte la moyenne (l'historique se constitue
+// au fil des imports, les premiers jours en comptent moins).
+func (s *Store) FuelTrend(ctx context.Context, b BBox, fuel string, days int) ([]FuelDay, error) {
+	rows, err := s.db.Query(ctx, `
+		WITH today AS (SELECT (now() AT TIME ZONE 'Europe/Paris')::date AS d),
+		days AS (SELECT generate_series(today.d - ($6::int - 1), today.d, interval '1 day')::date AS day FROM today),
+		zone AS (SELECT id FROM fuel_station WHERE ST_Intersects(geom, `+envelope+`))
+		SELECT to_char(days.day, 'YYYY-MM-DD'), avg(p.price)::float8, min(p.price)::float8, max(p.price)::float8, count(*)
+		FROM days CROSS JOIN zone
+		JOIN LATERAL (
+			SELECT h.price FROM fuel_price_day h
+			WHERE h.station_id = zone.id AND h.fuel = $5 AND h.day <= days.day
+			ORDER BY h.day DESC LIMIT 1) p ON true
+		GROUP BY days.day ORDER BY days.day`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, fuel, days)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (FuelDay, error) {
+		var d FuelDay
+		err := r.Scan(&d.Day, &d.Avg, &d.Min, &d.Max, &d.Stations)
+		return d, err
 	})
 }
 

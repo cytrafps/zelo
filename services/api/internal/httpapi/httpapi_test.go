@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -31,10 +32,15 @@ type fakeStore struct {
 	areas     []store.AreaOnRoute
 	parkings  []store.Parking
 	vehicle   string
+	trend     string // dernier appel à FuelTrend : « carburant/jours »
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
 func (f *fakeStore) FuelStations(context.Context, store.BBox, int) ([]store.FuelStation, error) {
+	return nil, nil
+}
+func (f *fakeStore) FuelTrend(_ context.Context, _ store.BBox, fuel string, days int) ([]store.FuelDay, error) {
+	f.trend = fmt.Sprintf("%s/%d", fuel, days)
 	return nil, nil
 }
 func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error) {
@@ -383,5 +389,32 @@ func TestParkingsVehicle(t *testing.T) {
 	New(&fakeStore{}, live.NewHub(0), quiet, Config{}).ServeHTTP(rec, httptest.NewRequest("GET", "/v1/parkings?bbox=4,49,4.1,49.3&vehicle=avion", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("véhicule inconnu : %d", rec.Code)
+	}
+}
+
+func TestFuelTrendValidatesParams(t *testing.T) {
+	fs := &fakeStore{}
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(fs, live.NewHub(0), quiet, Config{})
+	const box = "bbox=3.66,49.06,4.42,49.46"
+	for _, c := range []struct {
+		query string
+		code  int
+		trend string
+	}{
+		{box + "&fuel=E10", 200, "E10/30"},
+		{box + "&fuel=Gazole&days=7", 200, "Gazole/7"},
+		{box + "&fuel=gazole", 400, ""},
+		{box, 400, ""},
+		{box + "&fuel=E10&days=36", 400, ""},
+		{box + "&fuel=E10&days=0", 400, ""},
+		{"fuel=E10", 400, ""},
+	} {
+		fs.trend = ""
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/fuel-trend?"+c.query, nil))
+		if rec.Code != c.code || fs.trend != c.trend {
+			t.Errorf("%s : %d %q, attendu %d %q", c.query, rec.Code, fs.trend, c.code, c.trend)
+		}
 	}
 }

@@ -21,9 +21,27 @@ export function ago(from: Date, now: Date) {
   return h < 24 ? `${h} h` : `${Math.round(h / 24)} j`;
 }
 
+/** « il y a 18 min », ou « à l'instant ». */
+export const since = (from: Date, now: Date) => {
+  const a = ago(from, now);
+  return a === 'à l’instant' ? a : `il y a ${a}`;
+};
+
+/** Adresse du flux officiel, souvent en capitales : « 12 AVENUE DE LAON » devient « 12 Avenue de Laon ». */
+export function address(s: string) {
+  const t = s.trim();
+  if (t !== t.toUpperCase()) return t;
+  return t
+    .toLowerCase()
+    .replace(/(^|[\s'’-])(\p{L})/gu, (_, sep: string, c: string) => sep + c.toUpperCase())
+    .replace(/(?<=[\s-])(De|Du|Des|La|Le|Les|Et|Sur|Sous|En|Aux?)(?=[\s-])/g, (w) => w.toLowerCase())
+    .replace(/(?<=[\s-])([DL])['’](?=\p{L})/gu, (w) => w.toLowerCase())
+    .replace(/(?<![\p{L}'’])(Rn|Rd|Zac|Zi|Za|Cc)(?![\p{L}'’])/gu, (w) => w.toUpperCase());
+}
+
 /** « mis à jour il y a 2 min » */
 export const updated = (at: Date | null, now: Date) =>
-  at === null ? 'chargement…' : ago(at, now) === 'à l’instant' ? 'mis à jour à l’instant' : `mis à jour il y a ${ago(at, now)}`;
+  at === null ? 'chargement…' : `mis à jour ${since(at, now)}`;
 
 /** « Parking rue de Vesle » devient « Rue de Vesle » ; « Parking Erlon », « Erlon ». */
 export const parkingName = (name: string) => {

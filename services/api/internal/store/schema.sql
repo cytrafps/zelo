@@ -19,6 +19,17 @@ CREATE TABLE IF NOT EXISTS fuel_price (
     PRIMARY KEY (station_id, fuel)
 );
 
+-- Historique des prix : une ligne par station, carburant et jour de changement (dernier prix
+-- du jour). Le prix d'un jour est le dernier changement à cette date ou avant. Gardé 35 jours,
+-- plus le changement qui précède la fenêtre, pour la tendance du tableau de bord ville.
+CREATE TABLE IF NOT EXISTS fuel_price_day (
+    station_id  text NOT NULL REFERENCES fuel_station (id) ON DELETE CASCADE,
+    fuel        text NOT NULL,
+    day         date NOT NULL,
+    price       numeric(6, 3) NOT NULL,
+    PRIMARY KEY (station_id, fuel, day)
+);
+
 CREATE TABLE IF NOT EXISTS charge_point (
     id            text PRIMARY KEY,
     station_id    text NOT NULL,
