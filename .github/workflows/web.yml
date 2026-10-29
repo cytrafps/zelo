@@ -1,0 +1,83 @@
+name: Web
+
+# Tableau de bord ville (apps/web) : tests, build, puis image sur main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/**
+      - .github/workflows/web.yml
+      - .github/scripts/**
+  pull_request:
+    paths:
+      - apps/web/**
+      - .github/workflows/web.yml
+      - .github/scripts/**
+
+permissions:
+  contents: read
+
+# Une PR poussée à nouveau annule le passage précédent, devenu inutile.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  web:
+    # Tests sur la PR ; sur main, l'image se construit seule (sa compilation échouerait de même).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx vite build
+
+  # Sur main : image publiée sur GHCR, puis son tag écrit dans deploy/overlays/homelab pour Argo CD.
+  web-image:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: web-image-${{ github.ref }}
+    permissions:
+      contents: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # historique complet : le déploiement vérifie l'ordre des commits
+          filter: blob:none
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: apps/web
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Déployer le nouveau tag (Argo CD)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/deploy-tag.sh "$IMAGE" ${{ steps.tag.outputs.sha }} web

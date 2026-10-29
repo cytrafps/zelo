@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cytrafps/zelo/actions/workflows/ci.yml"><img src="https://github.com/cytrafps/zelo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/cytrafps/zelo/actions/workflows/api.yml"><img src="https://github.com/cytrafps/zelo/actions/workflows/api.yml/badge.svg" alt="API"></a> <a href="https://github.com/cytrafps/zelo/actions/workflows/web.yml"><img src="https://github.com/cytrafps/zelo/actions/workflows/web.yml/badge.svg" alt="Web"></a>
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/Expo-SDK%2058-000020?logo=expo&logoColor=white" alt="Expo SDK 58">
   <img src="https://img.shields.io/badge/PostGIS-17-336791?logo=postgresql&logoColor=white" alt="PostGIS 17">

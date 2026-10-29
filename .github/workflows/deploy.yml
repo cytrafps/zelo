@@ -1,0 +1,81 @@
+name: Déploiement
+
+# Manifestes Kubernetes, règles Prometheus et infrastructure du homelab.
+on:
+  # Sur la PR seulement : main ne reçoit que des PR déjà vérifiées.
+  pull_request:
+    paths:
+      - deploy/**
+      - infra/**
+      - .github/workflows/deploy.yml
+
+permissions:
+  contents: read
+
+# Une PR poussée à nouveau annule le passage précédent, devenu inutile.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Outils
+        run: |
+          mkdir -p "$HOME/bin" && cd "$HOME/bin"
+          # Sommes de contrôle relevées sur les pages de publication : un binaire modifié est refusé.
+          curl -sSfLO https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz
+          curl -sSfLO https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz
+          curl -sSfLO https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz
+          sha256sum -c <<'SUMS'
+          ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8  kustomize_v5.7.1_linux_amd64.tar.gz
+          c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3  kubeconform-linux-amd64.tar.gz
+          e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a  prometheus-3.5.0.linux-amd64.tar.gz
+          SUMS
+          tar xzf kustomize_v5.7.1_linux_amd64.tar.gz
+          tar xzf kubeconform-linux-amd64.tar.gz kubeconform
+          tar xzf prometheus-3.5.0.linux-amd64.tar.gz --strip-components=1 prometheus-3.5.0.linux-amd64/promtool
+          rm ./*.tar.gz
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Kustomize + kubeconform
+        run: |
+          kustomize build deploy/overlays/homelab > rendered.yaml
+          kubeconform -strict -summary -kubernetes-version 1.33.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            rendered.yaml deploy/argocd/*.yaml
+      - name: Règles Prometheus
+        run: |
+          yq '{"groups": .spec.groups}' deploy/monitoring/alerts.yaml > rules.yml
+          promtool check rules rules.yml
+          promtool test rules deploy/monitoring/alerts_test.yml
+
+  # Infrastructure du homelab : VM Proxmox (Terraform) et installation du cluster (Ansible).
+
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Outils
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sSfL https://releases.hashicorp.com/terraform/1.13.4/terraform_1.13.4_linux_amd64.zip -o tf.zip
+          echo "98aa516201e948306698efd9954ab4cc0d1227c2578ba56245898b5f679e590b  tf.zip" | sha256sum -c
+          unzip -q tf.zip terraform -d "$HOME/bin" && rm tf.zip
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          pipx install ansible-core==2.21.5 && pipx inject ansible-core ansible-lint==26.10.1 --include-apps
+      - name: Terraform
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate
+      - name: Ansible
+        working-directory: infra/ansible
+        run: |
+          ansible-galaxy collection install -r requirements.yml
+          cp inventory.ini.example inventory.ini
+          ansible-playbook --syntax-check site.yml
+          ansible-lint --profile production site.yml

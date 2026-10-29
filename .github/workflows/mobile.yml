@@ -1,0 +1,37 @@
+name: Mobile
+
+# App Expo (apps/mobile).
+on:
+  # Sur la PR seulement : main ne reçoit que des PR déjà vérifiées.
+  pull_request:
+    paths:
+      - apps/mobile/**
+      - .github/workflows/mobile.yml
+
+permissions:
+  contents: read
+
+# Une PR poussée à nouveau annule le passage précédent, devenu inutile.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx expo-doctor
+      - run: npx expo export --platform android --platform ios --output-dir dist
