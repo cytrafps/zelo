@@ -80,10 +80,11 @@ var index = func() (out []gareKeys) {
 // quand deux autoroutes ont le même. Rien de sûr : pas de gare.
 func Match(b Booth) (Gare, bool) {
 	// Une gare « REIMS (péage de Courcy) » ne se reconnaît qu'à « Courcy » : « Reims » seul
-	// désigne aussi Reims Nord, Sud, Ouest, Est.
+	// désigne aussi Reims Nord, Sud, Ouest, Est. Un nom de sortie de plusieurs mots (« Reims Est »
+	// pour « REIMS EST (péage de Taissy) », nom donné par OSM) est assez précis pour suffire.
 	accepts := func(k gareKeys, name string, prefix bool) bool {
 		eq := func(a string) bool { return a != "" && (a == name || prefix && strings.HasPrefix(a+" ", name+" ")) }
-		return eq(k.plaza) || k.plaza == "" && eq(k.main)
+		return eq(k.plaza) || (k.plaza == "" || strings.Contains(k.main, " ")) && eq(k.main)
 	}
 	if name := key(b.Name); name != "" {
 		var exact []Gare
