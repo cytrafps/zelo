@@ -55,6 +55,7 @@ flowchart LR
 | `services/api` | API en Go : collecte des données ouvertes, API REST, signalements en temps réel (WebSocket), métriques Prometheus |
 | `services/valhalla` | Image Valhalla (itinéraires) avec le graphe routier de la Marne, reconstruite chaque semaine par la CI |
 | `apps/mobile` | App React Native + Expo : carte MapLibre, stations, bornes, parkings, signalements en temps réel |
+| `apps/web` | Tableau de bord ville (React + MapLibre GL JS) : stationnement, recharge, carburant, signalements |
 | `infra` | Développement (Docker Compose) et homelab décrit en code : VM Proxmox en Terraform, cluster K3s en Ansible ([guide](infra/README.md)) |
 | `deploy` | Production sur K3s en GitOps : Kustomize, Argo CD, Prometheus et Grafana ([guide](deploy/README.md)) |
 | `tests/charge` | Test de charge k6 et résultats, bascule d'une réplique comprise ([résultats](tests/charge/README.md)) |

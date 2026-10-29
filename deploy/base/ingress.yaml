@@ -16,3 +16,22 @@ spec:
             pathType: Exact
             backend:
               service: { name: api, port: { name: http } }
+---
+# Tableau de bord ville : la page, et /v1 vers l'API sur le même hôte (même origine, sans CORS).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+spec:
+  rules:
+    - host: ville.zelo.example.test # remplacé par l'overlay
+      http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service: { name: api, port: { name: http } }
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { name: http } }

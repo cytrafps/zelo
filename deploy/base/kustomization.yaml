@@ -1,4 +1,4 @@
-# Socle commun : API, PostGIS et Valhalla. Les environnements (overlays/) fixent l'image, le domaine et la zone d'import.
+# Socle commun : API, PostGIS, Valhalla et tableau de bord ville. Les environnements (overlays/) fixent l'image, le domaine et la zone d'import.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: zelo
@@ -11,10 +11,13 @@ resources:
   - postgres.yaml
   - api.yaml
   - valhalla.yaml
+  - web.yaml
   - ingress.yaml
   - networkpolicy.yaml
 images:
   - name: ghcr.io/cytrafps/zelo-api
     newTag: latest
   - name: ghcr.io/cytrafps/zelo-valhalla
+    newTag: latest
+  - name: ghcr.io/cytrafps/zelo-web
     newTag: latest
