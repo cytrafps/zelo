@@ -20,15 +20,27 @@ CREATE TABLE IF NOT EXISTS fuel_price (
 );
 
 -- Historique des prix : une ligne par station, carburant et jour de changement (dernier prix
--- du jour). Le prix d'un jour est le dernier changement à cette date ou avant. Gardé 35 jours,
--- plus le changement qui précède la fenêtre, pour la tendance du tableau de bord ville.
+-- du jour ; NULL : le carburant n'est plus vendu). Le prix d'un jour est le dernier changement à
+-- cette date ou avant, s'il a moins de 30 jours. Gardé 35 jours, plus le changement qui précède
+-- la fenêtre, pour la tendance du tableau de bord ville.
 CREATE TABLE IF NOT EXISTS fuel_price_day (
     station_id  text NOT NULL REFERENCES fuel_station (id) ON DELETE CASCADE,
     fuel        text NOT NULL,
     day         date NOT NULL,
-    price       numeric(6, 3) NOT NULL,
+    price       numeric(6, 3),
     PRIMARY KEY (station_id, fuel, day)
 );
+ALTER TABLE fuel_price_day ALTER COLUMN price DROP NOT NULL;
+-- Début de la collecte : avant, un jour ne connaît que les stations dont le prix n'a plus bougé
+-- depuis (les prix en vigueur au démarrage, datés de leur dernier changement).
+CREATE TABLE IF NOT EXISTS fuel_history (
+    one      boolean PRIMARY KEY DEFAULT true CHECK (one),
+    started  date NOT NULL
+);
+INSERT INTO fuel_history (started) VALUES ((now() AT TIME ZONE 'Europe/Paris')::date) ON CONFLICT DO NOTHING;
+INSERT INTO fuel_price_day (station_id, fuel, day, price)
+SELECT station_id, fuel, (updated_at AT TIME ZONE 'Europe/Paris')::date, price FROM fuel_price
+ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS charge_point (
     id            text PRIMARY KEY,

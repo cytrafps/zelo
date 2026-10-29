@@ -71,7 +71,7 @@ func TestClosuresList(t *testing.T) {
 		{ID: "later", Name: "Travaux à venir", From: now.Add(48 * time.Hour), To: now.Add(96 * time.Hour), Lines: line},
 		{ID: "ended", Name: "Travaux finis", To: now.Add(-time.Hour), Lines: line},
 		{ID: "far", Name: "Paris", Lines: [][][2]float64{{{2.37, 48.86}, {2.38, 48.86}}}},
-		{ID: "now", Name: "Rue Buirette", From: now.Add(-time.Hour), To: now.Add(time.Hour), Lines: line},
+		{ID: "now", Name: "Rue Buirette", URL: "javascript:alert(1)", From: now.Add(-time.Hour), To: now.Add(time.Hour), Lines: line},
 		{ID: "piétonne", Name: "Rue piétonne la nuit", Lines: line, Periods: []closure.Period{{From: 0, To: 1, Zone: time.UTC}}},
 	}
 	rec := httptest.NewRecorder()
@@ -82,6 +82,7 @@ func TestClosuresList(t *testing.T) {
 			ID       string
 			Active   bool
 			Periodic bool
+			URL      string
 			To       *time.Time
 		}
 	}
@@ -98,6 +99,9 @@ func TestClosuresList(t *testing.T) {
 		t.Fatalf("ordre %v", ids)
 	}
 	for _, c := range got.Items {
+		if c.ID == "now" && c.URL != "" {
+			t.Errorf("lien non https gardé : %q", c.URL)
+		}
 		if c.ID == "piétonne" && (!c.Periodic || c.To != nil) {
 			t.Errorf("piétonne : %+v", c)
 		}

@@ -28,7 +28,8 @@ export function ReportsPage() {
   const confirmed = list.filter((r) => reportState(r) === 'confirme').length;
   const doubtful = list.filter((r) => reportState(r) === 'verifier').length;
   const temporary = (closures.data ?? []).filter((c) => c.to !== null);
-  const fixed = (closures.data ?? []).filter((c) => c.to === null && c.periodic).length;
+  // Sans date de fin : zones piétonnes à heures fixes, ou fermetures permanentes.
+  const lasting = (closures.data ?? []).filter((c) => c.to === null).length;
   const closedNow = (closures.data ?? []).filter((c) => c.active).length;
 
   return (
@@ -95,9 +96,9 @@ export function ReportsPage() {
           {temporary.slice(0, 5).map((c) => (
             <ClosureLine key={c.id} closure={c} now={now} />
           ))}
-          {fixed > 0 && (
+          {lasting > 0 && (
             <p className={s.text}>
-              Et {formatNumber(fixed)} rue{fixed > 1 ? 's' : ''} fermée{fixed > 1 ? 's' : ''} à heures fixes (zones piétonnes…).
+              Et {formatNumber(lasting)} rue{lasting > 1 ? 's' : ''} fermée{lasting > 1 ? 's' : ''} sans date de fin (zones piétonnes à heures fixes…).
             </p>
           )}
           <a className={s.action} href={DIALOG} target="_blank" rel="noreferrer">

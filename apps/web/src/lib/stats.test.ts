@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChargeStation, FuelStation, Parking, Report } from './api';
-import { reportState, completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
+import { brokenStations, reportState, completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
 
 const station = (total: number, available: number | null) => ({ total, available }) as ChargeStation;
 const report = (id: number, kind: Report['kind'], createdAt: string) => ({ id, kind, createdAt }) as Report;
@@ -63,10 +63,14 @@ describe('recharge', () => {
   const broken = { kind: 'borne_hs', lat: 49.25, lon: 4.03 } as Report;
 
   it('état : panne signalée, puis état publié', () => {
-    expect(stationState(st('a', 49.2502, 1), [broken])).toBe('panne'); // ~22 m
-    expect(stationState(st('b', 49.26, 0), [broken])).toBe('complet');
-    expect(stationState(st('c', 49.26, null), [])).toBe('inconnu');
-    expect(stationState(st('d', 49.26, 2), [])).toBe('service');
+    const a = st('a', 49.2502, 1); // ~22 m
+    const voisine = st('v', 49.2504, 1); // ~44 m : la panne vise la plus proche seulement
+    const down = brokenStations([broken], [a, voisine, st('b', 49.26, 0)]);
+    expect([...down]).toEqual(['a']);
+    expect(stationState(a, down)).toBe('panne');
+    expect(stationState(voisine, down)).toBe('service');
+    expect(stationState(st('b', 49.26, 0), down)).toBe('complet');
+    expect(stationState(st('c', 49.26, null), down)).toBe('inconnu');
   });
 
   it('station la plus proche d’un signalement', () => {
@@ -80,7 +84,7 @@ describe('recharge', () => {
       st('b', 49.25, 1, { price: { free: false, kwh: 0.3, from: true } }),
       st('c', 49.25, 1, { price: { free: true, kwh: 0, from: false } }),
     ]);
-    expect(o).toEqual({ fast: 4, fastStations: 1, avgKwh: 0.4, priced: 2 });
+    expect(o).toEqual({ fast: 4, fastStations: 1, avgKwh: 0.5, priced: 1 }); // « dès 0,30 » est un minimum
   });
 
   it('carburant : moyenne sur les stations à jour', () => {
@@ -93,12 +97,12 @@ describe('recharge', () => {
     expect(fuelStats(fresh, 'E85')).toBeNull();
   });
 
-  it('tendance : jours complets et évolution sur 7 jours', () => {
-    const d = (day: string, avg: number, stations: number) => ({ day, avg, min: avg, max: avg, stations });
-    const days = [d('2026-10-20', 1.8, 10), d('2026-10-21', 1.79, 40), d('2026-10-22', 1.78, 50), d('2026-10-29', 1.75, 52)];
-    expect(completeDays(days).map((x) => x.day)).toEqual(['2026-10-22', '2026-10-29']);
-    expect(weekChange(days)).toBeCloseTo(-0.03);
-    expect(weekChange(days.slice(1, 2))).toBeNull();
+  it('tendance : jours collectés et évolution sur 7 jours', () => {
+    const d = (day: string, complete: boolean, week: number | null) => ({ day, avg: 1.7, min: 1.7, max: 1.7, stations: 9, complete, week });
+    const days = [d('2026-10-20', false, null), d('2026-10-21', true, null), d('2026-10-29', true, -0.03)];
+    expect(completeDays(days).map((x) => x.day)).toEqual(['2026-10-21', '2026-10-29']);
+    expect(weekChange(days)).toBe(-0.03);
+    expect(weekChange(days.slice(0, 2))).toBeNull();
     expect(weekChange([])).toBeNull();
   });
 

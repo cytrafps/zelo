@@ -41,7 +41,10 @@ export function FuelPage() {
   const stations = fuel.data ? freshFuel(fuel.data, now) : [];
   const stats = Object.fromEntries(COLUMNS.map((c) => [c.fuel, fuelStats(stations, c.fuel)]));
   const e10 = stats.E10;
-  const gazole = stats.Gazole;
+  // Moyennes de la zone : celles de la tendance (même calcul que la courbe et l'évolution), à défaut
+  // celles des stations listées.
+  const e10Avg = e10Trend.data?.at(-1)?.avg ?? e10?.avg;
+  const gazoleAvg = gazoleTrend.data?.at(-1)?.avg ?? stats.Gazole?.avg;
   const latest = stations.reduce<Date | null>((m, st) => {
     const d = new Date(st.updatedAt);
     return !m || d > m ? d : m;
@@ -60,8 +63,8 @@ export function FuelPage() {
       />
 
       <div className={ui.tiles}>
-        <Tile label="SP95-E10 moyen" value={e10 ? formatLitre(e10.avg) : fuel.data ? '—' : '…'} note={change(e10Trend.data)} tone={changeTone(e10Trend.data)} />
-        <Tile label="Gazole moyen" value={gazole ? formatLitre(gazole.avg) : fuel.data ? '—' : '…'} note={change(gazoleTrend.data)} tone={changeTone(gazoleTrend.data)} />
+        <Tile label="SP95-E10 moyen" value={e10Avg !== undefined ? formatLitre(e10Avg) : fuel.data ? '—' : '…'} note={change(e10Trend.data)} tone={changeTone(e10Trend.data)} />
+        <Tile label="Gazole moyen" value={gazoleAvg !== undefined ? formatLitre(gazoleAvg) : fuel.data ? '—' : '…'} note={change(gazoleTrend.data)} tone={changeTone(gazoleTrend.data)} />
         <Tile
           label="Écart moins cher / plus cher"
           value={e10 ? `${formatNumber(cents(e10.max - e10.min))} cts` : fuel.data ? '—' : '…'}

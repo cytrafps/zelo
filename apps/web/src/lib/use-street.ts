@@ -12,7 +12,10 @@ export function useStreet(r: Report) {
     let live = true;
     let p = streets.get(r.id);
     if (!p) {
-      p = streetAt(r.lat, r.lon).catch(() => null);
+      p = streetAt(r.lat, r.lon).catch(() => {
+        streets.delete(r.id); // échec réseau : on retentera au prochain affichage
+        return null;
+      });
       streets.set(r.id, p);
     }
     void p.then((v) => live && setStreet(v));
