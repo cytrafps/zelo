@@ -1,3 +1,4 @@
+import { distance } from './geo';
 import type { ChargeStation, FuelStation, Parking, Report, ReportKind } from './api';
 
 /** Points de charge libres parmi ceux dont l'état est publié depuis moins de 24 h. */
@@ -91,4 +92,45 @@ export function capacitySummary(parkings: Parking[]) {
     }
   }
   return { places, disabled, withDisabled, unknown, total: parkings.length };
+}
+
+/** Distance (m) sous laquelle un signalement « borne hors service » vise la station. */
+export const BROKEN_WITHIN_M = 60;
+
+export type StationState = 'service' | 'complet' | 'panne' | 'inconnu';
+
+/** État d'une station : panne signalée par un conducteur, sinon l'état publié par l'opérateur. */
+export function stationState(st: ChargeStation, broken: Report[]): StationState {
+  if (broken.some((r) => distance(r, st) <= BROKEN_WITHIN_M)) return 'panne';
+  if (st.available === null) return 'inconnu';
+  return st.available === 0 ? 'complet' : 'service';
+}
+
+/** La station la plus proche d'un signalement, à moins de `within` mètres. */
+export function nearestStation(r: Report, stations: ChargeStation[], within = 100) {
+  let best: { station: ChargeStation; d: number } | null = null;
+  for (const st of stations) {
+    const d = distance(r, st);
+    if (d <= within && (!best || d < best.d)) best = { station: st, d };
+  }
+  return best?.station ?? null;
+}
+
+/** Points rapides (50 kW et plus) et prix moyen du kWh parmi les stations qui le publient. */
+export function chargeOffer(stations: ChargeStation[]) {
+  let fast = 0;
+  let fastStations = 0;
+  let sum = 0;
+  let priced = 0;
+  for (const st of stations) {
+    if (st.maxPowerKw >= 50) {
+      fast += st.total;
+      fastStations++;
+    }
+    if (st.price && !st.price.free && st.price.kwh > 0) {
+      sum += st.price.kwh;
+      priced++;
+    }
+  }
+  return { fast, fastStations, avgKwh: priced ? sum / priced : null, priced };
 }
