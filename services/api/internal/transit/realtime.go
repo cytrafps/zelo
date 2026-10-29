@@ -23,7 +23,15 @@ type Realtime struct {
 	At       time.Time
 	times    map[string]map[int32][2]int64 // course → rang → (arrivée, départ) Unix, 0 si inconnu
 	canceled map[string]bool
+	// dates : jour de service de la mise à jour (start_date, « 20261103 ») quand le flux le donne.
+	// Le même identifiant de course revient chaque jour : sans lui, un retard d'aujourd'hui
+	// s'appliquerait aussi à la course de demain.
+	dates map[string]string
 }
+
+// rtWindow : sans jour de service, une mise à jour vaut pour l'instance de la course dont l'horaire
+// prévu est à moins de ça de l'heure annoncée.
+const rtWindow = 6 * 3600
 
 func FetchRealtime(ctx context.Context, client *http.Client, url string) (*Realtime, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -50,13 +58,16 @@ func ParseRealtime(b []byte) (*Realtime, error) {
 	if err := proto.Unmarshal(b, &f); err != nil {
 		return nil, fmt.Errorf("gtfs-rt: %w", err)
 	}
-	rt := &Realtime{At: time.Unix(int64(f.GetHeader().GetTimestamp()), 0), times: map[string]map[int32][2]int64{}, canceled: map[string]bool{}}
+	rt := &Realtime{At: time.Unix(int64(f.GetHeader().GetTimestamp()), 0), times: map[string]map[int32][2]int64{}, canceled: map[string]bool{}, dates: map[string]string{}}
 	for _, e := range f.Entity {
 		tu := e.GetTripUpdate()
 		if tu == nil || e.GetIsDeleted() {
 			continue
 		}
 		id := tu.GetTrip().GetTripId()
+		if d := tu.GetTrip().GetStartDate(); d != "" {
+			rt.dates[id] = d
+		}
 		if tu.GetTrip().GetScheduleRelationship() == gtfs.TripDescriptor_CANCELED {
 			rt.canceled[id] = true
 			continue
@@ -98,14 +109,27 @@ func (t *Timetable) effective(day time.Time, rt *Realtime) ([]conn, []dayTrip, [
 	// Retard au départ de chaque appel, par course du jour.
 	type shift struct{ dep, arr []int64 }
 	shifts := make([]*shift, len(trips))
+	// Jour de service du flux, pour une suppression sans date : celui de l'heure du flux (une course
+	// de 0 h 30 appartient encore au jour de service de la veille).
+	feedDay := rt.At.In(Paris).Add(-4 * time.Hour).Format("20060102")
 	for k, dt := range trips {
 		tr := t.trips[dt.trip]
+		date := time.Unix(dt.start+12*3600, 0).In(Paris).Format("20060102")
+		rtDate, dated := rt.dates[tr.id]
+		if dated && rtDate != date {
+			continue // mise à jour d'un autre jour de service
+		}
 		if rt.canceled[tr.id] {
-			shifts[k] = &shift{} // vide : supprimée
+			if dated || date == feedDay {
+				shifts[k] = &shift{} // vide : supprimée
+			}
 			continue
 		}
 		times, ok := rt.times[tr.id]
 		if !ok {
+			continue
+		}
+		if !dated && !nearInstance(tr, dt, times) {
 			continue
 		}
 		s := &shift{dep: make([]int64, len(tr.calls)), arr: make([]int64, len(tr.calls))}
@@ -147,4 +171,25 @@ func (t *Timetable) effective(day time.Time, rt *Realtime) ([]conn, []dayTrip, [
 	t.rtFor, t.rtDay, t.rtConns, t.rtDelay = rt, key, out, delays
 	t.mu.Unlock()
 	return out, trips, delays
+}
+
+// nearInstance : sans jour de service dans le flux, la mise à jour désigne l'instance de la course
+// dont l'horaire prévu est proche de l'heure annoncée (premier arrêt renseigné).
+func nearInstance(tr trip, dt dayTrip, times map[int32][2]int64) bool {
+	for _, c := range tr.calls {
+		x, ok := times[c.seq]
+		if !ok {
+			continue
+		}
+		at, planned := x[1], dt.start+int64(c.dep)
+		if at == 0 {
+			at, planned = x[0], dt.start+int64(c.arr)
+		}
+		if at == 0 {
+			continue
+		}
+		d := at - planned
+		return d > -rtWindow && d < rtWindow
+	}
+	return false
 }
