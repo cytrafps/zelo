@@ -3,7 +3,7 @@ import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, type ChargeStation, GRAND_REIMS, type Report } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
 import { formatNumber, formatPercent, since, updated } from '../lib/format';
-import { chargeOffer, chargeSummary, nearestStation, stationState, type StationState } from '../lib/stats';
+import { brokenStations, chargeOffer, chargeSummary, nearestStation, stationState, type StationState } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
 import s from './parking.module.css';
 
@@ -28,19 +28,20 @@ export function ChargePage() {
 
   const stations = charge.data ?? [];
   const broken = (reports.data ?? []).filter((r) => r.kind === 'borne_hs');
+  const down = brokenStations(broken, stations);
   const sum = charge.data ? chargeSummary(stations) : null;
   const offer = charge.data ? chargeOffer(stations) : null;
   const points = stations.reduce((n, st) => n + st.total, 0);
   // Les stations signalées en panne d'abord : c'est ce que la ville doit voir.
-  const down = (st: ChargeStation) => (stationState(st, broken) === 'panne' ? 1 : 0);
-  const rows = [...stations].sort((a, b) => down(b) - down(a) || b.total - a.total || b.maxPowerKw - a.maxPowerKw).slice(0, 12);
+  const isDown = (st: ChargeStation) => (down.has(st.id) ? 1 : 0);
+  const rows = [...stations].sort((a, b) => isDown(b) - isDown(a) || b.total - a.total || b.maxPowerKw - a.maxPowerKw).slice(0, 12);
 
   return (
     <main className={ui.page}>
       <PageHeader
         title="Recharge"
         subtitle={`${charge.data ? `${formatNumber(points)} points de charge sur le Grand Reims` : 'Bornes du Grand Reims'} · ${updated(charge.at, now)}`}
-        onExport={charge.data ? () => exportStations(stations, broken) : undefined}
+        onExport={charge.data ? () => exportStations(stations, down) : undefined}
         noPeriod
       />
 
@@ -60,7 +61,7 @@ export function ChargePage() {
         <Tile
           label="Prix moyen du kWh"
           value={offer?.avgKwh != null ? euro.format(offer.avgKwh) : offer ? '—' : '…'}
-          note={offer ? `annoncé par ${formatNumber(offer.priced)} stations` : ''}
+          note={offer ? `prix ferme annoncé par ${formatNumber(offer.priced)} stations` : ''}
         />
       </div>
 
@@ -81,7 +82,7 @@ export function ChargePage() {
               </thead>
               <tbody>
                 {rows.map((st) => {
-                  const state = STATE[stationState(st, broken)];
+                  const state = STATE[stationState(st, down)];
                   return (
                     <tr key={st.id}>
                       <th scope="row" className={t.name}>
@@ -136,7 +137,7 @@ function Broken({ report, stations, now }: { report: Report; stations: ChargeSta
   );
 }
 
-function exportStations(stations: ChargeStation[], broken: Report[]) {
+function exportStations(stations: ChargeStation[], down: Set<string>) {
   downloadCsv(`zelo-recharge-${new Date().toISOString().slice(0, 10)}.csv`, [
     ['station', 'operateur', 'latitude', 'longitude', 'points', 'libres', 'puissance_kw', 'etat', 'prix_kwh_euros'],
     ...stations.map((st) => [
@@ -147,7 +148,7 @@ function exportStations(stations: ChargeStation[], broken: Report[]) {
       st.total,
       st.available ?? '',
       st.maxPowerKw,
-      STATE[stationState(st, broken)].label,
+      STATE[stationState(st, down)].label,
       st.price && !st.price.free ? st.price.kwh : st.price?.free ? 0 : '',
     ]),
   ]);
