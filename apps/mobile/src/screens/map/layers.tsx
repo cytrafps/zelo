@@ -107,26 +107,31 @@ export function FuelLayer({ stations, c, onPress }: { stations: FuelStation[]; c
   );
 }
 
-export function ChargeLayer({ stations, c, onPress }: { stations: ChargeStation[]; c: Couleurs; onPress: Press }) {
+/** Au-delà, l'état publié par l'opérateur n'est plus affiché comme sûr (« ≈ », en gris). */
+const STALE_STATUS_MS = 60 * 60_000;
+
+export function ChargeLayer({ stations, now, c, onPress }: { stations: ChargeStation[]; now: number; c: Couleurs; onPress: Press }) {
   const data = useMemo(
     () =>
       collection(
         stations.map((s) => {
-          const label = s.available === null ? '' : `${s.available}/${s.total}`;
+          // L'API garde un état jusqu'à 24 h : « 3/4 » relevé ce matin ne dit pas ce qui est libre ce soir.
+          const stale = s.available !== null && (!s.observedAt || now - Date.parse(s.observedAt) > STALE_STATUS_MS);
+          const label = s.available === null ? '' : `${stale ? '≈' : ''}${s.available}/${s.total}`;
           return point(s.lon, s.lat, {
             id: s.id,
             // Réservée aux clients : grisée comme une borne sans état, le public ne peut pas s'y fier.
-            state: s.reserved || s.available === null ? 'unknown' : s.available > 0 ? 'free' : 'busy',
+            state: s.reserved || s.available === null || stale ? 'unknown' : s.available > 0 ? 'free' : 'busy',
             label,
-            pin: chargePin(label, !s.reserved && (s.available ?? 0) > 0),
+            pin: chargePin(label, !s.reserved && !stale && (s.available ?? 0) > 0),
             pinLabel: label,
-            muted: s.reserved || s.available === 0,
+            muted: s.reserved || s.available === 0 || stale,
             // Au-dessus : la plus libre, puis sans état publié, les pleines en dessous.
             sort: s.available === null ? 0 : s.available > 0 ? s.available : -100,
           });
         }),
       ),
-    [stations],
+    [stations, now],
   );
   return (
     <GeoJSONSource id="charge" data={data} onPress={onPress}>

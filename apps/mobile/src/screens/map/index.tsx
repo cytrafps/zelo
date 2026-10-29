@@ -288,7 +288,7 @@ export function MapScreen() {
         />
         {!trip && category === 'stationnement' && <ParkingLayer parkings={data.parkings} c={c} onPress={select('parking')} />}
         {!trip && category === 'carburant' && <FuelLayer stations={data.fuel} c={c} onPress={select('fuel')} />}
-        {!trip && category === 'recharge' && <ChargeLayer stations={data.charge} c={c} onPress={select('charge')} />}
+        {!trip && category === 'recharge' && <ChargeLayer stations={data.charge} now={now} c={c} onPress={select('charge')} />}
         {trip && route && (
           <RouteLayer
             routes={trip.phase === 'preview' ? trip.routes : [route]}

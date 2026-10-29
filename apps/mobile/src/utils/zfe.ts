@@ -47,8 +47,71 @@ export const refused = (vignette: Critair, rule: ZoneRule) => CRITAIR.indexOf(vi
 /** Libellé d'une vignette : « Crit'Air 3 », « électrique », « sans vignette ». */
 export const critairLabel = (v: Critair) => (v === 'EL' ? 'électrique' : v === 'NC' ? 'sans vignette' : `Crit'Air ${v.slice(1)}`);
 
-/** Jour local (AAAA-MM-JJ) d'un instant. */
-export const localDay = (ms: number) => {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+/**
+ * Heure de Paris d'un instant, quel que soit le fuseau du téléphone : heure d'été du dernier
+ * dimanche de mars au dernier dimanche d'octobre, à 1 h UTC (règle européenne).
+ */
+export function paris(ms: number) {
+  const year = new Date(ms).getUTCFullYear();
+  const lastSunday = (month: number) => {
+    const d = new Date(Date.UTC(year, month + 1, 0, 1)); // dernier jour du mois, 1 h UTC
+    return d.getTime() - d.getUTCDay() * 86_400_000;
+  };
+  const summer = ms >= lastSunday(2) && ms < lastSunday(9);
+  const d = new Date(ms + (summer ? 2 : 1) * 3_600_000);
+  return {
+    day: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`,
+    weekday: d.getUTCDay(), // 0 : dimanche
+    minutes: d.getUTCHours() * 60 + d.getUTCMinutes(),
+  };
+}
+
+const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+/**
+ * La règle s'applique-t-elle à cet instant ? `hours` suit opening_hours d'OSM : « 24/7 »,
+ * « Mo-Fr 07:00-20:00 », « Mo-Fr 07:00-20:00; Sa 08:00-12:00 ». null si le format n'est pas
+ * compris : on ne devine pas, la règle est alors tenue pour permanente par l'appelant.
+ */
+export function ruleActive(hours: string | undefined, ms: number): boolean | null {
+  if (!hours || hours.trim() === '24/7') return true;
+  const { weekday, minutes } = paris(ms);
+  let active = false;
+  for (const part of hours.split(';').map((x) => x.trim()).filter(Boolean)) {
+    const m = /^(?:([A-Za-z,\- ]+?)\s+)?((?:\d{2}:\d{2}-\d{2}:\d{2})(?:\s*,\s*\d{2}:\d{2}-\d{2}:\d{2})*)$/.exec(part);
+    if (!m) return null;
+    let days = new Set(DAYS.map((_, i) => i));
+    if (m[1]) {
+      days = new Set();
+      for (const spec of m[1].split(',').map((x) => x.trim())) {
+        const [a, b] = spec.split('-').map((x) => DAYS.indexOf(x.trim()));
+        if (a < 0 || (b !== undefined && b < 0)) return null;
+        for (let i = a; ; i = (i + 1) % 7) {
+          days.add(i);
+          if (b === undefined || i === b) break;
+        }
+      }
+    }
+    const today = days.has(weekday);
+    const yesterday = days.has((weekday + 6) % 7);
+    for (const range of m[2].split(',')) {
+      const [from, to] = range.trim().split('-').map((t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)));
+      // Une plage qui passe minuit (« 22:00-06:00 ») a commencé ce jour-là ou la veille.
+      const inside = to > from ? today && minutes >= from && minutes < to : (today && minutes >= from) || (yesterday && minutes < to);
+      if (inside) active = true;
+    }
+  }
+  return active;
+}
+
+/**
+ * La première zone (en vigueur ce jour-là) où passe le tracé, s'il y passe. Les points de Valhalla
+ * sont rapprochés en ville : tester les sommets suffit.
+ */
+export function zoneCrossed(zones: readonly Zone[], line: readonly [number, number][], day: string) {
+  for (const [lon, lat] of line) {
+    const z = zoneAt(zones, { lat, lon }, day);
+    if (z) return z;
+  }
+  return undefined;
+}

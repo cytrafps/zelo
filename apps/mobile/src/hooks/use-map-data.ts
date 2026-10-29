@@ -86,12 +86,24 @@ export function useMapData(place: Place | null) {
     }
   }, [place, load]);
 
-  /** Nouvelle vue de la carte (à appeler à chaque fin de mouvement) : chargement après 250 ms de calme. */
+  /**
+   * Nouvelle vue de la carte (à appeler à chaque fin de mouvement) : chargement après 250 ms de
+   * calme, ou au plus tard 2 s après le premier mouvement. En guidage, la carte qui suit la voiture
+   * bouge sans arrêt : sans ce plafond, les signalements devant elle n'étaient jamais chargés.
+   */
+  const pendingSince = useRef<number | null>(null);
   const look = useCallback(
     (bounds: BBox) => {
       view.current = bounds;
       clearTimeout(timer.current);
-      timer.current = setTimeout(sync, 250);
+      const now = Date.now();
+      pendingSince.current ??= now;
+      const run = () => {
+        pendingSince.current = null;
+        sync();
+      };
+      if (now - pendingSince.current >= 2000) run();
+      else timer.current = setTimeout(run, 250);
     },
     [sync],
   );
