@@ -152,6 +152,10 @@ export const getWeather = (at: LatLon, time: number, signal?: AbortSignal) =>
     { signal },
   );
 
+/** Prix moyen d'un carburant aujourd'hui sur la zone (prix officiels) ; null sans station qui le vend. */
+export const getFuelPrice = (b: BBox, fuel: string, signal?: AbortSignal) =>
+  list<{ day: string; avg: number; stations: number }>(`/v1/fuel-trend?fuel=${fuel}&days=1`, b, signal).then((d) => d.at(-1) ?? null);
+
 /** Voitures électriques (Open EV Data) : batterie et consommation, pour estimer l'autonomie. */
 export const getEvModels = () => request<{ updated: string; models: EvModel[] }>('/v1/ev-models').then((r) => r.models);
 

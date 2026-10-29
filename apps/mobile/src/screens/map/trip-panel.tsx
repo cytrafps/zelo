@@ -5,6 +5,7 @@ import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Share, Sty
 
 import { getWeather, type Avoid, type Outlook, type Parking, type Report, type Vehicle, type Vigilance } from '@/api/zelo';
 import { useNow } from '@/hooks/use-now';
+import { useEnergyPrice, type EnergyPrice, type EnergySource } from '@/hooks/use-energy-price';
 import { useStored } from '@/hooks/use-stored';
 import type { Trip, TripTarget } from '@/hooks/use-trip';
 import { espace, police, rayon, REPORT_META, texte, type Couleurs } from '@/theme';
@@ -14,6 +15,7 @@ import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
 import { forVehicle, sameTarget, sheltered, targetPoint } from '@/utils/targets';
+import { FUELS, fuelLabel, HOME_KWH, LITRE_STEPS, formatCost, tripCost, type ChargeAt, type Combustion, type Fuel } from '@/utils/cost';
 import { arrivalPercent, LOW_PERCENT, type EvModel } from '@/utils/ev';
 import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
 
@@ -56,6 +58,18 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
     if (t.kind !== 'parkride') return walkTime;
     return relayDuration(t.relay.journeys, start + r.duration * 1000, walkTime) ?? walkTime;
   };
+
+  // Coût du trajet (voiture) : carburant de la fiche voiture, ou électricité pour une électrique.
+  const [ev] = useStored<EvModel | null>('zelo.ve', null);
+  const [combustion, setCombustion] = useStored<Combustion | null>('zelo.carburant', null);
+  const [chargeAt, setChargeAt] = useStored<ChargeAt>('zelo.recharge', 'base');
+  const [people, setPeople] = useState(1);
+  const car = vehicle === 'car';
+  const source: EnergySource | null = !car ? null : ev ? { kind: 'electric', at: chargeAt } : combustion ? { kind: 'fuel', fuel: combustion.fuel } : null;
+  const origin = trip.routes[0]?.coordinates[0];
+  const energy = useEnergyPrice(source, origin ? { lat: origin[1], lon: origin[0] } : null);
+  const per100 = ev ? ev.kwhPer100km : combustion?.litresPer100;
+  const costOf = car && energy && per100 ? (meters: number) => tripCost(per100, energy.price, meters) : null;
 
   const share = () => {
     const route = trip.routes[trip.selected];
@@ -163,6 +177,19 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
           onCharge={(target) => onChange({ target })}
         />
       )}
+      {!choosing && car && (
+        <CostNotice
+          ev={ev}
+          combustion={combustion}
+          onCombustion={setCombustion}
+          chargeAt={chargeAt}
+          onChargeAt={setChargeAt}
+          energy={energy}
+          people={people}
+          onPeople={setPeople}
+          c={c}
+        />
+      )}
       {!choosing && (
         <WeatherNotice
           trip={trip}
@@ -229,6 +256,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
               reports={reports}
               selected={i === trip.selected}
               first={i === 0}
+              cost={costOf ? formatCost(costOf(r.distance), people) : null}
               c={c}
               onPress={() => onSelect(i)}
               onGo={() => onGo(i)}
@@ -282,6 +310,113 @@ function BatteryNotice(props: {
           <Text numberOfLines={1} style={[texte.corpsFort, styles.chipText, { color: c.action }]}>{`Recharger : ${short(charge)}`}</Text>
         </Pressable>
       )}
+    </View>
+  );
+}
+
+const PEOPLE = [1, 2, 3, 4, 5];
+const CHARGE_AT: [ChargeAt, string][] = [
+  ['base', `Chez moi · ${HOME_KWH.base.toFixed(2).replace('.', ',')} €/kWh`],
+  ['creuses', `Chez moi, heures creuses · ${HOME_KWH.creuses.toFixed(2).replace('.', ',')} €/kWh`],
+  ['borne', 'En borne · prix moyen autour de moi'],
+];
+const litres = (l: number) => `${String(l).replace('.', ',')} L/100 km`;
+const unitPrice = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
+/**
+ * Coût du trajet en voiture : énergie au prix autour du départ, partagée entre les passagers.
+ * Le carburant et la consommation sont demandés une fois et restent sur le téléphone ; une
+ * électrique de la fiche voiture donne sa consommation.
+ */
+function CostNotice(props: {
+  ev: EvModel | null;
+  combustion: Combustion | null;
+  onCombustion: (c: Combustion) => void;
+  chargeAt: ChargeAt;
+  onChargeAt: (a: ChargeAt) => void;
+  energy: EnergyPrice;
+  people: number;
+  onPeople: (n: number) => void;
+  c: Couleurs;
+}) {
+  const { ev, combustion, onCombustion, chargeAt, onChargeAt, energy, people, onPeople, c } = props;
+
+  if (!ev && !combustion)
+    return (
+      <View style={styles.notice}>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>Combien coûte ce trajet ? Ton carburant :</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+          {FUELS.map((f) => (
+            <Pressable
+              key={f.fuel}
+              onPress={() => onCombustion({ fuel: f.fuel, litresPer100: f.litresPer100 })}
+              accessibilityRole="button"
+              style={[styles.chip, { borderColor: c.fond.separateur }]}
+            >
+              <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{f.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Text style={[texte.petit, { color: c.texte.tertiaire }]}>Électrique : choisis ton modèle dans la fiche voiture.</Text>
+      </View>
+    );
+
+  const unit = ev ? 'kWh' : 'L';
+  return (
+    <View style={[styles.notice, styles.noticeRow]}>
+      {ev ? (
+        <MenuView
+          title="Recharge"
+          actions={CHARGE_AT.map(([id, title]) => ({ id, title, state: id === chargeAt ? 'on' : 'off' }))}
+          onPressAction={(e) => onChargeAt(e.nativeEvent.event as ChargeAt)}
+        >
+          <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Où je recharge">
+            <SymbolView name={{ ios: 'bolt.fill', android: 'bolt' }} tintColor={c.texte.principal} size={14} />
+            <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{chargeAt === 'borne' ? 'En borne' : chargeAt === 'creuses' ? 'Heures creuses' : 'Chez moi'}</Text>
+            <Chevron c={c} />
+          </View>
+        </MenuView>
+      ) : (
+        combustion && (
+          <>
+            <MenuView
+              title="Carburant"
+              actions={FUELS.map((f) => ({ id: f.fuel, title: f.label, state: f.fuel === combustion.fuel ? 'on' : 'off' }))}
+              onPressAction={(e) => onCombustion({ ...combustion, fuel: e.nativeEvent.event as Fuel })}
+            >
+              <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Carburant">
+                <SymbolView name={{ ios: 'fuelpump.fill', android: 'local_gas_station' }} tintColor={c.texte.principal} size={14} />
+                <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{fuelLabel(combustion.fuel)}</Text>
+                <Chevron c={c} />
+              </View>
+            </MenuView>
+            <MenuView
+              title="Consommation"
+              actions={LITRE_STEPS.map((l) => ({ id: String(l), title: litres(l), state: l === combustion.litresPer100 ? 'on' : 'off' }))}
+              onPressAction={(e) => onCombustion({ ...combustion, litresPer100: Number(e.nativeEvent.event) })}
+            >
+              <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Consommation">
+                <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{litres(combustion.litresPer100)}</Text>
+                <Chevron c={c} />
+              </View>
+            </MenuView>
+          </>
+        )
+      )}
+      <MenuView
+        title="Passagers, conducteur compris"
+        actions={PEOPLE.map((n) => ({ id: String(n), title: n === 1 ? 'Seul' : `${n} personnes`, state: n === people ? 'on' : 'off' }))}
+        onPressAction={(e) => onPeople(Number(e.nativeEvent.event))}
+      >
+        <View style={[styles.chip, { borderColor: c.fond.separateur }]} accessibilityRole="button" accessibilityLabel="Partager le coût entre les passagers">
+          <SymbolView name={{ ios: 'person.2.fill', android: 'group' }} tintColor={c.texte.principal} size={14} />
+          <Text style={[texte.corpsFort, { color: c.texte.principal }]}>{people === 1 ? 'Seul' : `${people} pers.`}</Text>
+          <Chevron c={c} />
+        </View>
+      </MenuView>
+      <Text style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
+        {energy ? `${unitPrice.format(energy.price)} €/${unit} · ${energy.where}` : 'Prix en cours…'}
+      </Text>
     </View>
   );
 }
@@ -418,11 +553,13 @@ function RouteRow(props: {
   reports: Report[];
   selected: boolean;
   first: boolean;
+  /** Coût de l'énergie, déjà mis en forme ; null s'il n'est pas connu. */
+  cost: string | null;
   c: Couleurs;
   onPress: () => void;
   onGo: () => void;
 }) {
-  const { route, walk, now, reports, selected, first, c, onPress, onGo } = props;
+  const { route, walk, now, reports, selected, first, cost, c, onPress, onGo } = props;
   // Le premier signalement gênant rencontré sur ce trajet.
   const hit = useMemo(() => {
     const cum = cumulative(route.coordinates);
@@ -435,7 +572,9 @@ function RouteRow(props: {
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }} style={[styles.route, !first && { borderTopColor: c.fond.separateur, borderTopWidth: StyleSheet.hairlineWidth }]}>
       <View style={styles.flex}>
         <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + walk)}</Text>
-        <Text style={[texte.secondaire, { color: c.texte.secondaire }]}>{`Arrivée ${eta} · ${km} km`}</Text>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
+          {`Arrivée ${eta} · ${km} km` + (cost ? ` · ${cost}` : '')}
+        </Text>
         {!!route.areas?.length && (
           <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
             {`${route.areas.length} aire${route.areas.length > 1 ? 's' : ''} · première à ${formatDistance(route.areas[0].along)}`}
