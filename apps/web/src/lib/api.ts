@@ -49,6 +49,13 @@ export type FuelStation = {
   updatedAt: string;
 };
 
+/**
+ * Prix d'un carburant sur la zone, un jour donné (prix en vigueur en fin de journée).
+ * complete : la collecte avait commencé ce jour-là. week : évolution sur 7 jours, station par
+ * station (euros) ; null si la collecte n'avait pas commencé 7 jours plus tôt.
+ */
+export type FuelDay = { day: string; avg: number; min: number; max: number; stations: number; complete: boolean; week: number | null };
+
 export type ReportKind = 'accident' | 'bouchon' | 'travaux' | 'obstacle' | 'route_fermee' | 'place_liberee' | 'borne_hs';
 
 export type Report = {
@@ -76,6 +83,7 @@ export const api = {
   chargeStations: (b: BBox) => items<ChargeStation>(`/v1/charge-stations?${bbox(b)}`),
   parkings: (b: BBox) => items<Parking>(`/v1/parkings?${bbox(b)}`),
   fuelStations: (b: BBox) => items<FuelStation>(`/v1/fuel-stations?${bbox(b)}`),
+  fuelTrend: (b: BBox, fuel: string, days = 30) => items<FuelDay>(`/v1/fuel-trend?${bbox(b)}&fuel=${fuel}&days=${days}`),
   reports: (b: BBox) => items<Report>(`/v1/reports?${bbox(b)}`),
 };
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChargeStation, FuelStation, Parking, Report } from './api';
-import { brokenStations, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
+import { brokenStations, completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
 
 const station = (total: number, available: number | null) => ({ total, available }) as ChargeStation;
 const report = (id: number, kind: Report['kind'], createdAt: string) => ({ id, kind, createdAt }) as Report;
@@ -85,5 +85,24 @@ describe('recharge', () => {
       st('c', 49.25, 1, { price: { free: true, kwh: 0, from: false } }),
     ]);
     expect(o).toEqual({ fast: 4, fastStations: 1, avgKwh: 0.5, priced: 1 }); // « dès 0,30 » est un minimum
+  });
+
+  it('carburant : moyenne sur les stations à jour', () => {
+    const now = new Date('2026-10-29T10:00:00Z');
+    const s = (id: string, prices: Record<string, number>, updatedAt: string) => ({ id, prices, updatedAt }) as unknown as FuelStation;
+    const all = [s('a', { E10: 1.7, Gazole: 1.6 }, '2026-10-29T06:00:00Z'), s('b', { E10: 1.8 }, '2026-10-28T06:00:00Z'), s('c', { E10: 1.0 }, '2026-10-01T00:00:00Z')];
+    const fresh = freshFuel(all, now);
+    expect(fresh.map((x) => x.id)).toEqual(['a', 'b']);
+    expect(fuelStats(fresh, 'E10')).toEqual({ avg: 1.75, min: 1.7, max: 1.8, count: 2 });
+    expect(fuelStats(fresh, 'E85')).toBeNull();
+  });
+
+  it('tendance : jours collectés et évolution sur 7 jours', () => {
+    const d = (day: string, complete: boolean, week: number | null) => ({ day, avg: 1.7, min: 1.7, max: 1.7, stations: 9, complete, week });
+    const days = [d('2026-10-20', false, null), d('2026-10-21', true, null), d('2026-10-29', true, -0.03)];
+    expect(completeDays(days).map((x) => x.day)).toEqual(['2026-10-21', '2026-10-29']);
+    expect(weekChange(days)).toBe(-0.03);
+    expect(weekChange(days.slice(0, 2))).toBeNull();
+    expect(weekChange([])).toBeNull();
   });
 });

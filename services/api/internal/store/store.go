@@ -159,17 +159,96 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 				OR (fuel_station.address, fuel_station.city, fuel_station.postcode)
 					IS DISTINCT FROM (EXCLUDED.address, EXCLUDED.city, EXCLUDED.postcode);
 
-			DELETE FROM fuel_price p WHERE NOT EXISTS (
-				SELECT 1 FROM tmp_price t WHERE t.station_id = p.station_id AND t.fuel = p.fuel);
+			-- Chaque changement de prix entre aussi dans l'historique (fuel_price_day) : le prix du
+			-- jour, ou NULL pour un carburant que la station ne vend plus.
+			WITH gone AS (
+				DELETE FROM fuel_price p WHERE NOT EXISTS (
+					SELECT 1 FROM tmp_price t WHERE t.station_id = p.station_id AND t.fuel = p.fuel)
+				RETURNING station_id, fuel)
+			INSERT INTO fuel_price_day (station_id, fuel, day, price)
+			SELECT station_id, fuel, (now() AT TIME ZONE 'Europe/Paris')::date, NULL FROM gone
+			ON CONFLICT (station_id, fuel, day) DO UPDATE SET price = NULL;
 
-			INSERT INTO fuel_price (station_id, fuel, price, updated_at)
-			SELECT DISTINCT ON (station_id, fuel) station_id, fuel, price, updated_at
-			FROM tmp_price ORDER BY station_id, fuel, updated_at DESC
-			ON CONFLICT (station_id, fuel) DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at
-			WHERE fuel_price.updated_at IS DISTINCT FROM EXCLUDED.updated_at;
+			WITH changed AS (
+				INSERT INTO fuel_price (station_id, fuel, price, updated_at)
+				SELECT DISTINCT ON (station_id, fuel) station_id, fuel, price, updated_at
+				FROM tmp_price ORDER BY station_id, fuel, updated_at DESC
+				ON CONFLICT (station_id, fuel) DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at
+				WHERE fuel_price.updated_at IS DISTINCT FROM EXCLUDED.updated_at
+				RETURNING station_id, fuel, price, updated_at)
+			INSERT INTO fuel_price_day (station_id, fuel, day, price)
+			SELECT station_id, fuel, (updated_at AT TIME ZONE 'Europe/Paris')::date, price FROM changed
+			ON CONFLICT (station_id, fuel, day) DO UPDATE SET price = EXCLUDED.price
+			WHERE fuel_price_day.price IS DISTINCT FROM EXCLUDED.price;
 
 			DELETE FROM fuel_station WHERE seen_at < now() - interval '7 days';`)
 		return err
+	})
+}
+
+// PruneFuelHistory ne garde de l'historique des prix que les 35 derniers jours, plus, pour
+// chaque station et carburant, le changement qui précède la fenêtre (le prix de son premier jour).
+func (s *Store) PruneFuelHistory(ctx context.Context) (int64, error) {
+	tag, err := s.db.Exec(ctx, `
+		DELETE FROM fuel_price_day d WHERE d.day < current_date - 35 AND EXISTS (
+			SELECT 1 FROM fuel_price_day n WHERE n.station_id = d.station_id AND n.fuel = d.fuel
+				AND n.day > d.day AND n.day <= current_date - 35)`)
+	return tag.RowsAffected(), err
+}
+
+// FuelDay : prix d'un carburant sur une zone, un jour donné (prix en vigueur en fin de journée).
+type FuelDay struct {
+	Day      string  `json:"day"` // AAAA-MM-JJ, heure de Paris
+	Avg      float64 `json:"avg"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+	Stations int     `json:"stations"`
+	// Complete : la collecte avait commencé ce jour-là ; avant, la moyenne ne porte que sur les
+	// stations dont le prix n'a plus changé depuis.
+	Complete bool `json:"complete"`
+	// Week : évolution moyenne (euros) sur 7 jours, station par station, sur les stations qui ont
+	// un prix les deux jours ; null si la collecte n'avait pas commencé 7 jours plus tôt.
+	Week *float64 `json:"week"`
+}
+
+// FuelTrend renvoie, pour chacun des derniers jours (aujourd'hui compris), la moyenne, le
+// minimum et le maximum des prix en vigueur dans la zone : le dernier prix publié à cette date,
+// s'il a moins de 30 jours (au-delà, la station ne publie plus). Un jour sans prix est absent.
+func (s *Store) FuelTrend(ctx context.Context, b BBox, fuel string, days int) ([]FuelDay, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // lecture seule
+	// Le planificateur surestime generate_series et compile la requête (JIT) : ~300 ms perdus.
+	if _, err := tx.Exec(ctx, `SET LOCAL jit = off`); err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `
+		WITH today AS (SELECT (now() AT TIME ZONE 'Europe/Paris')::date AS d),
+		days AS (SELECT generate_series(today.d - ($6::int - 1), today.d, interval '1 day')::date AS day FROM today),
+		zone AS (SELECT id FROM fuel_station WHERE ST_Intersects(geom, `+envelope+`)),
+		start AS (SELECT started FROM fuel_history)
+		SELECT to_char(days.day, 'YYYY-MM-DD'), avg(p.price)::float8, min(p.price)::float8, max(p.price)::float8,
+			count(*), days.day >= start.started,
+			CASE WHEN days.day - 7 >= start.started THEN (avg(p.price - w.price) FILTER (WHERE w.price IS NOT NULL))::float8 END
+		FROM days CROSS JOIN zone CROSS JOIN start
+		JOIN LATERAL (
+			SELECT h.price FROM fuel_price_day h
+			WHERE h.station_id = zone.id AND h.fuel = $5 AND h.day <= days.day AND h.day > days.day - 30
+			ORDER BY h.day DESC LIMIT 1) p ON p.price IS NOT NULL
+		LEFT JOIN LATERAL (
+			SELECT h.price FROM fuel_price_day h
+			WHERE h.station_id = zone.id AND h.fuel = $5 AND h.day <= days.day - 7 AND h.day > days.day - 37
+			ORDER BY h.day DESC LIMIT 1) w ON true
+		GROUP BY days.day, start.started ORDER BY days.day`, b.MinLon, b.MinLat, b.MaxLon, b.MaxLat, fuel, days)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (FuelDay, error) {
+		var d FuelDay
+		err := r.Scan(&d.Day, &d.Avg, &d.Min, &d.Max, &d.Stations, &d.Complete, &d.Week)
+		return d, err
 	})
 }
 

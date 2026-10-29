@@ -1,5 +1,5 @@
 import { distance } from './geo';
-import type { ChargeStation, FuelStation, Parking, Report, ReportKind } from './api';
+import type { ChargeStation, FuelDay, FuelStation, Parking, Report, ReportKind } from './api';
 
 /** Points de charge libres parmi ceux dont l'état est publié depuis moins de 24 h. */
 export function chargeSummary(stations: ChargeStation[]) {
@@ -138,3 +138,27 @@ export function chargeOffer(stations: ChargeStation[]) {
   }
   return { fast, fastStations, avgKwh: priced ? sum / priced : null, priced };
 }
+
+const WEEK_MS = 7 * 86_400_000;
+
+/** Stations dont les prix ont été relevés depuis moins de 7 jours (plus vieux : station sans doute fermée). */
+export const freshFuel = (stations: FuelStation[], now: Date) =>
+  stations.filter((s) => Date.parse(s.updatedAt) >= now.getTime() - WEEK_MS);
+
+/** Moyenne, minimum et maximum d'un carburant sur des stations ; null si aucune ne le vend. */
+export function fuelStats(stations: FuelStation[], fuel: string) {
+  const prices = stations.map((s) => s.prices[fuel]).filter((p): p is number => p !== undefined);
+  if (!prices.length) return null;
+  return {
+    avg: prices.reduce((a, b) => a + b, 0) / prices.length,
+    min: Math.min(...prices),
+    max: Math.max(...prices),
+    count: prices.length,
+  };
+}
+
+/** Jours de la tendance à afficher : ceux où la collecte des prix avait commencé. */
+export const completeDays = (days: FuelDay[]) => days.filter((d) => d.complete);
+
+/** Évolution (euros) du prix moyen sur 7 jours, au dernier jour ; null si l'historique ne remonte pas assez. */
+export const weekChange = (days: FuelDay[]) => days.at(-1)?.week ?? null;

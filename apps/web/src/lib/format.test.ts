@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ago, formatLitre, formatNumber, formatPercent, parkingName, today, updated } from './format';
+import { address, ago, formatLitre, formatNumber, formatPercent, parkingName, since, today, updated } from './format';
 
 describe('format', () => {
   it('écrit les nombres à la française', () => {
@@ -29,4 +29,22 @@ it('nom de parking sans le mot « Parking »', () => {
   expect(parkingName('Parking Erlon')).toBe('Erlon');
   expect(parkingName('P+R Belges')).toBe('P+R Belges');
   expect(parkingName('')).toBe('Sans nom');
+});
+
+describe('textes', () => {
+  it('remet en forme les adresses en capitales', () => {
+    expect(address('12 AVENUE DE LAON')).toBe('12 Avenue de Laon');
+    expect(address("RUE D'ÉPERNAY")).toBe("Rue d'Épernay");
+    expect(address('ROUTE DE WITRY-LES-REIMS')).toBe('Route de Witry-les-Reims');
+    expect(address('RN 44')).toBe('RN 44');
+    expect(address('ZAC DES ESSILLARDS')).toBe('ZAC des Essillards');
+    expect(address('RUE DE LA ZONE')).toBe('Rue de la Zone');
+    expect(address('Centre commercial Cora')).toBe('Centre commercial Cora');
+  });
+
+  it('« il y a » sans doublon à l’instant', () => {
+    const now = new Date('2026-10-29T10:00:00Z');
+    expect(since(new Date('2026-10-29T09:59:50Z'), now)).toBe('à l’instant');
+    expect(since(new Date('2026-10-29T09:40:00Z'), now)).toBe('il y a 20 min');
+  });
 });
