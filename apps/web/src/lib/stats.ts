@@ -173,3 +173,9 @@ export function weekChange(days: FuelDay[]) {
   const before = ok.find((d) => new Date(`${d.day}T12:00:00Z`).getTime() === target);
   return before ? last.avg - before.avg : null;
 }
+
+export type ReportState = 'confirme' | 'verifier' | 'nouveau';
+
+/** Confirmé : plus de « oui » que de « non » ; à vérifier : au moins autant de « non » que de « oui ». */
+export const reportState = (r: Report): ReportState =>
+  r.confirmations > r.denials ? 'confirme' : r.denials > 0 ? 'verifier' : 'nouveau';

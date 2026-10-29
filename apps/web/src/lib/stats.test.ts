@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChargeStation, FuelStation, Parking, Report } from './api';
-import { completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
+import { reportState, completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
 
 const station = (total: number, available: number | null) => ({ total, available }) as ChargeStation;
 const report = (id: number, kind: Report['kind'], createdAt: string) => ({ id, kind, createdAt }) as Report;
@@ -100,5 +100,10 @@ describe('recharge', () => {
     expect(weekChange(days)).toBeCloseTo(-0.03);
     expect(weekChange(days.slice(1, 2))).toBeNull();
     expect(weekChange([])).toBeNull();
+  });
+
+  it('état d’un signalement selon les votes', () => {
+    const r = (confirmations: number, denials: number) => ({ confirmations, denials }) as Report;
+    expect([r(3, 1), r(1, 1), r(0, 2), r(0, 0)].map(reportState)).toEqual(['confirme', 'verifier', 'verifier', 'nouveau']);
   });
 });

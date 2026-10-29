@@ -126,6 +126,7 @@ func New(s Store, hub *live.Hub, log *slog.Logger, cfg Config) http.Handler {
 	mux.HandleFunc("GET /v1/route", a.route)
 	mux.HandleFunc("GET /v1/park-ride", a.parkRide)
 	mux.HandleFunc("GET /v1/zfe", a.zfe)
+	mux.HandleFunc("GET /v1/closures", a.closures)
 	mux.HandleFunc("GET /v1/weather", a.weather)
 	mux.HandleFunc("GET /v1/ev-models", evModels)
 	return instrument(mux)

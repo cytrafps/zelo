@@ -1,0 +1,57 @@
+.closure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.closureName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--encre);
+  text-decoration: none;
+}
+
+a.closureName:hover {
+  text-decoration: underline;
+}
+
+.closureWhen {
+  font-size: 13px;
+  color: var(--texte-2);
+}
+
+.action {
+  align-self: flex-start;
+  background: var(--encre);
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.action:hover {
+  background: #33312d;
+}
+
+.text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--texte-2);
+}
+
+.votes {
+  color: var(--texte-2);
+}
+
+.votes b {
+  color: var(--encre);
+  font-weight: 500;
+}
+
+.place {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
