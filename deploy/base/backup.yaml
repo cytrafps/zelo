@@ -1,0 +1,112 @@
+# Sauvegarde quotidienne de la base, à 3 h (heure de Paris) : pg_dump dans un volume dédié, gardé
+# 14 jours, puis copie chiffrée hors de la VM par rclone si le secret zelo-rclone existe (même
+# configuration que Compose, voir README « Sauvegardes de la base »). Le volume seul est sur le même
+# disque que la base : sans copie distante, il ne protège que d'une erreur, pas d'une panne du disque.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sauvegardes
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sauvegarde-db
+  labels:
+    app.kubernetes.io/name: sauvegarde
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Europe/Paris
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: sauvegarde
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 70 # postgres dans l'image Alpine
+            runAsGroup: 70
+            fsGroup: 70
+            runAsNonRoot: true
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: dump
+              image: postgis/postgis:17-3.5-alpine # pg_dump de la même version que le serveur
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  name="/backups/zelo-$(TZ=Europe/Paris date +%Y%m%d-%H%M).dump"
+                  # Écrit d'abord dans un .part : une sauvegarde interrompue ne passe jamais pour complète.
+                  pg_dump -Fc --no-owner -f "$name.part"
+                  mv "$name.part" "$name"
+                  find /backups -name 'zelo-*.dump' -mtime +14 -delete
+                  find /backups -name '*.part' -mmin +60 -delete
+                  echo "sauvegarde $name ($(du -h "$name" | cut -f1))"
+              env:
+                - { name: PGHOST, value: db }
+                - { name: PGUSER, value: zelo }
+                - { name: PGDATABASE, value: zelo }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: zelo-db, key: password }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { memory: 256Mi }
+              volumeMounts:
+                - { name: sauvegardes, mountPath: /backups }
+          containers:
+            - name: copie-distante
+              image: rclone/rclone:1.71
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  if [ ! -f /secret/rclone.conf ]; then
+                    echo "pas de copie distante : secret zelo-rclone absent"
+                    exit 0
+                  fi
+                  # Copie modifiable : rclone y réécrit le jeton OAuth de Google Drive quand il le renouvelle.
+                  cp /secret/rclone.conf /tmp/rclone.conf
+                  rclone copy /backups "$RCLONE_REMOTE" --include 'zelo-*.dump' --max-age 3d
+                  echo "copie distante faite"
+              env:
+                - { name: RCLONE_CONFIG, value: /tmp/rclone.conf }
+                - { name: RCLONE_CACHE_DIR, value: /tmp/cache }
+                - name: RCLONE_REMOTE
+                  valueFrom:
+                    secretKeyRef: { name: zelo-rclone, key: remote, optional: true }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { memory: 256Mi }
+              volumeMounts:
+                - { name: sauvegardes, mountPath: /backups, readOnly: true }
+                - { name: secret, mountPath: /secret, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: sauvegardes
+              persistentVolumeClaim: { claimName: sauvegardes }
+            - name: secret
+              secret: { secretName: zelo-rclone, optional: true }
+            - name: tmp
+              emptyDir: {}

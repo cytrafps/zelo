@@ -57,6 +57,19 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "Données « {{ $labels.source }} » non rafraîchies depuis {{ $value | humanizeDuration }}."
+        # Sauvegarde quotidienne (CronJob sauvegarde-db, 3 h) : métriques de kube-state-metrics.
+        # 26 h : un passage manqué, avec une marge pour une sauvegarde lente.
+        - alert: ZeloSauvegardeAncienne
+          expr: time() - kube_cronjob_status_last_successful_time{namespace="zelo", cronjob="sauvegarde-db"} > 26 * 3600
+          for: 10m
+          labels: { severity: critical }
+          annotations:
+            summary: "Dernière sauvegarde réussie de la base il y a {{ $value | humanizeDuration }}."
+        - alert: ZeloSauvegardeEnEchec
+          expr: kube_job_status_failed{namespace="zelo", job_name=~"sauvegarde-db-.*"} > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "La sauvegarde {{ $labels.job_name }} a échoué (dump ou copie distante) : voir ses journaux."
         - alert: ZeloCollecteEnEchec
           # Le temps réel, lu toutes les 30 s, a son propre seuil de fraîcheur (10 min) au lieu de celui-ci.
           expr: increase(zelo_ingest_runs_total{result="erreur", source!="temps_reel"}[1h]) >= 3

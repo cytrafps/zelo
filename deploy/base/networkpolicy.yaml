@@ -13,6 +13,9 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: sauvegarde
       ports:
         - port: 5432
 ---
@@ -70,3 +73,30 @@ spec:
               kubernetes.io/metadata.name: kube-system # Traefik sur K3s
       ports:
         - port: 8080
+---
+# Sauvegarde : lit la base, puis copie hors de la VM en HTTPS (rclone).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sauvegarde-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sauvegarde
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: db
+      ports:
+        - port: 5432
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+        - ipBlock:
+            cidr: ::/0
+            except: [fc00::/7, fe80::/10]
+      ports:
+        - port: 443
