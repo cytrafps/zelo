@@ -139,7 +139,7 @@ function Broken({ report, stations, now }: { report: Report; stations: ChargeSta
 
 function exportStations(stations: ChargeStation[], down: Set<string>) {
   downloadCsv(`zelo-recharge-${new Date().toISOString().slice(0, 10)}.csv`, [
-    ['station', 'operateur', 'latitude', 'longitude', 'points', 'libres', 'puissance_kw', 'etat', 'prix_kwh_euros'],
+    ['station', 'operateur', 'latitude', 'longitude', 'points', 'libres', 'puissance_kw', 'etat', 'prix_kwh_euros', 'prix_minimum'],
     ...stations.map((st) => [
       st.name,
       st.operator,
@@ -150,6 +150,7 @@ function exportStations(stations: ChargeStation[], down: Set<string>) {
       st.maxPowerKw,
       STATE[stationState(st, down)].label,
       st.price && !st.price.free ? st.price.kwh : st.price?.free ? 0 : '',
+      st.price && !st.price.free ? (st.price.from ? 'oui' : 'non') : '',
     ]),
   ]);
 }
