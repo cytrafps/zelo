@@ -99,15 +99,8 @@ export const BROKEN_WITHIN_M = 60;
 
 export type StationState = 'service' | 'complet' | 'panne' | 'inconnu';
 
-/** État d'une station : panne signalée par un conducteur, sinon l'état publié par l'opérateur. */
-export function stationState(st: ChargeStation, broken: Report[]): StationState {
-  if (broken.some((r) => distance(r, st) <= BROKEN_WITHIN_M)) return 'panne';
-  if (st.available === null) return 'inconnu';
-  return st.available === 0 ? 'complet' : 'service';
-}
-
 /** La station la plus proche d'un signalement, à moins de `within` mètres. */
-export function nearestStation(r: Report, stations: ChargeStation[], within = 100) {
+export function nearestStation(r: Report, stations: ChargeStation[], within = BROKEN_WITHIN_M) {
   let best: { station: ChargeStation; d: number } | null = null;
   for (const st of stations) {
     const d = distance(r, st);
@@ -116,7 +109,18 @@ export function nearestStation(r: Report, stations: ChargeStation[], within = 10
   return best?.station ?? null;
 }
 
-/** Points rapides (50 kW et plus) et prix moyen du kWh parmi les stations qui le publient. */
+/** Stations visées par un signalement « borne hors service » : la plus proche de chacun. */
+export const brokenStations = (broken: Report[], stations: ChargeStation[]) =>
+  new Set(broken.map((r) => nearestStation(r, stations)?.id).filter((id): id is string => id !== undefined));
+
+/** État d'une station : panne signalée par un conducteur, sinon l'état publié par l'opérateur. */
+export function stationState(st: ChargeStation, down: Set<string>): StationState {
+  if (down.has(st.id)) return 'panne';
+  if (st.available === null) return 'inconnu';
+  return st.available === 0 ? 'complet' : 'service';
+}
+
+/** Points rapides (50 kW et plus) et prix moyen du kWh parmi les stations au prix ferme (sans « dès »). */
 export function chargeOffer(stations: ChargeStation[]) {
   let fast = 0;
   let fastStations = 0;
@@ -127,7 +131,7 @@ export function chargeOffer(stations: ChargeStation[]) {
       fast += st.total;
       fastStations++;
     }
-    if (st.price && !st.price.free && st.price.kwh > 0) {
+    if (st.price && !st.price.free && !st.price.from && st.price.kwh > 0) {
       sum += st.price.kwh;
       priced++;
     }
