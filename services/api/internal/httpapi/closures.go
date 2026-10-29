@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cytrafps/zelo/services/api/internal/route"
@@ -120,7 +121,11 @@ func (a *API) closures(w http.ResponseWriter, r *http.Request) {
 			if !inside {
 				continue
 			}
-			v := closureView{ID: c.ID, Name: c.Name, URL: c.URL, Periodic: len(c.Periods) > 0, Active: c.Active(now), Lines: c.Lines}
+			url := c.URL
+			if !strings.HasPrefix(url, "https://") {
+				url = "" // lien venu du flux DiaLog : jamais de javascript: ni de http en clair
+			}
+			v := closureView{ID: c.ID, Name: c.Name, URL: url, Periodic: len(c.Periods) > 0, Active: c.Active(now), Lines: c.Lines}
 			if !c.From.IsZero() {
 				v.From = &c.From
 			}
