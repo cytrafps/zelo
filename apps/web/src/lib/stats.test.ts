@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChargeStation, FuelStation, Parking, Report } from './api';
-import { capacitySummary, chargeSummary, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
+import { brokenStations, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
 
 const station = (total: number, available: number | null) => ({ total, available }) as ChargeStation;
 const report = (id: number, kind: Report['kind'], createdAt: string) => ({ id, kind, createdAt }) as Report;
@@ -54,5 +54,36 @@ describe('stationnement', () => {
 
   it('somme les places connues', () => {
     expect(capacitySummary([p('a', 100, { disabled: 3 }), p('b', null), p('c', 50)])).toEqual({ places: 150, disabled: 3, withDisabled: 1, unknown: 1, total: 3 });
+  });
+});
+
+describe('recharge', () => {
+  const st = (id: string, lat: number, available: number | null, extra: Partial<ChargeStation> = {}) =>
+    ({ id, lat, lon: 4.03, total: 2, available, maxPowerKw: 22, price: null, ...extra }) as ChargeStation;
+  const broken = { kind: 'borne_hs', lat: 49.25, lon: 4.03 } as Report;
+
+  it('état : panne signalée, puis état publié', () => {
+    const a = st('a', 49.2502, 1); // ~22 m
+    const voisine = st('v', 49.2504, 1); // ~44 m : la panne vise la plus proche seulement
+    const down = brokenStations([broken], [a, voisine, st('b', 49.26, 0)]);
+    expect([...down]).toEqual(['a']);
+    expect(stationState(a, down)).toBe('panne');
+    expect(stationState(voisine, down)).toBe('service');
+    expect(stationState(st('b', 49.26, 0), down)).toBe('complet');
+    expect(stationState(st('c', 49.26, null), down)).toBe('inconnu');
+  });
+
+  it('station la plus proche d’un signalement', () => {
+    expect(nearestStation(broken, [st('loin', 49.252, 1), st('près', 49.2503, 1)])?.id).toBe('près');
+    expect(nearestStation(broken, [st('loin', 49.252, 1)])).toBeNull();
+  });
+
+  it('points rapides et prix moyen', () => {
+    const o = chargeOffer([
+      st('a', 49.25, 1, { maxPowerKw: 150, total: 4, price: { free: false, kwh: 0.5, from: false } }),
+      st('b', 49.25, 1, { price: { free: false, kwh: 0.3, from: true } }),
+      st('c', 49.25, 1, { price: { free: true, kwh: 0, from: false } }),
+    ]);
+    expect(o).toEqual({ fast: 4, fastStations: 1, avgKwh: 0.5, priced: 1 }); // « dès 0,30 » est un minimum
   });
 });

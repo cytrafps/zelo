@@ -4,6 +4,7 @@ import { downloadCsv } from '../lib/csv';
 import { formatCents, formatNumber, parkingName, updated } from '../lib/format';
 import { capacitySummary, hourPrice, parkingTable } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
+import t from '../components/table.module.css';
 import s from './parking.module.css';
 
 const HOUR = 3_600_000;
@@ -51,10 +52,10 @@ export function ParkingPage() {
       </div>
 
       <div className={ui.row}>
-        <section className={`${ui.card} ${ui.main} ${s.tableCard}`}>
-          <h2 className={`${ui.panelTitle} ${s.tableTitle}`}>Parkings</h2>
-          <div className={s.scroll}>
-            <table className={s.table}>
+        <section className={`${ui.card} ${ui.main} ${t.tableCard}`}>
+          <h2 className={`${ui.panelTitle} ${t.tableTitle}`}>Parkings</h2>
+          <div className={t.scroll}>
+            <table className={t.table}>
               <thead>
                 <tr>
                   <th scope="col">Parking</th>
@@ -112,9 +113,9 @@ function ParkingRow({ p }: { p: Parking }) {
   const tarif = cents !== null ? `${formatCents(cents)}/h` : p.fee === false || p.parkRide ? 'Gratuit' : '—';
   return (
     <tr>
-      <th scope="row" className={s.name}>
+      <th scope="row" className={t.name}>
         {parkingName(p.name)}
-        {p.parkRide && <span className={s.badge}>P+R</span>}
+        {p.parkRide && <span className={t.tag}>P+R</span>}
       </th>
       <td>{p.capacity === null ? '—' : formatNumber(p.capacity)}</td>
       <td>{p.disabled === null ? '—' : formatNumber(p.disabled)}</td>
