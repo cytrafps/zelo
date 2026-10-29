@@ -1,6 +1,10 @@
 # Environnement de développement : `docker compose -f infra/compose.yaml up --build`
-# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics, Valhalla sur :8002,
-# tableau de bord ville sur http://localhost:8090
+# API sur http://localhost:8080, métriques sur http://localhost:8080/metrics, tableau de bord ville
+# sur http://localhost:8090. La base et Valhalla n'écoutent que sur la machine elle-même (127.0.0.1) :
+# Docker passe outre le pare-feu, un port publié sur toutes les interfaces serait ouvert à tout le réseau.
+#
+# Sauvegardes : service « backup », chaque nuit dans infra/backups (14 jours) ; copie hors de la
+# machine avec --profile sauvegarde-distante (voir README).
 #
 # Accès depuis Internet en HTTPS (téléphone en 4G…), sans ouvrir de port, par Cloudflare Tunnel :
 #   --profile tunnel-rapide   adresse https://….trycloudflare.com aléatoire, sans compte (tests)
@@ -12,8 +16,9 @@ services:
       POSTGRES_USER: zelo
       POSTGRES_PASSWORD: zelo
       POSTGRES_DB: zelo
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [db:/var/lib/postgresql/data]
+    restart: unless-stopped
     healthcheck:
       # En TCP : pendant l'initialisation, le serveur temporaire n'écoute que sur le socket local.
       test: ["CMD-SHELL", "pg_isready -U zelo -d zelo -h 127.0.0.1"]
@@ -54,10 +59,50 @@ services:
       tile_urls: https://download.openstreetmap.fr/extracts/europe/france/champagne_ardenne/marne.osm.pbf
       build_elevation: "False"
       server_threads: "1"
-    ports: ["8002:8002"]
+    ports: ["127.0.0.1:8002:8002"]
     volumes: [valhalla:/custom_files]
     mem_limit: 1g
     restart: unless-stopped
+
+  # Sauvegarde quotidienne de la base (pg_dump de la même version que le serveur).
+  backup:
+    image: postgis/postgis:17-3.5-alpine
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: zelo
+      PGPASSWORD: zelo
+      PGDATABASE: zelo
+      BACKUP_HOUR: "3"
+      KEEP_DAYS: "14"
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Copie des sauvegardes hors de la machine (une panne du disque emporte la VM et ses
+  # sauvegardes) : chaque nuit vers le « remote » rclone RCLONE_REMOTE (Google Drive chiffré…),
+  # configuré dans infra/rclone/rclone.conf, jamais commité. Voir README.
+  backup-distant:
+    image: rclone/rclone:1.71
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while :; do
+          rclone copy /backups "$$RCLONE_REMOTE" --include 'zelo-*.dump' --max-age 3d && echo "copie distante faite"
+          sleep 86400
+        done
+    environment:
+      RCLONE_REMOTE: ${RCLONE_REMOTE:-zelo-sauvegardes:}
+    volumes:
+      - ./rclone:/config/rclone
+      - ./backups:/backups:ro
+    profiles: [sauvegarde-distante]
+    restart: unless-stopped
+    depends_on: [backup]
 
   tunnel-rapide:
     image: cloudflare/cloudflared:2026.9.3

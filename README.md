@@ -150,6 +150,32 @@ npx eas-cli@latest env:create --environment preview --name EXPO_PUBLIC_API_URL -
 npx eas-cli@latest build -p android --profile preview
 ```
 
+### Sauvegardes de la base
+
+Le service `backup` fait un `pg_dump` chaque nuit à 3 h dans `infra/backups/` (14 jours gardés, une
+sauvegarde au démarrage s'il n'y en a pas du jour). Ça protège d'une erreur ou d'une base
+corrompue, pas d'une panne du disque : la copie hors de la machine se fait avec rclone.
+
+Une fois, sur la VM (Google Drive, fichiers chiffrés côté VM) :
+
+```sh
+mkdir -p infra/rclone
+docker run --rm -it -v "$PWD/infra/rclone:/config/rclone" rclone/rclone:1.71 config
+#  1. « n » → nom gdrive, type drive, scope drive.file, puis l'autorisation (lien à ouvrir sur le PC)
+#  2. « n » → nom zelo-sauvegardes, type crypt, remote gdrive:zelo, mots de passe générés
+#     (à garder dans ton gestionnaire de mots de passe : sans eux, les sauvegardes sont illisibles)
+docker compose -f infra/compose.yaml --profile sauvegarde-distante up -d
+docker compose -f infra/compose.yaml logs backup-distant   # « copie distante faite »
+```
+
+Restaurer une sauvegarde (remplace le contenu de la base) :
+
+```sh
+docker compose -f infra/compose.yaml stop api
+docker compose -f infra/compose.yaml exec -T db pg_restore -U zelo -d zelo --clean --if-exists --no-owner < infra/backups/zelo-AAAAMMJJ-HHMM.dump
+docker compose -f infra/compose.yaml start api
+```
+
 ## API
 
 | Méthode et route | Description |

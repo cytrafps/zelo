@@ -27,3 +27,7 @@ web-build/
 # Rendu des règles Prometheus (CI)
 /rules.yml
 /rendered.yaml
+
+# Sauvegardes de la base et configuration rclone (secrets) : restent sur la VM
+/infra/backups/
+/infra/rclone/
