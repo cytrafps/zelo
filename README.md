@@ -65,7 +65,36 @@ Branches, commits et PR : voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Démarrer
 
-Prérequis : Node 20.19+ (22 LTS conseillé) et Docker Desktop. Téléphone Android sur le même Wi-Fi que le PC.
+### Prérequis
+
+| Quoi | Pourquoi |
+| --- | --- |
+| Git | Récupérer le dépôt |
+| Node 20.19+ (22 LTS conseillé) | Script de dev, dépendances, Metro |
+| GitHub CLI (`gh`) | Cloner le dépôt privé sans gérer de token à la main |
+| Docker Desktop | API et base en local ; inutile si l'API tourne ailleurs (`--api`, voir plus bas) |
+| Compte Expo gratuit ([expo.dev/signup](https://expo.dev/signup)) | Development build Android dans le cloud EAS |
+| Téléphone Android, même Wi-Fi que le PC | L'app ; un iPhone demande un compte Apple Developer payant |
+
+Rien d'autre côté Android : ni Android Studio, ni SDK. Le build se fait chez EAS, et `eas-cli` passe par `npx`.
+
+Windows (PowerShell, puis rouvrir le terminal) :
+
+```powershell
+winget install Git.Git OpenJS.NodeJS.LTS GitHub.cli
+winget install Docker.DockerDesktop   # seulement pour l'API en local
+gh auth login                          # GitHub.com, HTTPS, navigateur
+gh repo clone cytrafps/zelo
+cd zelo
+```
+
+macOS : `brew install git node gh` et `brew install --cask docker`, puis les mêmes `gh`.
+
+Au premier lancement de `npm run dev`, Windows demande d'autoriser Node.js dans le pare-feu : coche **Réseaux privés**, sinon le téléphone ne joint pas Metro. Le Wi-Fi du PC doit être en profil « Privé ».
+
+Sur un PC neuf, le script ne sait pas quel build est installé sur le téléphone. Il demande si le dernier build EAS est déjà installé : réponds `n` en cas de doute, il en refait un (environ 15 min).
+
+### Lancer
 
 ```sh
 npm run dev     # API + base, dépendances, compte Expo, build Android si besoin, puis QR code à scanner
@@ -88,7 +117,7 @@ Options : `npm run dev -- --rebuild` force un nouveau build, `npm run dev -- --i
 ```sh
 # Sur une VM Linux (Ubuntu Server sur Proxmox par exemple)
 curl -fsSL https://get.docker.com | sh
-git clone https://github.com/cytrafps/zelo && cd zelo
+git clone https://github.com/cytrafps/zelo && cd zelo   # dépôt privé : identifiant GitHub + token, ou gh auth login
 docker compose -f infra/compose.yaml up -d --build
 
 # Sur le PC
