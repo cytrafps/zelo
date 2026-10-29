@@ -28,6 +28,9 @@ export type Parking = {
   lat: number;
   lon: number;
   capacity: number | null;
+  disabled: number | null;
+  maxHeight: number | null;
+  openingHours: string;
   fee: boolean | null;
   parkRide: boolean;
   covered: boolean;

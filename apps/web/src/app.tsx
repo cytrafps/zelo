@@ -1,10 +1,10 @@
 import { Sidebar } from './components/sidebar';
 import { useRoute } from './lib/router';
 import { Overview } from './pages/overview';
+import { ParkingPage } from './pages/parking';
 import { Soon } from './pages/soon';
 
 const TITLES = {
-  '/stationnement': 'Stationnement',
   '/recharge': 'Recharge',
   '/carburant': 'Carburant',
   '/signalements': 'Signalements',
@@ -16,7 +16,7 @@ export function App() {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: '100vh' }}>
       <Sidebar />
-      {route === '/' ? <Overview /> : <Soon key={route} title={TITLES[route]} />}
+      {route === '/' ? <Overview /> : route === '/stationnement' ? <ParkingPage /> : <Soon key={route} title={TITLES[route]} />}
     </div>
   );
 }
