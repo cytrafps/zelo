@@ -57,22 +57,22 @@ export function FuelPage() {
     <main className={ui.page}>
       <PageHeader
         title="Carburant"
-        subtitle={`${fuel.data ? `${formatNumber(stations.length)} stations · prix officiels, ` : ''}${updated(fuel.data ? latest : null, now)}`}
+        subtitle={`${fuel.data ? `${formatNumber(stations.length)} stations · prix officiels, ` : ''}${updated(fuel.data ? latest : null, now, fuel.error)}`}
         onExport={fuel.data ? () => exportFuel(stations) : undefined}
         noPeriod
       />
 
       <div className={ui.tiles}>
-        <Tile label="SP95-E10 moyen" value={e10Avg !== undefined ? formatLitre(e10Avg) : fuel.data ? '—' : '…'} note={change(e10Trend.data)} tone={changeTone(e10Trend.data)} />
-        <Tile label="Gazole moyen" value={gazoleAvg !== undefined ? formatLitre(gazoleAvg) : fuel.data ? '—' : '…'} note={change(gazoleTrend.data)} tone={changeTone(gazoleTrend.data)} />
+        <Tile label="SP95-E10 moyen" source={fuel} value={e10Avg !== undefined ? formatLitre(e10Avg) : fuel.data ? '—' : '…'} note={change(e10Trend.data)} tone={changeTone(e10Trend.data)} />
+        <Tile label="Gazole moyen" source={fuel} value={gazoleAvg !== undefined ? formatLitre(gazoleAvg) : fuel.data ? '—' : '…'} note={change(gazoleTrend.data)} tone={changeTone(gazoleTrend.data)} />
         <Tile
-          label="Écart moins cher / plus cher"
+          label="Écart moins cher / plus cher" source={fuel}
           value={e10 ? `${formatNumber(cents(e10.max - e10.min))} cts` : fuel.data ? '—' : '…'}
           note={e10 ? `sur le SP95-E10, ${formatNumber(e10.count)} stations` : ''}
           tone="warn"
         />
         <Tile
-          label="Prix à jour"
+          label="Prix à jour" source={fuel}
           value={fuel.data ? `${formatNumber(stations.filter((st) => now.getTime() - Date.parse(st.updatedAt) < 86_400_000).length)} / ${formatNumber(stations.length)}` : '…'}
           note="relevées depuis moins de 24 h"
           tone="muted"

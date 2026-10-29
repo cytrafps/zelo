@@ -26,25 +26,25 @@ export function ParkingPage() {
     <main className={ui.page}>
       <PageHeader
         title="Stationnement"
-        subtitle={`${rows.length ? `${rows.length} parkings du centre et P+R` : 'Parkings du centre'} · ${updated(centre.at, now)}`}
+        subtitle={`${rows.length ? `${rows.length} parkings du centre et P+R` : 'Parkings du centre'} · ${updated(centre.at, now, centre.error)}`}
         onExport={rows.length ? () => exportParkings(rows) : undefined}
         noPeriod
       />
 
       <div className={ui.tiles}>
         <Tile
-          label="Places (centre)"
+          label="Places (centre)" source={centre}
           value={cap ? formatNumber(cap.places) : '…'}
           note={cap ? `dans ${plural(cap.total - cap.unknown, 'parking renseigné', 'parkings renseignés')}` : ''}
         />
         <Tile
-          label="Places PMR"
+          label="Places PMR" source={centre}
           value={cap ? formatNumber(cap.disabled) : '…'}
           note={cap ? `relevées dans ${plural(cap.withDisabled, 'parking', 'parkings')}` : ''}
         />
         <Tile label="Places libres" value="—" note="Comptages pas encore publiés" tone="muted" />
         <Tile
-          label="Parkings relais (P+R)"
+          label="Parkings relais (P+R)" source={all}
           value={all.data ? formatNumber(relayPlaces) : '…'}
           note={all.data ? `places dans ${plural(relays.length, 'P+R', 'P+R')} du Grand Reims` : ''}
           tone="good"

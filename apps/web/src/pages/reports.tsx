@@ -36,26 +36,26 @@ export function ReportsPage() {
     <main className={ui.page}>
       <PageHeader
         title="Signalements"
-        subtitle={`${sum ? `${formatNumber(sum.count)} actifs · confirmés ou infirmés par les conducteurs` : 'Signalements des conducteurs'} · ${updated(reports.at, now)}`}
+        subtitle={`${sum ? `${formatNumber(sum.count)} actifs · confirmés ou infirmés par les conducteurs` : 'Signalements des conducteurs'} · ${updated(reports.at, now, reports.error)}`}
         onExport={reports.data ? () => exportReports(list) : undefined}
         noPeriod
       />
 
       <div className={ui.tiles}>
         <Tile
-          label="Actifs"
+          label="Actifs" source={reports}
           value={sum ? formatNumber(sum.count) : '…'}
           note={sum?.top ? `dont ${formatNumber(sum.top.count)} ${REPORT_LABEL[sum.top.kind].toLowerCase()}` : sum ? 'aucun en ce moment' : ''}
         />
         <Tile
-          label="Confirmés"
+          label="Confirmés" source={reports}
           value={sum ? (list.length ? formatPercent(confirmed / list.length) : '—') : '…'}
           note="par d’autres conducteurs"
           tone="good"
         />
-        <Tile label="À vérifier" value={sum ? formatNumber(doubtful) : '…'} note="infirmés une fois sur deux ou plus" tone={doubtful ? 'warn' : 'muted'} />
+        <Tile label="À vérifier" source={reports} value={sum ? formatNumber(doubtful) : '…'} note="infirmés une fois sur deux ou plus" tone={doubtful ? 'warn' : 'muted'} />
         <Tile
-          label="Rues fermées"
+          label="Rues fermées" source={closures}
           value={closures.data ? formatNumber(closedNow) : '…'}
           note={closures.data ? 'en ce moment, d’après DiaLog' : ''}
           tone="muted"

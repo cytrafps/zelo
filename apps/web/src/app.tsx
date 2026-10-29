@@ -1,6 +1,8 @@
 import type { ComponentType } from 'react';
 
+import { Boundary } from './components/boundary';
 import { Sidebar } from './components/sidebar';
+import { ui } from './components/ui';
 import { type Route, useRoute } from './lib/router';
 import { ApiPage } from './pages/api';
 import { ChargePage } from './pages/charge';
@@ -19,11 +21,21 @@ const PAGES: Record<Route, ComponentType> = {
 };
 
 export function App() {
-  const Page = PAGES[useRoute()];
+  const route = useRoute();
+  const Page = PAGES[route];
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: '100vh' }}>
       <Sidebar />
-      <Page />
+      <Boundary
+        key={route}
+        fallback={
+          <main className={ui.page} role="alert">
+            <p>Cette page n’a pas pu s’afficher. Recharge la page ; si le problème continue, les autres pages restent disponibles.</p>
+          </main>
+        }
+      >
+        <Page />
+      </Boundary>
     </div>
   );
 }

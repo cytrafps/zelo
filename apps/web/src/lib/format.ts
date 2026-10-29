@@ -62,8 +62,9 @@ export function within(to: Date, now: Date) {
 }
 
 /** « mis à jour il y a 2 min » */
-export const updated = (at: Date | null, now: Date) =>
-  at === null ? 'chargement…' : `mis à jour ${since(at, now)}`;
+/** `failed` : la requête a échoué avant toute donnée (le chargement est relancé tout seul). */
+export const updated = (at: Date | null, now: Date, failed = false) =>
+  at !== null ? `mis à jour ${since(at, now)}` : failed ? 'données indisponibles' : 'chargement…';
 
 /** « Parking rue de Vesle » devient « Rue de Vesle » ; « Parking Erlon », « Erlon ». */
 export const parkingName = (name: string) => {

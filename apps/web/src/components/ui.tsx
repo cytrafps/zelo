@@ -1,3 +1,4 @@
+import type { Polled } from '../lib/use-poll';
 import type { ReactNode } from 'react';
 
 import s from './ui.module.css';
@@ -35,12 +36,24 @@ export function PageHeader(props: { title: string; subtitle: string; onExport?: 
   );
 }
 
-export function Tile(props: { label: string; value: ReactNode; note: ReactNode; tone?: 'good' | 'warn' | 'bad' | 'muted' }) {
+/**
+ * Chiffre clé. `source` : la requête dont il dépend ; si elle échoue avant toute donnée, la tuile
+ * le dit au lieu de rester sur « … » (le chargement est relancé tout seul).
+ */
+export function Tile(props: {
+  label: string;
+  value: ReactNode;
+  note: ReactNode;
+  tone?: 'good' | 'warn' | 'bad' | 'muted';
+  source?: Pick<Polled<unknown>, 'data' | 'error'>;
+}) {
+  const failed = props.source?.error === true && props.source.data === null;
+  const tone = failed ? 'bad' : props.tone;
   return (
     <section className={s.tile} aria-label={props.label}>
       <p className={s.tileLabel}>{props.label}</p>
-      <p className={s.tileValue}>{props.value}</p>
-      <p className={`${s.tileNote} ${props.tone ? s[props.tone] : ''}`}>{props.note}</p>
+      <p className={s.tileValue}>{failed ? '—' : props.value}</p>
+      <p className={`${s.tileNote} ${tone ? s[tone] : ''}`}>{failed ? 'Indisponible, nouvel essai automatique' : props.note}</p>
     </section>
   );
 }

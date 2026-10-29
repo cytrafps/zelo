@@ -40,26 +40,26 @@ export function ChargePage() {
     <main className={ui.page}>
       <PageHeader
         title="Recharge"
-        subtitle={`${charge.data ? `${formatNumber(points)} points de charge sur le Grand Reims` : 'Bornes du Grand Reims'} · ${updated(charge.at, now)}`}
+        subtitle={`${charge.data ? `${formatNumber(points)} points de charge sur le Grand Reims` : 'Bornes du Grand Reims'} · ${updated(charge.at, now, charge.error)}`}
         onExport={charge.data ? () => exportStations(stations, down) : undefined}
         noPeriod
       />
 
       <div className={ui.tiles}>
         <Tile
-          label="Points libres"
+          label="Points libres" source={charge}
           value={sum ? `${formatNumber(sum.free)} / ${formatNumber(sum.known)}` : '…'}
           note={sum?.ratio != null ? `${formatPercent(sum.ratio)} disponibles` : ''}
           tone="good"
         />
-        <Tile label="Pannes signalées" value={reports.data ? formatNumber(broken.length) : '…'} note="par les conducteurs Zelo" tone={broken.length ? 'bad' : 'muted'} />
+        <Tile label="Pannes signalées" source={reports} value={reports.data ? formatNumber(broken.length) : '…'} note="par les conducteurs Zelo" tone={broken.length ? 'bad' : 'muted'} />
         <Tile
-          label="Recharge rapide"
+          label="Recharge rapide" source={charge}
           value={offer ? formatNumber(offer.fast) : '…'}
           note={offer ? `points de 50 kW et plus, dans ${formatNumber(offer.fastStations)} stations` : ''}
         />
         <Tile
-          label="Prix moyen du kWh"
+          label="Prix moyen du kWh" source={charge}
           value={offer?.avgKwh != null ? euro.format(offer.avgKwh) : offer ? '—' : '…'}
           note={offer ? `prix ferme annoncé par ${formatNumber(offer.priced)} stations` : ''}
         />

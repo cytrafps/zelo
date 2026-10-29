@@ -58,3 +58,12 @@ describe('textes', () => {
     expect(within(new Date('2026-10-29T12:00:00Z'), now)).toBe('2 h');
   });
 });
+
+describe('updated : état du chargement', () => {
+  const now = new Date('2026-10-29T10:00:00+01:00');
+  it('chargement, échec avant toute donnée, puis heure de mise à jour', () => {
+    expect(updated(null, now)).toBe('chargement…');
+    expect(updated(null, now, true)).toBe('données indisponibles');
+    expect(updated(new Date('2026-10-29T09:58:00+01:00'), now, true)).toMatch(/^mis à jour /);
+  });
+});

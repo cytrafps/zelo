@@ -6,6 +6,16 @@
   overflow: hidden;
 }
 
+.unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--texte-2);
+  font-size: 14px;
+}
+
 .map :global(.maplibregl-ctrl-attrib) {
   font-size: 11px;
 }

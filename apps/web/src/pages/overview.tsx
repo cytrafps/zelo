@@ -54,20 +54,20 @@ export function Overview() {
     <main className={ui.page}>
       <PageHeader
         title="Vue d’ensemble"
-        subtitle={`${today(now)} · ${updated(freshest, now)}`}
+        subtitle={`${today(now)} · ${updated(freshest, now, charge.error && reports.error)}`}
         onExport={charge.data && parkings.data ? () => exportOverview(charge.data!, parkings.data!) : undefined}
       />
 
       <div className={ui.tiles}>
         <Tile label="Occupation des parkings" value="—" note="Comptages pas encore publiés" tone="muted" />
         <Tile
-          label="Bornes libres"
+          label="Bornes libres" source={charge}
           value={bornes ? `${formatNumber(bornes.free)} / ${formatNumber(bornes.known)}` : '…'}
           note={bornes?.ratio != null ? `${formatPercent(bornes.ratio)} disponibles` : 'État des points en cours de chargement'}
           tone={bornes?.ratio != null ? 'good' : 'muted'}
         />
         <Tile
-          label="Signalements actifs"
+          label="Signalements actifs" source={reports}
           value={signalements ? formatNumber(signalements.count) : '…'}
           note={
             signalements?.top
@@ -78,7 +78,7 @@ export function Overview() {
           }
         />
         <Tile
-          label="Gazole le moins cher"
+          label="Gazole le moins cher" source={fuel}
           value={gazole ? formatLitre(gazole.price) : fuel.data ? '—' : '…'}
           note={gazole ? `${gazole.station.city} · ${gazole.station.address}` : ''}
         />
