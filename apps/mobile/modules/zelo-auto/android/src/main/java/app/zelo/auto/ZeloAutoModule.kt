@@ -28,7 +28,8 @@ class ZeloAutoModule : Module() {
     }
 
     Function("takeCarEvents") {
-      appContext.reactContext?.let { context -> CarWatch.take(context).map { it.toMap() } } ?: emptyList()
+      val context = appContext.reactContext ?: return@Function emptyList<Map<String, Any?>>()
+      CarWatch.take(context).map { it.toMap() }
     }
 
     // « Retenir où je me gare » : la voiture est un appareil Bluetooth appairé, choisi par l'utilisateur.
