@@ -123,8 +123,25 @@ const center = `ST_SetSRID(ST_MakePoint(($1 + $3) / 2, ($2 + $4) / 2), 4326)::ge
 
 // --- Écritures : COPY dans une table temporaire puis upsert, en une transaction.
 
+// minFuelShare : un flux qui compte moins de 70 % des stations connues est tronqué ou cassé ; on
+// garde les prix d'avant plutôt que d'effacer ceux des stations manquantes.
+const minFuelShare = 0.7
+
+// minFuelGuard : en dessous, pas de comparaison (base de test, zone minuscule) ; un flux vide reste refusé.
+const minFuelGuard = 20
+
 func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
+	if len(stations) == 0 {
+		return errors.New("flux carburant vide : import ignoré pour ne pas effacer les prix")
+	}
 	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		var known int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM fuel_station`).Scan(&known); err != nil {
+			return err
+		}
+		if known >= minFuelGuard && float64(len(stations)) < minFuelShare*float64(known) {
+			return fmt.Errorf("flux carburant de %d stations pour %d connues : import refusé", len(stations), known)
+		}
 		if _, err := tx.Exec(ctx, `
 			CREATE TEMP TABLE tmp_station (id text, lon float8, lat float8, address text, city text, postcode text) ON COMMIT DROP;
 			CREATE TEMP TABLE tmp_price (station_id text, fuel text, price numeric(6,3), updated_at timestamptz) ON COMMIT DROP;`); err != nil {
@@ -176,8 +193,15 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 				ON CONFLICT (station_id, fuel) DO UPDATE SET price = EXCLUDED.price, updated_at = EXCLUDED.updated_at
 				WHERE fuel_price.updated_at IS DISTINCT FROM EXCLUDED.updated_at
 				RETURNING station_id, fuel, price, updated_at)
+			-- Un prix qui revient après un « retiré » (carburant remis, station absente d'un flux)
+			-- compte à partir du jour de son retour, même s'il porte une date plus ancienne : sinon la
+			-- ligne « retiré » masquerait le prix jusqu'à son prochain changement.
 			INSERT INTO fuel_price_day (station_id, fuel, day, price)
-			SELECT station_id, fuel, (updated_at AT TIME ZONE 'Europe/Paris')::date, price FROM changed
+			SELECT c.station_id, c.fuel, CASE
+					WHEN EXISTS (SELECT 1 FROM fuel_price_day h WHERE h.station_id = c.station_id AND h.fuel = c.fuel
+						AND h.price IS NULL AND h.day >= (c.updated_at AT TIME ZONE 'Europe/Paris')::date)
+					THEN (now() AT TIME ZONE 'Europe/Paris')::date
+					ELSE (c.updated_at AT TIME ZONE 'Europe/Paris')::date END, c.price FROM changed c
 			ON CONFLICT (station_id, fuel, day) DO UPDATE SET price = EXCLUDED.price
 			WHERE fuel_price_day.price IS DISTINCT FROM EXCLUDED.price;
 
@@ -190,9 +214,10 @@ func (s *Store) SaveFuel(ctx context.Context, stations []fuel.Station) error {
 // chaque station et carburant, le changement qui précède la fenêtre (le prix de son premier jour).
 func (s *Store) PruneFuelHistory(ctx context.Context) (int64, error) {
 	tag, err := s.db.Exec(ctx, `
-		DELETE FROM fuel_price_day d WHERE d.day < current_date - 35 AND EXISTS (
-			SELECT 1 FROM fuel_price_day n WHERE n.station_id = d.station_id AND n.fuel = d.fuel
-				AND n.day > d.day AND n.day <= current_date - 35)`)
+		WITH cut AS (SELECT (now() AT TIME ZONE 'Europe/Paris')::date - 35 AS d)
+		DELETE FROM fuel_price_day h USING cut WHERE h.day < cut.d AND EXISTS (
+			SELECT 1 FROM fuel_price_day n WHERE n.station_id = h.station_id AND n.fuel = h.fuel
+				AND n.day > h.day AND n.day <= cut.d)`)
 	return tag.RowsAffected(), err
 }
 
@@ -319,6 +344,8 @@ func (s *Store) SaveChargeStatus(ctx context.Context, statuses []irve.Status) er
 			INSERT INTO charge_status (id, state, occupancy, observed_at)
 			SELECT DISTINCT ON (t.id) t.id, t.state, t.occupancy, t.observed_at
 			FROM tmp_cs t JOIN charge_point c ON c.id = t.id
+			-- Un horodatage dans le futur figerait l'état : jamais remplacé, toujours « récent ».
+			WHERE t.observed_at <= now() + interval '10 minutes'
 			ORDER BY t.id, t.observed_at DESC
 			ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, occupancy = EXCLUDED.occupancy, observed_at = EXCLUDED.observed_at
 			WHERE charge_status.observed_at < EXCLUDED.observed_at;
