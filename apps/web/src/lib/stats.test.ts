@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChargeStation, FuelStation, Parking, Report } from './api';
-import { brokenStations, reportState, completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
+import { chargeNote, brokenStations, reportState, completeDays, freshFuel, fuelStats, weekChange, capacitySummary, chargeOffer, chargeSummary, nearestStation, stationState, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
 
 const station = (total: number, available: number | null) => ({ total, available }) as ChargeStation;
 const report = (id: number, kind: Report['kind'], createdAt: string) => ({ id, kind, createdAt }) as Report;
@@ -10,6 +10,15 @@ describe('stats', () => {
   it('compte les points libres parmi les états connus', () => {
     expect(chargeSummary([station(4, 2), station(2, null), station(6, 7)])).toEqual({ free: 8, known: 10, unknown: 2, ratio: 0.8 });
     expect(chargeSummary([station(2, null)]).ratio).toBeNull();
+    const broken = { ...station(4, 2), id: 'b' };
+    expect(chargeSummary([broken, station(4, 1)], new Set(['b']))).toMatchObject({ free: 1, known: 8 });
+  });
+
+  it('dit combien de points n’ont pas d’état publié', () => {
+    const pct = (x: number) => `${Math.round(x * 100)} %`;
+    expect(chargeNote(chargeSummary([station(4, 2), station(6, null)]), pct, String)).toBe('50 % disponibles · 6 points sans état publié');
+    expect(chargeNote(chargeSummary([station(1, null)]), pct, String)).toBe('1 point sans état publié');
+    expect(chargeNote(chargeSummary([]), pct, String)).toBe('Aucun état publié par les opérateurs');
   });
 
   it('résume les signalements', () => {

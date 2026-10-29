@@ -2,7 +2,7 @@ import t from '../components/table.module.css';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, type Closure, GRAND_REIMS, type Report } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { ago, formatNumber, formatPercent, period, updated, within } from '../lib/format';
+import { ago, dayStamp, formatNumber, formatPercent, period, updated, within } from '../lib/format';
 import { REPORT_LABEL, reportState, type ReportState, reportSummary } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
 import { useStreet } from '../lib/use-street';
@@ -38,7 +38,6 @@ export function ReportsPage() {
         title="Signalements"
         subtitle={`${sum ? `${formatNumber(sum.count)} actifs · confirmés ou infirmés par les conducteurs` : 'Signalements des conducteurs'} · ${updated(reports.at, now, reports.error)}`}
         onExport={reports.data ? () => exportReports(list) : undefined}
-        noPeriod
       />
 
       <div className={ui.tiles}>
@@ -143,7 +142,7 @@ function ClosureLine({ closure, now }: { closure: Closure; now: Date }) {
   const when = [closure.active ? 'en cours' : null, period(closure.from, closure.to, now), closure.periodic ? 'à heures fixes' : null, rest.join(', ') || null].filter(Boolean).join(' · ');
   return (
     <div className={s.closure}>
-      {closure.url ? (
+      {safeLink(closure.url) ? (
         <a className={s.closureName} href={closure.url} target="_blank" rel="noreferrer">
           {street || 'Fermeture'}
         </a>
@@ -156,8 +155,18 @@ function ClosureLine({ closure, now }: { closure: Closure; now: Date }) {
 }
 
 function exportReports(reports: Report[]) {
-  downloadCsv(`zelo-signalements-${new Date().toISOString().slice(0, 10)}.csv`, [
+  downloadCsv(`zelo-signalements-${dayStamp(new Date())}.csv`, [
     ['type', 'latitude', 'longitude', 'cree_le', 'expire_le', 'confirmations', 'infirmations', 'etat'],
     ...reports.map((r) => [REPORT_LABEL[r.kind], r.lat, r.lon, r.createdAt, r.expiresAt, r.confirmations, r.denials, STATE[reportState(r)].label]),
   ]);
+}
+
+/** Lien vers l'arrêté : https seulement (l'API filtre déjà, défense en plus côté page). */
+function safeLink(url: string | null | undefined) {
+  if (!url) return false;
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }

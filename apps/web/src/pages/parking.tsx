@@ -1,7 +1,7 @@
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, CENTRE, GRAND_REIMS, type Parking } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { formatCents, formatNumber, parkingName, updated } from '../lib/format';
+import { dayStamp, formatCents, formatNumber, parkingName, updated } from '../lib/format';
 import { capacitySummary, hourPrice, parkingTable } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
 import t from '../components/table.module.css';
@@ -28,7 +28,6 @@ export function ParkingPage() {
         title="Stationnement"
         subtitle={`${rows.length ? `${rows.length} parkings du centre et P+R` : 'Parkings du centre'} · ${updated(centre.at, now, centre.error)}`}
         onExport={rows.length ? () => exportParkings(rows) : undefined}
-        noPeriod
       />
 
       <div className={ui.tiles}>
@@ -127,7 +126,7 @@ function ParkingRow({ p }: { p: Parking }) {
 }
 
 function exportParkings(rows: Parking[]) {
-  downloadCsv(`zelo-stationnement-${new Date().toISOString().slice(0, 10)}.csv`, [
+  downloadCsv(`zelo-stationnement-${dayStamp(new Date())}.csv`, [
     ['parking', 'exploitant', 'latitude', 'longitude', 'places', 'pmr', 'tarif_1h_euros', 'hauteur_max_m', 'p+r'],
     ...rows.map((p) => {
       const cents = hourPrice(p);

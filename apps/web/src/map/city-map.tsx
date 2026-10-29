@@ -54,6 +54,8 @@ export function CityMap(props: { pins: Pin[]; label: string }) {
 function MapView({ pins, label }: { pins: Pin[]; label: string }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  /** Cadrage fait : les rafraîchissements suivants ne ramènent pas la carte que l'on a déplacée. */
+  const framed = useRef(false);
 
   useEffect(() => {
     if (!box.current) return;
@@ -95,7 +97,8 @@ function MapView({ pins, label }: { pins: Pin[]; label: string }) {
       return new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(m);
     });
     // Toutes les pastilles dans le cadre, sans descendre sous le zoom où le relief se voit.
-    if (pins.length > 0) {
+    if (pins.length > 0 && !framed.current) {
+      framed.current = true;
       const b = new maplibregl.LngLatBounds();
       pins.forEach((p) => b.extend([p.lon, p.lat]));
       m.fitBounds(b, { padding: { top: 48, bottom: 48, left: 60, right: 60 }, pitch: 50, bearing: -16, maxZoom: 15.5, duration: 0 });

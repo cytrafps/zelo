@@ -4,22 +4,26 @@ export type Polled<T> = { data: T | null; at: Date | null; error: boolean };
 
 /**
  * Charge tout de suite, puis toutes les `everyMs` tant que l'onglet est visible ; une erreur
- * garde les dernières données (le tableau de bord ne se vide pas sur une coupure).
+ * garde les dernières données (le tableau de bord ne se vide pas sur une coupure). Un tour est
+ * sauté tant que la requête précédente n'a pas répondu : l'annuler à chaque tour empêchait toute
+ * réponse sur un réseau plus lent que l'intervalle.
  */
 export function usePoll<T>(load: (signal: AbortSignal) => Promise<T>, everyMs: number, key: string): Polled<T> {
   const [state, setState] = useState<Polled<T>>({ data: null, at: null, error: false });
   useEffect(() => {
-    let ctl = new AbortController();
+    const ctl = new AbortController();
+    let pending = false;
     const run = () => {
-      if (document.hidden) return;
-      ctl.abort();
-      ctl = new AbortController();
-      load(ctl.signal).then(
-        (data) => setState({ data, at: new Date(), error: false }),
-        (e: unknown) => {
-          if ((e as Error).name !== 'AbortError') setState((s) => ({ ...s, error: true }));
-        },
-      );
+      if (document.hidden || pending) return;
+      pending = true;
+      load(ctl.signal)
+        .then(
+          (data) => setState({ data, at: new Date(), error: false }),
+          (e: unknown) => {
+            if ((e as Error).name !== 'AbortError') setState((s) => ({ ...s, error: true }));
+          },
+        )
+        .finally(() => (pending = false));
     };
     run();
     const id = setInterval(run, everyMs);

@@ -37,7 +37,7 @@ type Result = { status: number; ms: number; body: string } | { error: string };
 export function ApiPage() {
   const [selected, setSelected] = useState(ENDPOINTS[0]!);
   const [result, setResult] = useState<Result | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'ok' | 'echec' | null>(null);
   const base = `${window.location.origin}/v1`;
 
   useEffect(() => {
@@ -59,16 +59,19 @@ export function ApiPage() {
     return () => ctl.abort();
   }, [selected]);
 
+  // Presse-papiers refusé (adresse en http, permission) : on le dit au lieu de ne rien faire.
   const copy = () => {
-    void navigator.clipboard?.writeText(base).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    const done = (ok: boolean) => {
+      setCopied(ok ? 'ok' : 'echec');
+      setTimeout(() => setCopied(null), 2000);
+    };
+    if (!navigator.clipboard) return done(false);
+    navigator.clipboard.writeText(base).then(() => done(true), () => done(false));
   };
 
   return (
     <main className={ui.page}>
-      <PageHeader title="API & données ouvertes" subtitle="Les mêmes données que l’app, en temps réel, pour vos outils et vos panneaux" noPeriod />
+      <PageHeader title="API & données ouvertes" subtitle="Les mêmes données que l’app, en temps réel, pour vos outils et vos panneaux" />
 
       <div className={ui.row}>
         <section className={`${s.base} ${ui.main}`}>
@@ -78,7 +81,7 @@ export function ApiPage() {
             <span className={s.note}>Accès libre, sans clé ni compte · réponses JSON · coordonnées en WGS 84</span>
           </div>
           <button type="button" className={ui.button} onClick={copy}>
-            {copied ? 'Copié' : 'Copier'}
+            {copied === 'ok' ? 'Copié' : copied === 'echec' ? 'Copie impossible' : 'Copier'}
           </button>
         </section>
         <section className={`${s.limits} ${ui.side}`} aria-label="Limites">
@@ -113,8 +116,9 @@ export function ApiPage() {
           ))}
         </section>
 
-        <section className={`${s.console} ${ui.side}`} aria-live="polite" aria-label="Réponse d’exemple">
-          <div className={s.consoleHead}>
+        <section className={`${s.console} ${ui.side}`} aria-label="Réponse d’exemple">
+          {/* Seul l'état est annoncé : la réponse JSON entière serait lue à chaque clic. */}
+          <div className={s.consoleHead} aria-live="polite">
             <code>
               {selected.ws ? 'WS' : 'GET'} {selected.path}
             </code>

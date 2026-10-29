@@ -2,7 +2,7 @@
 :root {
   --encre: #1c1b19;
   --texte-2: #6e6a63;
-  --texte-3: #8a857d;
+  --texte-3: #706b64; /* 4,6:1 sur le fond, 5,3:1 sur blanc (WCAG AA) */
   --fond: #f2f0ec;
   --fond-barre: #faf9f7;
   --carte-fond: #e8e4dc;
@@ -10,12 +10,12 @@
   --trait: rgba(28, 27, 25, 0.06);
   --trait-fort: rgba(28, 27, 25, 0.15);
   --survol: rgba(28, 27, 25, 0.07);
-  --vert: #1e8e3e;
+  --vert: #1a7b36;
   --ambre: #e8a100;
-  --rouge: #d7263d;
+  --rouge: #d0253b;
   --sarcelle: #0e7c86;
   --rayon: 16px;
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--encre);
   background: var(--fond);
   font-synthesis: none;

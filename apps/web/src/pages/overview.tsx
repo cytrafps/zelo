@@ -1,15 +1,18 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 
 import { Icon, type IconName } from '../components/icon';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, CENTRE, GRAND_REIMS, type ChargeStation, type Parking, type Report, type ReportKind } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { ago, formatCents, formatLitre, formatNumber, formatPercent, parkingName, today, updated } from '../lib/format';
+import { ago, dayStamp, formatCents, formatDay, formatLitre, formatNumber, formatPercent, parkingName, today, updated } from '../lib/format';
 import { useNow, usePoll } from '../lib/use-poll';
 import { useStreet } from '../lib/use-street';
-import { chargeSummary, cheapest, hourPrice, operatedParkings, recentReports, REPORT_LABEL, reportSummary } from '../lib/stats';
-import { CityMap, type Pin } from '../map/city-map';
+import { brokenStations, chargeNote, chargeSummary, cheapest, hourPrice, operatedParkings, recentReports, REPORT_LABEL, reportSummary } from '../lib/stats';
+import type { Pin } from '../map/city-map';
 import s from './overview.module.css';
+
+// MapLibre pèse les trois quarts du code : chargé à part, et seulement sur cette page.
+const CityMap = lazy(() => import('../map/city-map').then((m) => ({ default: m.CityMap })));
 
 const MINUTE = 60_000;
 
@@ -30,7 +33,9 @@ export function Overview() {
   const fuel = usePoll(api.fuelStations(GRAND_REIMS), 10 * MINUTE, 'carburant');
   const parkings = usePoll(api.parkings(CENTRE), 60 * MINUTE, 'parkings');
 
-  const bornes = charge.data ? chargeSummary(charge.data) : null;
+  // Une borne signalée en panne ne compte pas comme libre, même si l'opérateur la dit disponible.
+  const down = charge.data && reports.data ? brokenStations(reports.data.filter((r) => r.kind === 'borne_hs'), charge.data) : undefined;
+  const bornes = charge.data ? chargeSummary(charge.data, down) : null;
   const signalements = reports.data ? reportSummary(reports.data) : null;
   const gazole = fuel.data ? cheapest(fuel.data, 'Gazole', now) : null;
   const exploited = useMemo(() => (parkings.data ? operatedParkings(parkings.data, 5) : []), [parkings.data]);
@@ -42,12 +47,14 @@ export function Overview() {
           id: p.id,
           lat: p.lat,
           lon: p.lon,
-          label: cents === null ? `${formatNumber(p.capacity ?? 0)} pl.` : `${formatCents(cents)} / h`,
+          label: cents !== null ? `${formatCents(cents)} / h` : p.capacity ? `${formatNumber(p.capacity)} pl.` : 'tarif 1 h non relevé',
           title: p.name,
         };
       }),
     [exploited],
   );
+  // Date du relevé le plus ancien parmi les tarifs affichés : « relevé aujourd'hui » n'était pas vérifié.
+  const checked = exploited.map((p) => p.tariff?.checked).filter((d): d is string => !!d).sort()[0];
   const freshest = [charge.at, reports.at].filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
 
   return (
@@ -63,7 +70,7 @@ export function Overview() {
         <Tile
           label="Bornes libres" source={charge}
           value={bornes ? `${formatNumber(bornes.free)} / ${formatNumber(bornes.known)}` : '…'}
-          note={bornes?.ratio != null ? `${formatPercent(bornes.ratio)} disponibles` : 'État des points en cours de chargement'}
+          note={bornes ? chargeNote(bornes, formatPercent, formatNumber) : ''}
           tone={bornes?.ratio != null ? 'good' : 'muted'}
         />
         <Tile
@@ -90,9 +97,11 @@ export function Overview() {
             <h2 className={ui.panelTitle} style={{ flex: 1 }}>
               Stationnement au centre
             </h2>
-            <span className={s.legend}>Tarif d’une heure, relevé aujourd’hui</span>
+            <span className={s.legend}>{checked ? `Tarif d’une heure, relevé le ${formatDay(new Date(checked))}` : 'Tarif d’une heure'}</span>
           </div>
-          <CityMap pins={pins} label="Carte des parkings du centre de Reims" />
+          <Suspense fallback={<div className={s.mapPlaceholder} />}>
+            <CityMap pins={pins} label="Carte des parkings du centre de Reims" />
+          </Suspense>
         </section>
 
         <Panel title="Parkings exploités" className={ui.side}>
@@ -177,7 +186,7 @@ function ReportRow({ report, now }: { report: Report; now: Date }) {
 }
 
 function exportOverview(stations: ChargeStation[], parkings: Parking[]) {
-  downloadCsv(`zelo-grand-reims-${new Date().toISOString().slice(0, 10)}.csv`, [
+  downloadCsv(`zelo-grand-reims-${dayStamp(new Date())}.csv`, [
     ['type', 'nom', 'latitude', 'longitude', 'capacite', 'libres', 'tarif_1h_euros'],
     ...stations.map((st) => ['borne', st.name, st.lat, st.lon, st.total, st.available ?? '', '']),
     ...parkings.map((p) => {

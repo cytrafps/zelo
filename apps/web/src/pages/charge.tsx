@@ -2,8 +2,8 @@ import t from '../components/table.module.css';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, type ChargeStation, GRAND_REIMS, type Report } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { formatNumber, formatPercent, since, updated } from '../lib/format';
-import { brokenStations, chargeOffer, chargeSummary, nearestStation, stationState, type StationState } from '../lib/stats';
+import { dayStamp, formatNumber, formatPercent, since, updated } from '../lib/format';
+import { brokenStations, chargeNote, chargeOffer, chargeSummary, nearestStation, stationState, type StationState } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
 import s from './parking.module.css';
 
@@ -29,7 +29,7 @@ export function ChargePage() {
   const stations = charge.data ?? [];
   const broken = (reports.data ?? []).filter((r) => r.kind === 'borne_hs');
   const down = brokenStations(broken, stations);
-  const sum = charge.data ? chargeSummary(stations) : null;
+  const sum = charge.data ? chargeSummary(stations, down) : null;
   const offer = charge.data ? chargeOffer(stations) : null;
   const points = stations.reduce((n, st) => n + st.total, 0);
   // Les stations signalées en panne d'abord : c'est ce que la ville doit voir.
@@ -42,17 +42,16 @@ export function ChargePage() {
         title="Recharge"
         subtitle={`${charge.data ? `${formatNumber(points)} points de charge sur le Grand Reims` : 'Bornes du Grand Reims'} · ${updated(charge.at, now, charge.error)}`}
         onExport={charge.data ? () => exportStations(stations, down) : undefined}
-        noPeriod
       />
 
       <div className={ui.tiles}>
         <Tile
           label="Points libres" source={charge}
           value={sum ? `${formatNumber(sum.free)} / ${formatNumber(sum.known)}` : '…'}
-          note={sum?.ratio != null ? `${formatPercent(sum.ratio)} disponibles` : ''}
+          note={sum ? chargeNote(sum, formatPercent, formatNumber) : ''}
           tone="good"
         />
-        <Tile label="Pannes signalées" source={reports} value={reports.data ? formatNumber(broken.length) : '…'} note="par les conducteurs Zelo" tone={broken.length ? 'bad' : 'muted'} />
+        <Tile label="Stations en panne" source={reports} value={reports.data ? formatNumber(down.size) : '…'} note="signalées par les conducteurs Zelo" tone={down.size ? 'bad' : 'muted'} />
         <Tile
           label="Recharge rapide" source={charge}
           value={offer ? formatNumber(offer.fast) : '…'}
@@ -138,7 +137,7 @@ function Broken({ report, stations, now }: { report: Report; stations: ChargeSta
 }
 
 function exportStations(stations: ChargeStation[], down: Set<string>) {
-  downloadCsv(`zelo-recharge-${new Date().toISOString().slice(0, 10)}.csv`, [
+  downloadCsv(`zelo-recharge-${dayStamp(new Date())}.csv`, [
     ['station', 'operateur', 'latitude', 'longitude', 'points', 'libres', 'puissance_kw', 'etat', 'prix_kwh_euros'],
     ...stations.map((st) => [
       st.name,

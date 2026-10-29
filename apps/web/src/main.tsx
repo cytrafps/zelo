@@ -1,3 +1,5 @@
+// Inter servie par le tableau de bord : Google Fonts recevait l'adresse IP de chaque visiteur.
+import '@fontsource-variable/inter';
 import './styles.css';
 
 import { StrictMode } from 'react';

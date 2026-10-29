@@ -2,7 +2,7 @@ import t from '../components/table.module.css';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, type FuelDay, type FuelStation, GRAND_REIMS } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { address, formatLitre, formatNumber, since, updated } from '../lib/format';
+import { address, dayStamp, formatLitre, formatNumber, since, updated } from '../lib/format';
 import { completeDays, freshFuel, fuelStats, weekChange } from '../lib/stats';
 import { useNow, usePoll } from '../lib/use-poll';
 import s from './fuel.module.css';
@@ -59,7 +59,6 @@ export function FuelPage() {
         title="Carburant"
         subtitle={`${fuel.data ? `${formatNumber(stations.length)} stations · prix officiels, ` : ''}${updated(fuel.data ? latest : null, now, fuel.error)}`}
         onExport={fuel.data ? () => exportFuel(stations) : undefined}
-        noPeriod
       />
 
       <div className={ui.tiles}>
@@ -107,10 +106,17 @@ export function FuelPage() {
                     {COLUMNS.map((c) => {
                       const p = st.prices[c.fuel];
                       const range = stats[c.fuel];
-                      const cls = p === undefined || !range || range.min === range.max ? '' : p === range.min ? s.low : p === range.max ? s.high : '';
+                      const rank = p === undefined || !range || range.min === range.max ? null : p === range.min ? 'low' : p === range.max ? 'high' : null;
+                      // La couleur ne suffit pas (daltonisme, lecteur d'écran) : une flèche et un texte la doublent.
                       return (
-                        <td key={c.fuel} className={cls}>
+                        <td key={c.fuel} className={rank ? s[rank] : ''}>
                           {p === undefined ? '—' : formatLitre(p)}
+                          {rank && (
+                            <>
+                              <span aria-hidden="true">{rank === 'low' ? ' ↓' : ' ↑'}</span>
+                              <span className="sr-only">{rank === 'low' ? ' (le moins cher)' : ' (le plus cher)'}</span>
+                            </>
+                          )}
                         </td>
                       );
                     })}
@@ -126,7 +132,7 @@ export function FuelPage() {
         <Panel title="Tendance sur 30 jours" className={ui.side}>
           <Trend days={e10Trend.data} error={e10Trend.error} />
           <p className={s.text}>
-            En vert le prix le plus bas de la zone, en rouge le plus haut. Les prix viennent du flux officiel des stations
+            En vert (↓) le prix le plus bas de la zone, en rouge (↑) le plus haut. Les prix viennent du flux officiel des stations
             (data.gouv.fr), relu toutes les 10 minutes. Zelo n’influence aucun prix.
           </p>
         </Panel>
@@ -173,7 +179,7 @@ function Trend({ days, error }: { days: FuelDay[] | null; error: boolean }) {
 }
 
 function exportFuel(stations: FuelStation[]) {
-  downloadCsv(`zelo-carburant-${new Date().toISOString().slice(0, 10)}.csv`, [
+  downloadCsv(`zelo-carburant-${dayStamp(new Date())}.csv`, [
     ['adresse', 'ville', 'latitude', 'longitude', 'gazole', 'sp95', 'sp98', 'e10', 'e85', 'gplc', 'mis_a_jour'],
     ...stations.map((st) => [
       st.address,
