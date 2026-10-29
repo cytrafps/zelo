@@ -155,7 +155,7 @@ npx eas-cli@latest build -p android --profile preview
 | Méthode et route | Description |
 |---|---|
 | `GET /v1/fuel-stations?bbox=minLon,minLat,maxLon,maxLat` | Stations et prix par carburant (zone de 1° de côté maximum, 500 résultats) |
-| `GET /v1/fuel-trend?bbox=…&fuel=E10[&days=30]` | Prix moyen, minimum et maximum d'un carburant (`Gazole`, `SP95`, `SP98`, `E10`, `E85`, `GPLc`) pour chacun des derniers jours (35 au plus), et le nombre de stations prises en compte |
+| `GET /v1/fuel-trend?bbox=…&fuel=E10[&days=30]` | Prix moyen, minimum et maximum d'un carburant (`Gazole`, `SP95`, `SP98`, `E10`, `E85`, `GPLc`) pour chacun des derniers jours (35 au plus) : nombre de stations, jour collecté ou non (`complete`), évolution sur 7 jours station par station (`week`, `null` sans 7 jours d'historique) |
 | `GET /v1/closures?bbox=…` | Fermetures de rues publiées dans DiaLog et pas encore terminées : nom, lien vers l'arrêté, début et fin (`null` si sans limite), à heures fixes ou non, en cours ou non, tracé (en cours d'abord) |
 | `GET /v1/charge-stations?bbox=…` | Stations de recharge : puissance max, prises, points de charge, nombre de points libres (`null` si aucun état publié depuis 24 h), prix au kWh quand l'opérateur le publie |
 | `GET /v1/parkings?bbox=…` | Parkings publics : places, payant ou gratuit, hauteur max, places PMR et recharge, horaires, tarifs pour 1 h, 3 h et 24 h quand ils ont été relevés (plus grands d'abord) |
