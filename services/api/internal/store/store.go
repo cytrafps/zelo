@@ -18,6 +18,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/parking"
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
+	"github.com/cytrafps/zelo/services/api/internal/toll"
 )
 
 //go:embed schema.sql
@@ -395,6 +396,61 @@ func (s *Store) SaveControls(ctx context.Context, controls []junction.Control) e
 			WHERE (junction_control.kind, ST_AsBinary(junction_control.geom)) IS DISTINCT FROM (EXCLUDED.kind, ST_AsBinary(EXCLUDED.geom));`)
 		return err
 	})
+}
+
+// TollBooth : un poste de péage et la gare de la grille qu'il désigne.
+type TollBooth struct {
+	ID       string
+	Gare     toll.Gare
+	Lat, Lon float64
+}
+
+// SaveTollBooths remplace les postes de péage rattachés.
+func (s *Store) SaveTollBooths(ctx context.Context, booths []TollBooth) error {
+	if len(booths) == 0 {
+		return errors.New("aucun poste de péage rattaché : import ignoré pour ne pas vider la table")
+	}
+	return pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `CREATE TEMP TABLE tmp_tb (id text, net int, gare int, lon float8, lat float8) ON COMMIT DROP`); err != nil {
+			return err
+		}
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"tmp_tb"}, []string{"id", "net", "gare", "lon", "lat"},
+			pgx.CopyFromSlice(len(booths), func(i int) ([]any, error) {
+				b := booths[i]
+				return []any{b.ID, b.Gare.Net, b.Gare.Index, b.Lon, b.Lat}, nil
+			})); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			DELETE FROM toll_booth;
+			INSERT INTO toll_booth (id, net, gare, geom)
+			SELECT DISTINCT ON (id) id, net, gare, ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography FROM tmp_tb;`)
+		return err
+	})
+}
+
+// TollGaresAlong : gares des postes de péage à moins de `within` mètres du tracé, dans l'ordre de passage.
+func (s *Store) TollGaresAlong(ctx context.Context, line [][2]float64, within float64) ([]toll.Gare, error) {
+	if len(line) < 2 {
+		return nil, nil
+	}
+	lons, lats := make([]float64, len(line)), make([]float64, len(line))
+	for i, p := range line {
+		lons[i], lats[i] = p[0], p[1]
+	}
+	rows, err := s.db.Query(ctx, `
+		WITH line AS (
+			SELECT ST_MakeLine(ST_SetSRID(ST_MakePoint(lon, lat), 4326) ORDER BY ord) AS g
+			FROM unnest($1::float8[], $2::float8[]) WITH ORDINALITY AS p(lon, lat, ord)
+		)
+		SELECT t.net, t.gare FROM toll_booth t, line
+		WHERE ST_DWithin(t.geom, line.g::geography, $3)
+		ORDER BY ST_LineLocatePoint(line.g, t.geom::geometry)`,
+		lons, lats, within)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[toll.Gare])
 }
 
 // SaveAreas remplace les aires d'autoroute de la zone importée.

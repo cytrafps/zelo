@@ -10,6 +10,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 //go:embed sanef-2026.json
@@ -85,6 +86,11 @@ func mustLoad(raw []byte) []*Network {
 		}
 	}
 	for _, n := range nets {
+		// Les péages à prix fixe sont des gares comme les autres pour le rattachement des postes.
+		for g := range n.flat[Car] {
+			n.Gares = append(n.Gares, g)
+		}
+		slices.Sort(n.Gares[len(n.Gares)-len(n.flat[Car]):])
 		n.Name = n.Gares[0] + " – " + n.Gares[len(n.Gares)-1]
 	}
 	return nets

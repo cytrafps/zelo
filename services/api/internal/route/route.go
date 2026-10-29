@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 	_ "time/tzdata" // l'image de l'API n'a pas de base de fuseaux horaires
+
+	"github.com/cytrafps/zelo/services/api/internal/toll"
 )
 
 // Mode de déplacement : en voiture, à moto ou à vélo jusqu'à l'arrêt, à pied jusqu'à la destination.
@@ -86,6 +88,8 @@ type Route struct {
 	Areas []Area `json:"areas,omitempty"`
 	// Controls : feux, stops et cédez-le-passage de la route suivie, dans l'ordre (voir Place).
 	Controls []Control `json:"controls,omitempty"`
+	// Toll : péage du trajet, pour le véhicule demandé ; absent sans péage (voir toll.Compute).
+	Toll *toll.Fare `json:"toll,omitempty"`
 
 	// motorway[i] : le segment i → i+1 du tracé est sur autoroute.
 	motorway []bool

@@ -21,6 +21,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/metrics"
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
+	"github.com/cytrafps/zelo/services/api/internal/toll"
 )
 
 // fakeStore imite la base, y compris la diffusion NOTIFY vers le hub.
@@ -33,6 +34,7 @@ type fakeStore struct {
 	parkings  []store.Parking
 	vehicle   string
 	trend     string // dernier appel à FuelTrend : « carburant/jours »
+	tolls     []toll.Gare
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -42,6 +44,9 @@ func (f *fakeStore) FuelStations(context.Context, store.BBox, int) ([]store.Fuel
 func (f *fakeStore) FuelTrend(_ context.Context, _ store.BBox, fuel string, days int) ([]store.FuelDay, error) {
 	f.trend = fmt.Sprintf("%s/%d", fuel, days)
 	return nil, nil
+}
+func (f *fakeStore) TollGaresAlong(context.Context, [][2]float64, float64) ([]toll.Gare, error) {
+	return f.tolls, nil
 }
 func (f *fakeStore) ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error) {
 	return nil, nil
@@ -415,6 +420,33 @@ func TestFuelTrendValidatesParams(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/fuel-trend?"+c.query, nil))
 		if rec.Code != c.code || fs.trend != c.trend {
 			t.Errorf("%s : %d %q, attendu %d %q", c.query, rec.Code, fs.trend, c.code, c.trend)
+		}
+	}
+}
+
+// Péage : calculé pour la classe du véhicule demandé (voiture ou moto), absent à vélo.
+func TestRouteToll(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	thillois, ok1 := toll.Match(toll.Booth{Name: "Péage de Thillois"})
+	taissy, ok2 := toll.Match(toll.Booth{Name: "Péage de Taissy"})
+	if !ok1 || !ok2 {
+		t.Fatal("gares de test introuvables")
+	}
+	fs := &fakeStore{tolls: []toll.Gare{thillois, taissy}}
+	h := New(fs, live.NewHub(0), quiet, Config{Router: &fakeRouter{}})
+	for _, c := range []struct {
+		mode string
+		want string
+	}{
+		{"car", `"toll":{"price":2.8,"complete":true`},
+		{"moto", `"toll":{"price":1.5,"complete":true`},
+		{"bike", ""},
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/route?from=49.2591,4.0245&to=49.2535,4.0341&mode="+c.mode, nil))
+		body := rec.Body.String()
+		if rec.Code != 200 || (c.want == "" && strings.Contains(body, `"toll"`)) || (c.want != "" && !strings.Contains(body, c.want)) {
+			t.Errorf("%s : %d %s", c.mode, rec.Code, body)
 		}
 	}
 }

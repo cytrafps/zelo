@@ -15,7 +15,7 @@ import { formatCents, formatStay } from '@/utils/format';
 import { formatDistance, walkingMinutes } from '@/utils/geo';
 import { along, cumulative, formatClock, formatDuration, type Area, type Route } from '@/utils/route';
 import { forVehicle, sameTarget, sheltered, targetPoint } from '@/utils/targets';
-import { FUELS, fuelLabel, HOME_KWH, LITRE_STEPS, formatCost, tripCost, type ChargeAt, type Combustion, type Fuel } from '@/utils/cost';
+import { FUELS, fuelLabel, HOME_KWH, LITRE_STEPS, routeCost, tripCost, type ChargeAt, type Combustion, type Fuel } from '@/utils/cost';
 import { arrivalPercent, LOW_PERCENT, type EvModel } from '@/utils/ev';
 import { CRITAIR, critairLabel, localDay, refused, zoneAt, type Critair, type Zone } from '@/utils/zfe';
 
@@ -70,6 +70,13 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   const energy = useEnergyPrice(source, origin ? { lat: origin[1], lon: origin[0] } : null);
   const per100 = ev ? ev.kwhPer100km : combustion?.litresPer100;
   const costOf = car && energy && per100 ? (meters: number) => tripCost(per100, energy.price, meters) : null;
+  const costs = trip.routes.map((r) => (vehicle === 'bike' ? null : routeCost(costOf ? costOf(r.distance) : null, r.toll, people)));
+  // « Le moins cher » : seulement si les itinéraires diffèrent d'au moins 50 centimes et que tous ont un coût.
+  const totals = costs.map((x) => x?.total ?? null);
+  const cheapest =
+    totals.length > 1 && totals.every((x) => x !== null) && Math.max(...(totals as number[])) - Math.min(...(totals as number[])) >= 0.5
+      ? totals.indexOf(Math.min(...(totals as number[])))
+      : -1;
 
   const share = () => {
     const route = trip.routes[trip.selected];
@@ -249,6 +256,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
         <ScrollView style={styles.routes} bounces={false}>
           {trip.routes.map((r, i) => (
             <RouteRow
+              cheapest={i === cheapest}
               key={i}
               route={r}
               walk={afterDrive(r)}
@@ -256,7 +264,7 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
               reports={reports}
               selected={i === trip.selected}
               first={i === 0}
-              cost={costOf ? formatCost(costOf(r.distance), people) : null}
+              cost={costs[i]?.text ?? null}
               c={c}
               onPress={() => onSelect(i)}
               onGo={() => onGo(i)}
@@ -553,13 +561,14 @@ function RouteRow(props: {
   reports: Report[];
   selected: boolean;
   first: boolean;
-  /** Coût de l'énergie, déjà mis en forme ; null s'il n'est pas connu. */
+  /** Coût (énergie et péage), déjà mis en forme ; null s'il n'est pas connu. */
   cost: string | null;
+  cheapest: boolean;
   c: Couleurs;
   onPress: () => void;
   onGo: () => void;
 }) {
-  const { route, walk, now, reports, selected, first, cost, c, onPress, onGo } = props;
+  const { route, walk, now, reports, selected, first, cost, cheapest, c, onPress, onGo } = props;
   // Le premier signalement gênant rencontré sur ce trajet.
   const hit = useMemo(() => {
     const cum = cumulative(route.coordinates);
@@ -572,9 +581,12 @@ function RouteRow(props: {
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }} style={[styles.route, !first && { borderTopColor: c.fond.separateur, borderTopWidth: StyleSheet.hairlineWidth }]}>
       <View style={styles.flex}>
         <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + walk)}</Text>
-        <Text style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
-          {`Arrivée ${eta} · ${km} km` + (cost ? ` · ${cost}` : '')}
-        </Text>
+        <Text style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>{`Arrivée ${eta} · ${km} km`}</Text>
+        {cost && (
+          <Text numberOfLines={2} style={[texte.secondaire, { color: cheapest ? c.action : c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
+            {(cheapest ? 'Le moins cher · ' : '') + cost}
+          </Text>
+        )}
         {!!route.areas?.length && (
           <Text numberOfLines={1} style={[texte.secondaire, { color: c.texte.secondaire }]}>
             {`${route.areas.length} aire${route.areas.length > 1 ? 's' : ''} · première à ${formatDistance(route.areas[0].along)}`}
