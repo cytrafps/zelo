@@ -539,3 +539,36 @@ func TestTollPointsAlong(t *testing.T) {
 		t.Fatal("import de 1 poste rattaché sur 3 accepté")
 	}
 }
+
+// Flux carburant vide ou tronqué : refusé, les prix d'avant restent. Un prix qui revient compte
+// à partir d'aujourd'hui dans la tendance.
+func TestFuelFeedGuard(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if err := s.SaveFuel(ctx, nil); err == nil {
+		t.Fatal("flux vide accepté")
+	}
+	paris, _ := time.LoadLocation("Europe/Paris")
+	old := time.Now().In(paris).AddDate(0, 0, -5)
+	box := BBox{5.70, 45.20, 5.72, 45.22}
+	st := func(id string, prices ...fuel.Price) fuel.Station {
+		return fuel.Station{ID: id, Lat: 45.21, Lon: 5.71, Prices: prices}
+	}
+	e10 := fuel.Price{Fuel: "E10", Value: 1.8, UpdatedAt: old}
+	if err := s.SaveFuel(ctx, []fuel.Station{st("T-RETOUR", e10)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveFuel(ctx, []fuel.Station{st("T-RETOUR")}); err != nil { // E10 retiré aujourd'hui
+		t.Fatal(err)
+	}
+	if err := s.SaveFuel(ctx, []fuel.Station{st("T-RETOUR", e10)}); err != nil { // il revient, même date
+		t.Fatal(err)
+	}
+	days, err := s.FuelTrend(ctx, box, "E10", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(days) != 1 || days[0].Stations != 1 {
+		t.Fatalf("prix revenu absent de la tendance du jour : %+v", days)
+	}
+}
