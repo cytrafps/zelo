@@ -45,6 +45,19 @@ export function formatCost(total: number, people = 1) {
   return people > 1 ? `${all} · ${euros.format(total / people)} €/pers.` : all;
 }
 
+/**
+ * Coût total affiché sous un itinéraire : énergie et péage, partagés entre les passagers.
+ * null quand on ne connaît ni l'un ni l'autre.
+ */
+export function routeCost(energy: number | null, toll: { price: number; complete: boolean } | undefined, people = 1) {
+  if (energy === null && !toll) return null;
+  const total = (energy ?? 0) + (toll?.price ?? 0);
+  const tollText = toll ? `${toll.complete ? '' : 'au moins '}${euros.format(toll.price)} € de péage` : '';
+  if (energy === null) return { total, text: tollText };
+  const base = formatCost(total, people);
+  return { total, text: toll ? `${base} dont ${tollText}` : base };
+}
+
 /** Moyenne des prix au kWh fermes (sans « dès », qui n'est qu'un minimum) ; null sans aucun. */
 export function averageKwh(stations: readonly { price: { free: boolean; kwh: number; from: boolean } | null }[]) {
   const prices = stations.flatMap((s) => (s.price && !s.price.free && !s.price.from && s.price.kwh > 0 ? [s.price.kwh] : []));

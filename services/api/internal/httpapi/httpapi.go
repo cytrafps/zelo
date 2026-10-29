@@ -30,6 +30,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/route"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
+	"github.com/cytrafps/zelo/services/api/internal/toll"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
 	"github.com/cytrafps/zelo/services/api/internal/vigilance"
 	"github.com/cytrafps/zelo/services/api/internal/weather"
@@ -60,6 +61,7 @@ type Store interface {
 	ChargeStations(context.Context, store.BBox, int) ([]store.ChargeStation, error)
 	Parkings(ctx context.Context, b store.BBox, limit int, vehicle string) ([]store.Parking, error)
 	ControlsAlong(ctx context.Context, line [][2]float64, within float64) ([]junction.Control, error)
+	TollGaresAlong(ctx context.Context, line [][2]float64, within float64) ([]toll.Gare, error)
 	AreasAlong(ctx context.Context, line [][2]float64, within float64) ([]store.AreaOnRoute, error)
 	Reports(context.Context, store.BBox, int) ([]store.Report, error)
 	AddReport(ctx context.Context, kind string, lat, lon float64, ttl time.Duration, voter string) (store.Report, bool, error)
@@ -542,6 +544,9 @@ func (a *API) route(w http.ResponseWriter, r *http.Request) {
 		metrics.Routes.WithLabelValues(q.Get("mode"), "ok").Inc()
 		if mode != route.Walk {
 			a.annotate(ctx, res, mode.Motorized())
+			if mode.Motorized() {
+				a.tolls(ctx, res, mode)
+			}
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"routes": res})
@@ -574,6 +579,26 @@ func (a *API) annotate(ctx context.Context, routes []route.Route, areas bool) {
 		}
 		route.Annotate(&routes[i], controls)
 		route.Place(&routes[i], controls)
+	}
+}
+
+// tollReach (m) : un poste de péage à cette distance du tracé est franchi (la voie de péage est
+// sous la ligne, pas à côté ; le poste d'en face, sur l'autre chaussée, reste plus loin).
+const tollReach = 15
+
+// tolls : péage de chaque trajet, d'après les gares de la grille franchies dans l'ordre.
+func (a *API) tolls(ctx context.Context, routes []route.Route, mode route.Mode) {
+	class := toll.Car
+	if mode == route.Motorcycle {
+		class = toll.Moto
+	}
+	for i := range routes {
+		gares, err := a.store.TollGaresAlong(ctx, routes[i].Coordinates, tollReach)
+		if err != nil {
+			a.log.Warn("péages", "err", err)
+			return
+		}
+		routes[i].Toll = toll.Compute(class, gares)
 	}
 }
 

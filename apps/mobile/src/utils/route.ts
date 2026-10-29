@@ -97,6 +97,8 @@ export type Route = {
   areas?: Area[];
   /** Feux, stops et cédez-le-passage du trajet, posés sur le tracé, dans l'ordre de passage. */
   controls?: Control[];
+  /** Péage du trajet (grille Sanef) ; absent sans péage. complete : sinon, price est un minimum. */
+  toll?: { price: number; complete: boolean; gares: string[] };
 };
 
 export type Control = { kind: NonNullable<Step['control']>; lat: number; lon: number };

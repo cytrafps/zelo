@@ -141,3 +141,12 @@ CREATE INDEX IF NOT EXISTS service_area_geom ON service_area USING gist (geom);
 -- Places deux-roues motorisés et vélos (OSM), à côté des parkings voiture.
 ALTER TABLE parking ADD COLUMN IF NOT EXISTS vehicle text NOT NULL DEFAULT 'car';
 ALTER TABLE parking ADD COLUMN IF NOT EXISTS covered boolean NOT NULL DEFAULT false;
+
+-- Postes de péage d'OSM rattachés à une gare de la grille (toll.Sanef) : réseau et indice.
+CREATE TABLE IF NOT EXISTS toll_booth (
+    id    text PRIMARY KEY,
+    net   integer NOT NULL,
+    gare  integer NOT NULL,
+    geom  geography(Point, 4326) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS toll_booth_geom ON toll_booth USING gist (geom);

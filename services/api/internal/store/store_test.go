@@ -17,6 +17,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/junction"
 	"github.com/cytrafps/zelo/services/api/internal/overpass"
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
+	"github.com/cytrafps/zelo/services/api/internal/toll"
 )
 
 // Tests d'intégration : ils demandent une vraie base PostGIS (ZELO_TEST_DATABASE_URL),
@@ -487,5 +488,28 @@ func TestFuelTrend(t *testing.T) {
 		if !g.Complete {
 			t.Errorf("%s : collecte commencée il y a 20 jours, jour complet attendu", g.Day)
 		}
+	}
+}
+
+// Postes de péage : ceux sous le tracé, dans l'ordre de passage, pas ceux d'à côté.
+func TestTollGaresAlong(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	at := func(id string, net, gare int, lon float64, lat float64) TollBooth {
+		return TollBooth{ID: id, Gare: toll.Gare{Net: net, Index: gare}, Lat: lat, Lon: lon}
+	}
+	if err := s.SaveTollBooths(ctx, []TollBooth{
+		at("T-PEAGE-FIN", 2, 9, 5.62, 45.10),
+		at("T-PEAGE-DEBUT", 2, 5, 5.60, 45.10),
+		at("T-PEAGE-COTE", 2, 7, 5.61, 45.1005), // ~55 m du tracé : la chaussée d'en face
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TollGaresAlong(ctx, [][2]float64{{5.59, 45.10}, {5.63, 45.10}}, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Index != 5 || got[1].Index != 9 {
+		t.Fatalf("postes franchis : %+v", got)
 	}
 }

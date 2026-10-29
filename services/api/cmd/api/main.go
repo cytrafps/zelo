@@ -34,6 +34,7 @@ import (
 	"github.com/cytrafps/zelo/services/api/internal/servicearea"
 	"github.com/cytrafps/zelo/services/api/internal/store"
 	"github.com/cytrafps/zelo/services/api/internal/tarif"
+	"github.com/cytrafps/zelo/services/api/internal/toll"
 	"github.com/cytrafps/zelo/services/api/internal/transit"
 	"github.com/cytrafps/zelo/services/api/internal/vigilance"
 	"github.com/cytrafps/zelo/services/api/internal/weather"
@@ -136,6 +137,15 @@ func run(log *slog.Logger, once bool) error {
 				return 0, err
 			}
 			return len(a), db.SaveAreas(ctx, a)
+		}}, job{"peages", 24 * time.Hour, func(ctx context.Context) (int, error) {
+			booths, err := toll.Fetch(ctx, client, envOr("OVERPASS_URL", overpass.URL), overpass.BBox(areasBox))
+			if err != nil {
+				return 0, err
+			}
+			saved, unmatched := matchBooths(booths)
+			// Les postes sans gare (nom absent de la grille, sortie ambiguë) : à relire pour compléter.
+			log.Info("péages", "postes", len(booths), "rattachés", len(saved), "sans_gare", unmatched)
+			return len(saved), db.SaveTollBooths(ctx, saved)
 		}})
 	}
 
@@ -534,4 +544,22 @@ func registerPoolMetrics(db *store.Store) {
 		func() float64 { return float64(db.PoolStat().EmptyAcquireCount()) })
 	counter("zelo_db_pool_acquire_wait_seconds_total", "Temps total passé à attendre une connexion.",
 		func() float64 { return db.PoolStat().AcquireDuration().Seconds() })
+}
+
+// matchBooths : postes rattachés à une gare de la grille, et la liste des autres (nom ou sortie).
+func matchBooths(booths []toll.Booth) ([]store.TollBooth, []string) {
+	var saved []store.TollBooth
+	var unmatched []string
+	for _, b := range booths {
+		if g, ok := toll.Match(b); ok {
+			saved = append(saved, store.TollBooth{ID: b.ID, Gare: g, Lat: b.Lat, Lon: b.Lon})
+			continue
+		}
+		label := b.Name
+		if label == "" {
+			label = "sortie " + b.Exit + " " + b.ExitName
+		}
+		unmatched = append(unmatched, b.ID+" « "+strings.TrimSpace(label)+" »")
+	}
+	return saved, unmatched
 }
