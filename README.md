@@ -208,11 +208,12 @@ Aucun signalement de contrôle de police ni de radar n'est accepté (décret 201
 | `DATABASE_URL` | (obligatoire) | Connexion PostgreSQL + PostGIS |
 | `ADDR` | `:8080` | Adresse d'écoute |
 | `IMPORT_BBOX` | vide (France entière) | Zone d'import des bornes, des parkings, des feux et des stops (obligatoire pour ces deux derniers) |
-| `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare) |
+| `TRUST_PROXY` | `false` | Lire l'IP cliente dans `CF-Connecting-IP` (derrière Cloudflare), pour les connexions venues de `TRUSTED_PROXIES` seulement (obligatoire avec lui) |
 | `GTFS_URL` | GTFS Grand Reims Mobilités (transport.data.gouv.fr) | Horaires du tram et des bus, rechargés chaque jour par chaque réplique |
 | `GTFS_RT_URL` | GTFS-RT Grand Reims Mobilités (transport.data.gouv.fr) | Temps réel du tram et des bus (heures prévues, courses supprimées), lu toutes les 30 s |
 | `AREAS_BBOX` | `IMPORT_BBOX` | Zone d'import des aires d'autoroute (OSM), à caler sur celle du graphe routier |
-| `TRUSTED_PROXIES` | vide | Réseaux des proxys de confiance (ex. `10.42.0.0/16`, Traefik sur K3s) : l'IP cliente est lue dans `X-Forwarded-For` |
+| `TRUSTED_PROXIES` | vide | Réseaux des proxys de confiance (ex. `10.42.0.0/16`, Traefik sur K3s ; `172.30.0.0/24`, réseau `proxys` de Compose) : l'IP cliente est lue dans `X-Forwarded-For` |
+| `METRICS_ADDR` | vide | `/metrics` sur cette adresse à part (ex. `:9090`), plus sur le port de l'API ; Compose l'utilise, le tunnel relayant tout le port 8080 |
 | `LIVE_MAX_CLIENTS` | `5000` | Clients du flux temps réel par instance, au-delà refusés (le client réessaie) |
 | `GOMEMLIMIT` | vide | Limite mémoire visée par Go, à ~90 % de la limite du conteneur |
 | `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Instance Overpass pour l'import des parkings (exige `IMPORT_BBOX`) |
