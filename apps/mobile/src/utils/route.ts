@@ -61,6 +61,25 @@ export function deviation(
   return { since: from, reroute: from !== null && now - from >= OFF_ROUTE_FOR_MS };
 }
 
+/**
+ * Arrivée au bout du tracé. `along` : ce qui reste sur le tracé ; `near` : à vol d'oiseau, car le
+ * GPS se perd souvent avant le bout (parking souterrain ou à étages). La marge suit la précision
+ * annoncée, plafonnée à `cap`. Dans `quiet` du bout (parking à ciel ouvert, allées hors réseau),
+ * on ne recalcule plus l'itinéraire et l'on propose de terminer à la main.
+ */
+export const ARRIVAL = {
+  drive: { along: 30, near: 60, cap: 100, quiet: 150 },
+  walk: { along: 15, near: 20, cap: 40, quiet: 40 },
+} as const;
+
+export type Arrival = 'arrived' | 'near' | 'en-route';
+
+export function arrival(phase: keyof typeof ARRIVAL, remaining: number, straight: number, accuracy?: number | null): Arrival {
+  const a = ARRIVAL[phase];
+  if (remaining < a.along || straight < Math.max(a.near, Math.min(accuracy ?? 0, a.cap))) return 'arrived';
+  return straight < a.quiet ? 'near' : 'en-route';
+}
+
 /** Le temps de dire l'annonce : on la lance un peu avant son point. */
 const VOICE_LEAD_M = 10;
 /** Passé son point de plus que ça (reprise après un recalcul, saut GPS), l'annonce ne vaut plus : « Continuez pendant 600 mètres » à 300 m du virage. */

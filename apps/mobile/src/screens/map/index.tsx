@@ -93,6 +93,10 @@ export function MapScreen() {
   const openReport = data.reports.find((r) => r.id === reportId) ?? null;
   // Pendant le guidage, la position vient du suivi précis de Guidance : pas de second abonnement.
   const location = useUserLocation(!guiding);
+  /** Dernière position du guidage (un ref : la carte ne se redessine pas à chaque position). */
+  const guideFix = useRef<LatLon | null>(null);
+  /** Position figée à l'ouverture de la feuille de signalement, prise du guidage s'il est en cours. */
+  const [reportFrom, setReportFrom] = useState<LatLon | null>(null);
 
   const select =
     (kind: Selection['kind']): NonNullable<GeoJSONSourceProps['onPress']> =>
@@ -133,8 +137,10 @@ export function MapScreen() {
       setFreed({ ...a.at, since: a.since });
       return;
     }
-    // En fin de guidage, l'arrivée a déjà enregistré la voiture au bon endroit.
-    if (trips.trip?.phase === 'drive') return;
+    // Pendant le guidage (et à pied ou en tram après l'arrivée), l'arrivée enregistre déjà la
+    // voiture au bon endroit : la déconnexion ne doit ni la déplacer ni ouvrir une feuille.
+    const phase = trips.trip?.phase;
+    if (phase && phase !== 'preview') return;
     if (a.kind === 'park') {
       parked.park(a.at);
       flash('Android Auto déconnecté : ta voiture est enregistrée ici.');
@@ -237,9 +243,11 @@ export function MapScreen() {
   const arrive = (at: LatLon) => {
     if (!trip) return;
     if (trip.phase === 'drive' && trip.target.kind !== 'dropoff') {
-      parked.park(at);
+      // Seule la voiture est retenue : un vélo ou une moto garés ne la remplacent pas.
+      const car = trips.vehicle === 'car';
+      if (car) parked.park(at);
       trips.parked();
-      if (!trip.walk) flash('Tu es arrivé. Ta voiture est enregistrée.');
+      if (!trip.walk && trip.target.kind !== 'parkride') flash(car ? 'Tu es arrivé. Ta voiture est enregistrée.' : 'Tu es arrivé');
       return;
     }
     trips.end();
@@ -319,7 +327,14 @@ export function MapScreen() {
 
       <View style={[styles.mapButtons, { bottom: (guiding ? 96 + insets.bottom : panelHeight) + espace[3] }]} pointerEvents="box-none">
         {trip?.phase !== 'preview' && (
-          <MapButton c={c} label="Signaler un événement" onPress={() => setReporting(true)}>
+          <MapButton
+            c={c}
+            label="Signaler un événement"
+            onPress={() => {
+              setReportFrom(guiding ? guideFix.current : null);
+              setReporting(true);
+            }}
+          >
             <SymbolView name={{ ios: 'exclamationmark.triangle.fill', android: 'warning' }} tintColor="#E8A10C" size={22} />
           </MapButton>
         )}
@@ -339,7 +354,9 @@ export function MapScreen() {
           top={top}
           bottomInset={insets.bottom}
           rerouting={trip.loading}
+          stale={trip.stale}
           onReroute={trips.reroute}
+          onFix={(f) => (guideFix.current = f)}
           onArrive={arrive}
           onClose={trips.end}
         />
@@ -358,6 +375,7 @@ export function MapScreen() {
               zones={zones}
               onSelect={trips.select}
               onGo={(i) => {
+                guideFix.current = null;
                 setFollowing(true);
                 trips.go(i);
               }}
@@ -397,7 +415,12 @@ export function MapScreen() {
           camera.current?.flyTo({ center: [car.lon, car.lat], zoom: 17, duration: 800 });
         }}
       />
-      <ReportSheet isPresented={reporting} onDismiss={() => setReporting(false)} position={here} send={sendReport} />
+      <ReportSheet
+        isPresented={reporting}
+        onDismiss={() => setReporting(false)}
+        position={reportFrom ? { ...reportFrom, source: 'gps' } : here}
+        send={sendReport}
+      />
       <ReportDetailSheet
         report={openReport}
         onDismiss={() => setReportId(null)}
