@@ -49,8 +49,12 @@ export type FuelStation = {
   updatedAt: string;
 };
 
-/** Prix d'un carburant sur la zone, un jour donné (prix en vigueur en fin de journée). */
-export type FuelDay = { day: string; avg: number; min: number; max: number; stations: number };
+/**
+ * Prix d'un carburant sur la zone, un jour donné (prix en vigueur en fin de journée).
+ * complete : la collecte avait commencé ce jour-là. week : évolution sur 7 jours, station par
+ * station (euros) ; null si la collecte n'avait pas commencé 7 jours plus tôt.
+ */
+export type FuelDay = { day: string; avg: number; min: number; max: number; stations: number; complete: boolean; week: number | null };
 
 export type ReportKind = 'accident' | 'bouchon' | 'travaux' | 'obstacle' | 'route_fermee' | 'place_liberee' | 'borne_hs';
 

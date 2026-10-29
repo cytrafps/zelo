@@ -97,6 +97,10 @@ func run(log *slog.Logger, once bool) error {
 			n, err := db.PurgeReports(ctx)
 			return int(n), err
 		}},
+		{"purge_historique_carburant", 24 * time.Hour, func(ctx context.Context) (int, error) {
+			n, err := db.PruneFuelHistory(ctx)
+			return int(n), err
+		}},
 	}
 
 	// Overpass ne sert qu'une zone limitée : sans IMPORT_BBOX, pas d'import de parkings ni de feux.
