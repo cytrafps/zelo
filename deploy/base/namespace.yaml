@@ -2,3 +2,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: zelo
+  labels:
+    # Pod Security : tout pod doit respecter « baseline » ; « restricted » (atteint par tous les pods
+    # actuels) est signalé à l'application sans bloquer, en attendant de l'imposer.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

@@ -1,0 +1,24 @@
+# Projet Argo CD de Zelo : ce que le dépôt peut créer dans le cluster. Sans lui (projet « default »),
+# un manifeste poussé sur main serait appliqué avec tous les droits, ClusterRoleBinding compris.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: zelo
+  namespace: argocd
+spec:
+  description: Application Zelo (deploy/overlays/homelab)
+  sourceRepos:
+    - https://github.com/cytrafps/zelo.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: zelo
+  # Seule ressource hors espace de noms : l'espace de noms lui-même.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  # Dans zelo, ni rôles ni liaisons : l'application n'en a pas besoin.
+  namespaceResourceBlacklist:
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding

@@ -5,7 +5,7 @@ metadata:
   name: zelo
   namespace: argocd
 spec:
-  project: default
+  project: zelo # voir project.yaml : limité à l'espace de noms zelo
   source:
     repoURL: https://github.com/cytrafps/zelo.git
     targetRevision: main
