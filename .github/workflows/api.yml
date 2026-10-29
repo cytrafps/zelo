@@ -1,0 +1,100 @@
+name: API
+
+# Chaque partie du dépôt a son workflow, lancé seulement quand ses fichiers changent : le dépôt est
+# privé, et GitHub facture chaque job à la minute entamée (8 jobs = 12 min par passage avant).
+on:
+  push:
+    branches: [main]
+    paths:
+      - services/api/**
+      - .github/workflows/api.yml
+      - .github/scripts/**
+  pull_request:
+    paths:
+      - services/api/**
+      - .github/workflows/api.yml
+      - .github/scripts/**
+
+permissions:
+  contents: read
+
+# Une PR poussée à nouveau annule le passage précédent, devenu inutile.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  api:
+    # Tests sur la PR ; sur main, l'image se construit seule (sa compilation échouerait de même).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    # Base réelle pour les tests d'intégration (diffusion NOTIFY entre instances, élection du collecteur).
+    services:
+      db:
+        image: postgis/postgis:17-3.5-alpine
+        env:
+          POSTGRES_USER: zelo
+          POSTGRES_PASSWORD: zelo
+          POSTGRES_DB: zelo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zelo -d zelo -h 127.0.0.1"
+          --health-interval 3s --health-retries 20
+    env:
+      ZELO_TEST_DATABASE_URL: postgres://zelo:zelo@localhost:5432/zelo?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: CGO_ENABLED=0 go build ./cmd/api
+
+  # Sur main : image publiée sur GHCR, puis son tag écrit dans deploy/overlays/homelab, qu'Argo CD
+  # applique au cluster (GitOps).
+
+  api-image:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Plusieurs fusions rapprochées : un seul déploiement à la fois, et une exécution en attente
+    # est remplacée par la plus récente (qui contient déjà les précédentes).
+    concurrency:
+      group: api-image-${{ github.ref }}
+    permissions:
+      contents: write # commit du nouveau tag
+      packages: write # publication sur ghcr.io
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/zelo-api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # historique complet : le déploiement vérifie l'ordre des commits
+          filter: blob:none
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: services/api
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Déployer le nouveau tag (Argo CD)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/deploy-tag.sh "$IMAGE" ${{ steps.tag.outputs.sha }} api
