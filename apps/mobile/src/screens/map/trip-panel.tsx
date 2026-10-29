@@ -52,11 +52,14 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   // Heure de départ : choisie, ou maintenant.
   const start = trip.depart ?? now;
   const walkTime = trip.walk?.duration ?? 0;
-  /** Après la conduite : la marche, ou par le relais la marche au quai, l'attente, le tram et la marche finale. */
+  /**
+   * Après la conduite : la marche, ou par le relais la marche au quai, l'attente, le tram et la
+   * marche finale ; null s'il n'y a plus de départ à l'arrivée au relais (l'heure serait fausse).
+   */
   const afterDrive = (r: Route) => {
     const t = trip.target;
     if (t.kind !== 'parkride') return walkTime;
-    return relayDuration(t.relay.journeys, start + r.duration * 1000, walkTime) ?? walkTime;
+    return relayDuration(t.relay.journeys, start + r.duration * 1000, walkTime);
   };
 
   // Coût du trajet (voiture) : carburant de la fiche voiture, ou électricité pour une électrique.
@@ -76,7 +79,9 @@ export function TripPanel({ trip, reports, c, bottomInset, onSelect, onGo, avoid
   const share = () => {
     const route = trip.routes[trip.selected];
     if (!route) return;
-    const eta = formatClock(new Date((trip.depart ?? Date.now()) + (route.duration + afterDrive(route)) * 1000));
+    const after = afterDrive(route);
+    if (after === null) return void Share.share({ message: `Je pars pour ${trip.destination.name}.` });
+    const eta = formatClock(new Date((trip.depart ?? Date.now()) + (route.duration + after) * 1000));
     void Share.share({ message: `J'arrive à ${trip.destination.name} vers ${eta}.` });
   };
 
@@ -557,7 +562,8 @@ function ZfeNotice(props: {
 
 function RouteRow(props: {
   route: Route;
-  walk: number;
+  /** Après la conduite (s) ; null : plus de départ en tram à l'arrivée au relais. */
+  walk: number | null;
   now: number;
   reports: Report[];
   selected: boolean;
@@ -575,14 +581,17 @@ function RouteRow(props: {
     const cum = cumulative(route.coordinates);
     return along(route, cum, reports.filter((r) => BLOCKING.has(r.kind))).sort((a, b) => a.along - b.along)[0];
   }, [route, reports]);
-  const eta = formatClock(new Date(now + (route.duration + walk) * 1000));
+  // Temps de Valhalla sans trafic : une heure approchée, pas une promesse.
+  const eta = walk === null ? null : formatClock(new Date(now + (route.duration + walk) * 1000));
   const km = (route.distance / 1000).toFixed(1).replace('.', ',');
 
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected }} style={[styles.route, !first && { borderTopColor: c.fond.separateur, borderTopWidth: StyleSheet.hairlineWidth }]}>
       <View style={styles.flex}>
-        <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + walk)}</Text>
-        <Text style={[texte.secondaire, { color: c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>{`Arrivée ${eta} · ${km} km`}</Text>
+        <Text style={[styles.duration, { color: c.texte.principal }]}>{formatDuration(route.duration + (walk ?? 0))}</Text>
+        <Text style={[texte.secondaire, { color: eta ? c.texte.secondaire : c.alerte.base, fontVariant: ['tabular-nums'] }]}>
+          {eta ? `Arrivée vers ${eta} · ${km} km` : `Jusqu’au relais · plus de tram à l’arrivée · ${km} km`}
+        </Text>
         {cost && (
           <Text numberOfLines={2} style={[texte.secondaire, { color: cheapest ? c.action : c.texte.secondaire, fontVariant: ['tabular-nums'] }]}>
             {(cheapest ? 'Le moins cher · ' : '') + cost}
@@ -605,7 +614,7 @@ function RouteRow(props: {
       <Pressable
         onPress={onGo}
         accessibilityRole="button"
-        accessibilityLabel={`Y aller, ${formatDuration(route.duration + walk)}`}
+        accessibilityLabel={`Y aller, ${formatDuration(route.duration + (walk ?? 0))}`}
         style={({ pressed }) => [
           styles.go,
           { backgroundColor: selected ? c.texte.principal : c.fond.attenue, opacity: pressed ? 0.85 : 1 },

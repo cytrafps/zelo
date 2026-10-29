@@ -144,10 +144,11 @@ function ElectricCar() {
   const { c } = useTheme();
   const [ev, setEv] = useStored<EvModel | null>('zelo.ve', null);
   const [picking, setPicking] = useState(false);
-  const [models, setModels] = useState<EvModel[] | null>(null);
+  /** null : en chargement ; 'error' : liste indisponible, on peut réessayer. */
+  const [models, setModels] = useState<EvModel[] | null | 'error'>(null);
   const [query, setQuery] = useState('');
   useEffect(() => {
-    if (picking && !models) getEvModels().then(setModels, () => setModels([]));
+    if (picking && models === null) getEvModels().then(setModels, () => setModels('error'));
   }, [picking, models]);
 
   if (!picking)
@@ -161,12 +162,17 @@ function ElectricCar() {
       </Column>
     );
 
-  const found = models ? searchModels(models, query, 8) : [];
+  const found = Array.isArray(models) ? searchModels(models, query, 8) : [];
   return (
     <Column spacing={8}>
       <TextInput placeholder="Marque, modèle (ex. Zoé 52)" autoFocus onChangeText={setQuery} />
       {models === null ? (
         <Text textStyle={{ ...texte.secondaire, color: c.texte.tertiaire }}>Chargement des modèles…</Text>
+      ) : models === 'error' ? (
+        <Column spacing={4}>
+          <Text textStyle={{ ...texte.secondaire, color: c.alerte.base }}>Liste des modèles indisponible, vérifie ta connexion.</Text>
+          <Button label="Réessayer" variant="text" onPress={() => setModels(null)} />
+        </Column>
       ) : (
         <List>
           {found.map((m) => (

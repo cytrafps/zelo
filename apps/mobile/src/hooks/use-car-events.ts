@@ -1,19 +1,17 @@
 import { useEffect, useEffectEvent } from 'react';
 import { AppState } from 'react-native';
 
-import { onCarEvent, takeCarEvent } from '../../modules/zelo-auto';
+import { onCarEvent, takeCarEvents } from '../../modules/zelo-auto';
 import type { ParkedCar } from '@/hooks/use-parked-car';
-import { carAction, type CarAction } from '@/utils/car-events';
+import { carActions, type CarAction } from '@/utils/car-events';
 
 /**
- * Connexions à Android Auto notées par le module natif : lues à l'ouverture de l'app, à chaque
+ * Connexions à Android Auto ou au Bluetooth de la voiture notées par le module natif : lues à l'ouverture de l'app, à chaque
  * retour au premier plan, et aussitôt si l'app tourne déjà. Sans effet hors Android.
  */
 export function useCarEvents(car: ParkedCar | null, onAction: (a: CarAction) => void) {
   const handle = useEffectEvent(() => {
-    const e = takeCarEvent();
-    const a = e && carAction(e, car);
-    if (a) onAction(a);
+    for (const a of carActions(takeCarEvents(), car)) onAction(a);
   });
   useEffect(() => {
     handle();

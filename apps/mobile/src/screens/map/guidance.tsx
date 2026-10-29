@@ -216,7 +216,7 @@ export function Guidance(props: Props) {
       <View style={[styles.bar, { backgroundColor: c.fond.surface, bottom: bottomInset + espace[3] }]}>
         <View style={styles.flex}>
           <Text style={[styles.remaining, { color: c.recharge.base }]}>{formatDuration(remaining)}</Text>
-          <Text style={[styles.eta, { color: c.texte.secondaire }]}>{`${eta} · ${km}`}</Text>
+          <Text style={[styles.eta, { color: c.texte.secondaire }]}>{`Vers ${eta} · ${km}`}</Text>
         </View>
         <View style={[styles.sep, { backgroundColor: c.fond.separateur }]} />
         <Stop phase={phase} target={target} c={c} />

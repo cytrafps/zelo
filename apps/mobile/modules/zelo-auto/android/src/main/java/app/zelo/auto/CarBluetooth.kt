@@ -93,12 +93,12 @@ class CarBluetoothReceiver : BroadcastReceiver() {
     val car = CarBluetooth.device(context) ?: return
     if (device?.address != car) return
     when (intent.action) {
-      BluetoothDevice.ACTION_ACL_CONNECTED -> CarWatch.record(context, CarWatch.departed())
+      BluetoothDevice.ACTION_ACL_CONNECTED -> CarWatch.record(context, CarWatch.departed(CarWatch.BLUETOOTH))
       BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
         // Le système laisse environ 10 s à un récepteur : la position est lue en 8 s au plus.
         val pending = goAsync()
         CarBluetooth.locate(context, 8_000) { fix ->
-          CarWatch.record(context, CarWatch.parked(context, fix))
+          CarWatch.record(context, CarWatch.parked(context, CarWatch.BLUETOOTH, fix))
           pending.finish()
         }
       }

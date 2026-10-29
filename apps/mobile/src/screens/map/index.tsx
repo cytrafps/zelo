@@ -141,11 +141,12 @@ export function MapScreen() {
     // voiture au bon endroit : la déconnexion ne doit ni la déplacer ni ouvrir une feuille.
     const phase = trips.trip?.phase;
     if (phase && phase !== 'preview') return;
+    const from = a.via === 'bluetooth' ? 'Voiture déconnectée' : 'Android Auto déconnecté';
     if (a.kind === 'park') {
       parked.park(a.at);
-      flash('Android Auto déconnecté : ta voiture est enregistrée ici.');
+      flash(`${from} : ta voiture est enregistrée ici.`);
     } else {
-      flash('Android Auto déconnecté : où es-tu garé ?');
+      flash(`${from} : où es-tu garé ?`);
       setCarOpen(true);
     }
   });
@@ -155,7 +156,7 @@ export function MapScreen() {
   const sendReport = async (kind: ReportKind, lat: number, lon: number) => {
     const r = await outbox.send(kind, lat, lon);
     if (r) data.upsertReport(r);
-    else flash('Pas de réseau : ton signalement partira dès que possible.');
+    else flash('Envoi impossible pour l’instant : ton signalement partira dès que possible.');
     return r;
   };
 
@@ -363,7 +364,7 @@ export function MapScreen() {
       ) : (
         <View onLayout={(e) => setPanelHeight(e.nativeEvent.layout.height)} style={styles.panelMeasure} pointerEvents="box-none">
           {trip?.phase === 'transit' && trip.target.kind === 'parkride' ? (
-            <TransitCard relay={trip.target.relay} c={c} bottomInset={insets.bottom} onAlighted={trips.alighted} onClose={trips.end} />
+            <TransitCard relay={trip.target.relay} destination={trip.destination} c={c} bottomInset={insets.bottom} onAlighted={trips.alighted} onClose={trips.end} />
           ) : trip ? (
             <TripPanel
               trip={trip}
