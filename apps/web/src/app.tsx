@@ -1,22 +1,29 @@
+import type { ComponentType } from 'react';
+
 import { Sidebar } from './components/sidebar';
-import { useRoute } from './lib/router';
+import { type Route, useRoute } from './lib/router';
+import { ApiPage } from './pages/api';
 import { ChargePage } from './pages/charge';
 import { FuelPage } from './pages/fuel';
 import { Overview } from './pages/overview';
-import { ReportsPage } from './pages/reports';
 import { ParkingPage } from './pages/parking';
-import { Soon } from './pages/soon';
+import { ReportsPage } from './pages/reports';
 
-const TITLES = {
-  '/api': 'API & données ouvertes',
-} as const;
+const PAGES: Record<Route, ComponentType> = {
+  '/': Overview,
+  '/stationnement': ParkingPage,
+  '/recharge': ChargePage,
+  '/carburant': FuelPage,
+  '/signalements': ReportsPage,
+  '/api': ApiPage,
+};
 
 export function App() {
-  const route = useRoute();
+  const Page = PAGES[useRoute()];
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: '100vh' }}>
       <Sidebar />
-      {route === '/' ? <Overview /> : route === '/stationnement' ? <ParkingPage /> : route === '/recharge' ? <ChargePage /> : route === '/carburant' ? <FuelPage /> : route === '/signalements' ? <ReportsPage /> : <Soon key={route} title={TITLES[route]} />}
+      <Page />
     </div>
   );
 }
