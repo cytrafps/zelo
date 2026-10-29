@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChargeStation, FuelStation, Parking, Report } from './api';
-import { chargeSummary, cheapest, hourPrice, operatedParkings, recentReports, reportSummary } from './stats';
+import { capacitySummary, chargeSummary, cheapest, hourPrice, operatedParkings, parkingTable, recentReports, reportSummary } from './stats';
 
 const station = (total: number, available: number | null) => ({ total, available }) as ChargeStation;
 const report = (id: number, kind: Report['kind'], createdAt: string) => ({ id, kind, createdAt }) as Report;
@@ -37,5 +37,22 @@ describe('stats', () => {
     expect(operatedParkings(ps, 5).map((p) => p.id)).toEqual(['b', 'a']);
     expect(hourPrice(ps[0]!)).toBe(180);
     expect(hourPrice(ps[2]!)).toBeNull();
+  });
+});
+
+describe('stationnement', () => {
+  const tariff = { free: 30, prices: [{ minutes: 60, cents: 180 }], source: '', checked: '' };
+  const p = (id: string, capacity: number | null, extra: Partial<Parking> = {}) =>
+    ({ id, capacity, disabled: null, tariff: null, parkRide: false, ...extra }) as Parking;
+
+  it('tableau : exploités, puis les plus grands, puis les P+R', () => {
+    const centre = [p('rue', 40), p('erlon', 520, { tariff }), p('grand', 900), p('sans', null), p('gare', 400, { tariff })];
+    const relays = [p('pr-belges', 400, { parkRide: true }), p('erlon', 520, { tariff })];
+    expect(parkingTable(centre, relays, 12).map((x) => x.id)).toEqual(['erlon', 'gare', 'grand', 'rue', 'pr-belges']);
+    expect(parkingTable(centre, relays, 2).map((x) => x.id)).toEqual(['erlon', 'gare']);
+  });
+
+  it('somme les places connues', () => {
+    expect(capacitySummary([p('a', 100, { disabled: 3 }), p('b', null), p('c', 50)])).toEqual({ places: 150, disabled: 3, withDisabled: 1, unknown: 1, total: 3 });
   });
 });

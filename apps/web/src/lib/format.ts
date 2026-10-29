@@ -24,3 +24,9 @@ export function ago(from: Date, now: Date) {
 /** « mis à jour il y a 2 min » */
 export const updated = (at: Date | null, now: Date) =>
   at === null ? 'chargement…' : ago(at, now) === 'à l’instant' ? 'mis à jour à l’instant' : `mis à jour il y a ${ago(at, now)}`;
+
+/** « Parking rue de Vesle » devient « Rue de Vesle » ; « Parking Erlon », « Erlon ». */
+export const parkingName = (name: string) => {
+  const n = name.replace(/^Parking\s+/i, '').trim();
+  return n ? n[0]!.toUpperCase() + n.slice(1) : 'Sans nom';
+};

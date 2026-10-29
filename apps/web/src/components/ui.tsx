@@ -7,7 +7,7 @@ export { s as ui };
 export type Period = 'jour' | 'semaine' | 'mois';
 
 /** Titre de page, sous-titre, période et export (en-tête des maquettes Web 1 à 6). */
-export function PageHeader(props: { title: string; subtitle: string; onExport?: () => void; history?: boolean }) {
+export function PageHeader(props: { title: string; subtitle: string; onExport?: () => void; history?: boolean; noPeriod?: boolean }) {
   return (
     <header className={s.header}>
       <div className={s.titles}>
@@ -15,7 +15,7 @@ export function PageHeader(props: { title: string; subtitle: string; onExport?: 
         <p className={s.subtitle}>{props.subtitle}</p>
       </div>
       {/* Semaine et mois demandent un historique : l'API ne garde que l'état en cours. */}
-      <div className={s.segmented} role="group" aria-label="Période">
+      {!props.noPeriod && <div className={s.segmented} role="group" aria-label="Période">
         <button type="button" className={s.segment} aria-pressed="true">
           Jour
         </button>
@@ -25,7 +25,7 @@ export function PageHeader(props: { title: string; subtitle: string; onExport?: 
         <button type="button" className={s.segment} aria-pressed="false" disabled={!props.history} title="Historique à venir">
           Mois
         </button>
-      </div>
+      </div>}
       {props.onExport && (
         <button type="button" className={s.button} onClick={props.onExport}>
           Exporter

@@ -4,7 +4,7 @@ import { Icon, type IconName } from '../components/icon';
 import { PageHeader, Panel, Tile, ui } from '../components/ui';
 import { api, CENTRE, GRAND_REIMS, type ChargeStation, type Parking, type Report, type ReportKind, streetAt } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
-import { ago, formatCents, formatLitre, formatNumber, formatPercent, today, updated } from '../lib/format';
+import { ago, formatCents, formatLitre, formatNumber, formatPercent, parkingName, today, updated } from '../lib/format';
 import { useNow, usePoll } from '../lib/use-poll';
 import { chargeSummary, cheapest, hourPrice, operatedParkings, recentReports, REPORT_LABEL, reportSummary } from '../lib/stats';
 import { CityMap, type Pin } from '../map/city-map';
@@ -142,7 +142,7 @@ function ParkingRow({ parking, largest }: { parking: Parking; largest: number })
     <div className={s.parking}>
       <div className={s.parkingLine}>
         <span className={s.parkingName} title={parking.name}>
-          {parking.name.replace(/^Parking /, '')}
+          {parkingName(parking.name)}
         </span>
         {parking.capacity !== null && <span className={s.parkingInfo}>{formatNumber(parking.capacity)} places</span>}
         <span className={s.parkingValue}>{cents === null ? '—' : `${formatCents(cents)} / h`}</span>

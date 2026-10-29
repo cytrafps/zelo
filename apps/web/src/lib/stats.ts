@@ -59,3 +59,36 @@ export const operatedParkings = (parkings: Parking[], n: number) =>
     .filter((p) => p.tariff !== null)
     .sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0))
     .slice(0, n);
+
+/** Lignes du tableau Stationnement : parkings à tarif relevé, puis les plus grands, puis les P+R. */
+export function parkingTable(centre: Parking[], relays: Parking[], n: number) {
+  const seen = new Set<string>();
+  const rows: Parking[] = [];
+  const add = (p: Parking) => {
+    if (seen.has(p.id) || rows.length >= n) return;
+    seen.add(p.id);
+    rows.push(p);
+  };
+  const byCapacity = (a: Parking, b: Parking) => (b.capacity ?? 0) - (a.capacity ?? 0);
+  centre.filter((p) => p.tariff !== null).sort(byCapacity).forEach(add);
+  centre.filter((p) => p.tariff === null && p.capacity !== null && !p.parkRide).sort(byCapacity).slice(0, Math.max(0, n - 3 - rows.length)).forEach(add);
+  relays.filter((p) => p.parkRide).sort(byCapacity).forEach(add);
+  return rows;
+}
+
+/** Places et places PMR connues, et parkings sans nombre de places dans OpenStreetMap. */
+export function capacitySummary(parkings: Parking[]) {
+  let places = 0;
+  let disabled = 0;
+  let withDisabled = 0;
+  let unknown = 0;
+  for (const p of parkings) {
+    if (p.capacity === null) unknown++;
+    else places += p.capacity;
+    if (p.disabled !== null) {
+      disabled += p.disabled;
+      withDisabled++;
+    }
+  }
+  return { places, disabled, withDisabled, unknown, total: parkings.length };
+}

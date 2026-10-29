@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ago, formatLitre, formatNumber, formatPercent, today, updated } from './format';
+import { ago, formatLitre, formatNumber, formatPercent, parkingName, today, updated } from './format';
 
 describe('format', () => {
   it('écrit les nombres à la française', () => {
@@ -22,4 +22,11 @@ describe('format', () => {
   it('date du jour en heure de Paris', () => {
     expect(today(new Date('2026-10-29T08:00:00Z'))).toBe('Aujourd’hui, jeudi 29 octobre');
   });
+});
+
+it('nom de parking sans le mot « Parking »', () => {
+  expect(parkingName('Parking rue de Vesle')).toBe('Rue de Vesle');
+  expect(parkingName('Parking Erlon')).toBe('Erlon');
+  expect(parkingName('P+R Belges')).toBe('P+R Belges');
+  expect(parkingName('')).toBe('Sans nom');
 });
