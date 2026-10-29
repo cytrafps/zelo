@@ -125,7 +125,11 @@ type Cache struct {
 type cell struct {
 	at    time.Time
 	slots []Slot
+	err   error // échec récent : gardé ErrorTTL pour ne pas rappeler Open-Meteo à chaque requête
 }
+
+// ErrorTTL : durée pendant laquelle un échec d'Open-Meteo est resservi sans nouvel appel.
+var ErrorTTL = time.Minute
 
 // call : une lecture en cours, partagée par toutes les requêtes de la même maille.
 type call struct {
@@ -145,9 +149,9 @@ var FetchTimeout = 15 * time.Second
 func (c *Cache) Get(ctx context.Context, lat, lon float64) ([]Slot, error) {
 	k := [2]int{int(math.Floor(lat / mesh)), int(math.Floor(lon / mesh))}
 	c.mu.Lock()
-	if e, ok := c.cells[k]; ok && time.Since(e.at) < c.TTL {
+	if e, ok := c.cells[k]; ok && (e.err == nil && time.Since(e.at) < c.TTL || e.err != nil && time.Since(e.at) < ErrorTTL) {
 		c.mu.Unlock()
-		return e.slots, nil
+		return e.slots, e.err
 	}
 	f, ok := c.inflight[k]
 	if !ok {
@@ -174,16 +178,18 @@ func (c *Cache) fill(k [2]int, f *call) {
 	f.slots, f.err = c.Fetch(ctx, (float64(k[0])+0.5)*mesh, (float64(k[1])+0.5)*mesh)
 	c.mu.Lock()
 	delete(c.inflight, k)
-	if f.err == nil {
-		if c.cells == nil {
-			c.cells = map[[2]int]cell{}
-		}
+	if c.cells == nil {
+		c.cells = map[[2]int]cell{}
+	}
+	if f.err != nil {
+		c.cells[k] = cell{at: time.Now(), err: f.err}
+	} else {
 		for key, e := range c.cells { // les mailles périmées ne s'accumulent pas
 			if time.Since(e.at) >= c.TTL {
 				delete(c.cells, key)
 			}
 		}
-		c.cells[k] = cell{time.Now(), f.slots}
+		c.cells[k] = cell{at: time.Now(), slots: f.slots}
 	}
 	c.mu.Unlock()
 	close(f.done)

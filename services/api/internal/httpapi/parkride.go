@@ -39,6 +39,10 @@ type parkRideJSON struct {
 // Parkings relais d'où le tram ou le bus (correspondances comprises) mène près de la destination,
 // avec les prochains départs (à partir de at, l'heure où l'on y sera ; maintenant par défaut).
 func (a *API) parkRide(w http.ResponseWriter, r *http.Request) {
+	if !a.reads.allow(netKey(a.clientIP(r))) {
+		httpError(w, http.StatusTooManyRequests, "trop de requêtes, réessaie dans un instant")
+		return
+	}
 	q := r.URL.Query()
 	to, err := parsePoint(q.Get("to"))
 	if err != nil {
