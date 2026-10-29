@@ -416,7 +416,7 @@ func TestChargeStationAccess(t *testing.T) {
 }
 
 // Historique des prix : le prix d'un jour est le dernier changement à cette date ou avant ;
-// un nouvel import le jour même remplace le prix du jour au lieu d'en ajouter un.
+// un nouvel import le jour même remplace le prix du jour ; un carburant retiré sort de la moyenne.
 func TestFuelTrend(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
@@ -425,44 +425,67 @@ func TestFuelTrend(t *testing.T) {
 		y, m, d := time.Now().In(paris).AddDate(0, 0, -daysAgo).Date()
 		return time.Date(y, m, d, 12, 0, 0, 0, paris)
 	}
+	day := func(daysAgo int) string { return noon(daysAgo).Format("2006-01-02") }
+	// Collecte commencée il y a 20 jours (la base de test, elle, vient d'être créée).
+	if _, err := s.db.Exec(ctx, `UPDATE fuel_history SET started = $1::date`, day(20)); err != nil {
+		t.Fatal(err)
+	}
 	box := BBox{5.50, 45.00, 5.52, 45.02} // à l'écart des autres tests
-	a := fuel.Station{ID: "T-TREND-A", Lat: 45.01, Lon: 5.51, Prices: []fuel.Price{{Fuel: "E10", Value: 1.800, UpdatedAt: noon(10)}}}
-	b := fuel.Station{ID: "T-TREND-B", Lat: 45.011, Lon: 5.511, Prices: []fuel.Price{{Fuel: "E10", Value: 1.700, UpdatedAt: noon(3)}}}
-	save := func() {
+	if _, err := s.db.Exec(ctx, `DELETE FROM fuel_station WHERE id LIKE 'T-TREND-%'`); err != nil {
+		t.Fatal(err)
+	}
+	e10 := func(v float64, at time.Time) []fuel.Price {
+		return []fuel.Price{{Fuel: "E10", Value: v, UpdatedAt: at}}
+	}
+	a := fuel.Station{ID: "T-TREND-A", Lat: 45.01, Lon: 5.51, Prices: e10(1.800, noon(10))}
+	b := fuel.Station{ID: "T-TREND-B", Lat: 45.011, Lon: 5.511, Prices: e10(1.700, noon(3))}
+	c := fuel.Station{ID: "T-TREND-C", Lat: 45.012, Lon: 5.512, Prices: e10(1.500, noon(9))}
+	save := func(st ...fuel.Station) {
 		t.Helper()
-		if err := s.SaveFuel(ctx, []fuel.Station{a, b}); err != nil {
+		if err := s.SaveFuel(ctx, st); err != nil {
 			t.Fatal(err)
 		}
 	}
-	save()
-	a.Prices[0] = fuel.Price{Fuel: "E10", Value: 1.760, UpdatedAt: noon(1)}
-	save()
-	a.Prices[0] = fuel.Price{Fuel: "E10", Value: 1.740, UpdatedAt: noon(1).Add(time.Hour)}
-	save()
+	save(a, b, c)
+	a.Prices = e10(1.760, noon(1))
+	save(a, b, c)
+	a.Prices = e10(1.740, noon(1).Add(time.Hour))
+	c.Prices = nil // C ne vend plus d'E10
+	save(a, b, c)
 
 	got, err := s.FuelTrend(ctx, box, "E10", 12)
 	if err != nil {
 		t.Fatal(err)
 	}
-	day := func(daysAgo int) string { return noon(daysAgo).Format("2006-01-02") }
-	want := map[string]FuelDay{
-		day(10): {Avg: 1.800, Min: 1.800, Max: 1.800, Stations: 1},
-		day(4):  {Avg: 1.800, Min: 1.800, Max: 1.800, Stations: 1},
-		day(3):  {Avg: 1.750, Min: 1.700, Max: 1.800, Stations: 2},
-		day(1):  {Avg: 1.720, Min: 1.700, Max: 1.740, Stations: 2},
-		day(0):  {Avg: 1.720, Min: 1.700, Max: 1.740, Stations: 2},
+	type want struct {
+		avg, min, max float64
+		n             int
+		week          string
+	}
+	wants := map[string]want{
+		day(10): {1.800, 1.800, 1.800, 1, "–"},
+		day(9):  {1.650, 1.500, 1.800, 2, "–"},
+		day(3):  {1.667, 1.500, 1.800, 3, "0.000"},  // A et C sans changement depuis 7 jours, B inconnu alors
+		day(1):  {1.647, 1.500, 1.740, 3, "-0.030"}, // A : 1,800 → 1,740, C stable : −0,06 et 0
+		day(0):  {1.720, 1.700, 1.740, 2, "-0.060"}, // C retiré aujourd'hui ; A seul connu 7 jours plus tôt
 	}
 	if len(got) != 11 || got[0].Day != day(10) || got[10].Day != day(0) {
 		t.Fatalf("jours : %+v", got)
 	}
 	for _, g := range got {
-		w, ok := want[g.Day]
+		w, ok := wants[g.Day]
 		if !ok {
 			continue
 		}
-		w.Day = g.Day
-		if fmt.Sprintf("%.3f %.3f %.3f %d", g.Avg, g.Min, g.Max, g.Stations) != fmt.Sprintf("%.3f %.3f %.3f %d", w.Avg, w.Min, w.Max, w.Stations) {
-			t.Errorf("%s : %+v, attendu %+v", g.Day, g, w)
+		week := "–"
+		if g.Week != nil {
+			week = fmt.Sprintf("%.3f", *g.Week)
+		}
+		if fmt.Sprintf("%.3f %.3f %.3f %d %s", g.Avg, g.Min, g.Max, g.Stations, week) != fmt.Sprintf("%.3f %.3f %.3f %d %s", w.avg, w.min, w.max, w.n, w.week) {
+			t.Errorf("%s : %+v (semaine %s), attendu %+v", g.Day, g, week, w)
+		}
+		if !g.Complete {
+			t.Errorf("%s : collecte commencée il y a 20 jours, jour complet attendu", g.Day)
 		}
 	}
 }

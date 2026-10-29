@@ -93,12 +93,12 @@ describe('recharge', () => {
     expect(fuelStats(fresh, 'E85')).toBeNull();
   });
 
-  it('tendance : jours complets et évolution sur 7 jours', () => {
-    const d = (day: string, avg: number, stations: number) => ({ day, avg, min: avg, max: avg, stations });
-    const days = [d('2026-10-20', 1.8, 10), d('2026-10-21', 1.79, 40), d('2026-10-22', 1.78, 50), d('2026-10-29', 1.75, 52)];
-    expect(completeDays(days).map((x) => x.day)).toEqual(['2026-10-22', '2026-10-29']);
-    expect(weekChange(days)).toBeCloseTo(-0.03);
-    expect(weekChange(days.slice(1, 2))).toBeNull();
+  it('tendance : jours collectés et évolution sur 7 jours', () => {
+    const d = (day: string, complete: boolean, week: number | null) => ({ day, avg: 1.7, min: 1.7, max: 1.7, stations: 9, complete, week });
+    const days = [d('2026-10-20', false, null), d('2026-10-21', true, null), d('2026-10-29', true, -0.03)];
+    expect(completeDays(days).map((x) => x.day)).toEqual(['2026-10-21', '2026-10-29']);
+    expect(weekChange(days)).toBe(-0.03);
+    expect(weekChange(days.slice(0, 2))).toBeNull();
     expect(weekChange([])).toBeNull();
   });
 });

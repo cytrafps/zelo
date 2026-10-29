@@ -153,23 +153,8 @@ export function fuelStats(stations: FuelStation[], fuel: string) {
   };
 }
 
-/**
- * Jours d'historique jugés complets : l'historique se constitue au fil des imports, les
- * premiers jours ne portent que sur les stations dont le prix a changé depuis. Un jour compte
- * s'il couvre au moins 90 % des stations du dernier jour.
- */
-export function completeDays(days: FuelDay[]) {
-  const last = days.at(-1);
-  if (!last) return [];
-  return days.filter((d) => d.stations >= 0.9 * last.stations);
-}
+/** Jours de la tendance à afficher : ceux où la collecte des prix avait commencé. */
+export const completeDays = (days: FuelDay[]) => days.filter((d) => d.complete);
 
-/** Évolution (euros) du prix moyen sur 7 jours ; null si l'historique ne remonte pas assez. */
-export function weekChange(days: FuelDay[]) {
-  const ok = completeDays(days);
-  const last = ok.at(-1);
-  if (!last) return null;
-  const target = new Date(`${last.day}T12:00:00Z`).getTime() - WEEK_MS;
-  const before = ok.find((d) => new Date(`${d.day}T12:00:00Z`).getTime() === target);
-  return before ? last.avg - before.avg : null;
-}
+/** Évolution (euros) du prix moyen sur 7 jours, au dernier jour ; null si l'historique ne remonte pas assez. */
+export const weekChange = (days: FuelDay[]) => days.at(-1)?.week ?? null;
