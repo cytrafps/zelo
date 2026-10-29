@@ -157,3 +157,10 @@
   font-size: 14px;
   color: var(--texte-2);
 }
+
+/* Même place que la carte pendant son chargement : la page ne saute pas. */
+.mapPlaceholder {
+  height: 330px;
+  background: var(--carte-fond);
+  border-radius: 0 0 var(--rayon) var(--rayon);
+}

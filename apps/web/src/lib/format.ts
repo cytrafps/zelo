@@ -41,6 +41,14 @@ export function address(s: string) {
 
 const date = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' });
 const dateCourte = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'Europe/Paris' });
+const annee = new Intl.DateTimeFormat('fr-FR', { year: 'numeric', timeZone: 'Europe/Paris' });
+const iso = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Europe/Paris' });
+
+/** « 3 octobre » */
+export const formatDay = (d: Date) => date.format(d);
+
+/** Jour de Paris au format AAAA-MM-JJ, pour les noms de fichiers (toISOString donne la veille avant 2 h). */
+export const dayStamp = (now: Date) => iso.format(now);
 
 /** Période d'une fermeture : « jusqu'au 7 novembre », « 10 → 14 nov. », « à partir du 3 décembre ». */
 export function period(from: string | null, to: string | null, now: Date) {
@@ -48,6 +56,9 @@ export function period(from: string | null, to: string | null, now: Date) {
   const t = to ? new Date(to) : null;
   if (t && (!f || f <= now)) return `jusqu’au ${date.format(t)}`;
   if (f && t) {
+    const [fy, ty] = [annee.format(f), annee.format(t)];
+    // Sur deux années, l'année est écrite : « 3 déc. 2026 → 5 déc. 2027 », pas « 3 → 5 déc. ».
+    if (fy !== ty) return `${dateCourte.format(f)} ${fy} → ${dateCourte.format(t)} ${ty}`;
     const sameMonth = dateCourte.format(f).split(' ').slice(1).join(' ') === dateCourte.format(t).split(' ').slice(1).join(' ');
     return `${sameMonth ? dateCourte.format(f).split(' ')[0] : dateCourte.format(f)} → ${dateCourte.format(t)}`;
   }
@@ -61,8 +72,7 @@ export function within(to: Date, now: Date) {
   return a === 'à l’instant' ? 'imminente' : a;
 }
 
-/** « mis à jour il y a 2 min » */
-/** `failed` : la requête a échoué avant toute donnée (le chargement est relancé tout seul). */
+/** « mis à jour il y a 2 min » ; `failed` : la requête a échoué avant toute donnée (elle est relancée toute seule). */
 export const updated = (at: Date | null, now: Date, failed = false) =>
   at !== null ? `mis à jour ${since(at, now)}` : failed ? 'données indisponibles' : 'chargement…';
 

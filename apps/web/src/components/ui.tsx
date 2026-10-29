@@ -1,32 +1,32 @@
 import type { Polled } from '../lib/use-poll';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
+
+import { navigated } from '../lib/router';
 
 import s from './ui.module.css';
 
 export { s as ui };
 
-export type Period = 'jour' | 'semaine' | 'mois';
-
-/** Titre de page, sous-titre, période et export (en-tête des maquettes Web 1 à 6). */
-export function PageHeader(props: { title: string; subtitle: string; onExport?: () => void; history?: boolean; noPeriod?: boolean }) {
+/**
+ * Titre de page, sous-titre et export. À l'arrivée sur la page, le titre de l'onglet change et le
+ * focus va au titre : un lecteur d'écran annonce la nouvelle page au lieu de rester sur le lien.
+ */
+export function PageHeader(props: { title: string; subtitle: string; onExport?: () => void }) {
+  const h1 = useRef<HTMLHeadingElement>(null);
+  const { title } = props;
+  useEffect(() => {
+    document.title = `${title} · Zelo Ville`;
+    // Pas au premier chargement : le focus resterait sinon sur le titre au lieu du début de page.
+    if (navigated()) h1.current?.focus({ preventScroll: true });
+  }, [title]);
   return (
     <header className={s.header}>
       <div className={s.titles}>
-        <h1 className={s.title}>{props.title}</h1>
+        <h1 ref={h1} tabIndex={-1} className={s.title}>
+          {props.title}
+        </h1>
         <p className={s.subtitle}>{props.subtitle}</p>
       </div>
-      {/* Semaine et mois demandent un historique : l'API ne garde que l'état en cours. */}
-      {!props.noPeriod && <div className={s.segmented} role="group" aria-label="Période">
-        <button type="button" className={s.segment} aria-pressed="true">
-          Jour
-        </button>
-        <button type="button" className={s.segment} aria-pressed="false" disabled={!props.history} title="Historique à venir">
-          Semaine
-        </button>
-        <button type="button" className={s.segment} aria-pressed="false" disabled={!props.history} title="Historique à venir">
-          Mois
-        </button>
-      </div>}
       {props.onExport && (
         <button type="button" className={s.button} onClick={props.onExport}>
           Exporter
@@ -50,11 +50,12 @@ export function Tile(props: {
   const failed = props.source?.error === true && props.source.data === null;
   const tone = failed ? 'bad' : props.tone;
   return (
-    <section className={s.tile} aria-label={props.label}>
+    // Un simple bloc, pas un repère : quatre <section> nommées par page encombraient la navigation par repères.
+    <div className={s.tile}>
       <p className={s.tileLabel}>{props.label}</p>
       <p className={s.tileValue}>{failed ? '—' : props.value}</p>
       <p className={`${s.tileNote} ${tone ? s[tone] : ''}`}>{failed ? 'Indisponible, nouvel essai automatique' : props.note}</p>
-    </section>
+    </div>
   );
 }
 

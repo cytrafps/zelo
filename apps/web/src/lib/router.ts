@@ -11,14 +11,23 @@ const current = (): Route => {
 };
 
 const subscribe = (notify: () => void) => {
-  addEventListener('popstate', notify);
-  return () => removeEventListener('popstate', notify);
+  const on = () => {
+    moved = true; // précédent et suivant du navigateur aussi
+    notify();
+  };
+  addEventListener('popstate', on);
+  return () => removeEventListener('popstate', on);
 };
 
 export const useRoute = () => useSyncExternalStore(subscribe, current);
 
+let moved = false;
+/** Vrai après une navigation dans l'app (pas au premier chargement de la page). */
+export const navigated = () => moved;
+
 export function navigate(to: Route) {
   if (to === current()) return;
+  moved = true;
   history.pushState(null, '', to);
   dispatchEvent(new PopStateEvent('popstate'));
   scrollTo(0, 0);

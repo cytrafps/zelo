@@ -1,19 +1,31 @@
 import { distance } from './geo';
 import type { ChargeStation, FuelDay, FuelStation, Parking, Report, ReportKind } from './api';
 
-/** Points de charge libres parmi ceux dont l'état est publié depuis moins de 24 h. */
-export function chargeSummary(stations: ChargeStation[]) {
+/**
+ * Points de charge libres parmi ceux dont l'état est publié depuis moins de 24 h. Une station
+ * signalée en panne par un conducteur (`down`) ne compte aucun point libre, quoi qu'en dise
+ * l'opérateur : la page la montre « en panne », le chiffre doit dire pareil.
+ */
+export function chargeSummary(stations: ChargeStation[], down: ReadonlySet<string> = new Set()) {
   let free = 0;
   let known = 0;
   let unknown = 0;
   for (const s of stations) {
     if (s.available === null) unknown += s.total;
     else {
-      free += Math.min(s.available, s.total);
+      if (!down.has(s.id)) free += Math.min(s.available, s.total);
       known += s.total;
     }
   }
   return { free, known, unknown, ratio: known > 0 ? free / known : null };
+}
+
+/** « 40 % disponibles · 120 points sans état publié » : la part des points dont on ne sait rien. */
+export function chargeNote(sum: ReturnType<typeof chargeSummary>, percent: (x: number) => string, count: (n: number) => string) {
+  const parts = [];
+  if (sum.ratio !== null) parts.push(`${percent(sum.ratio)} disponibles`);
+  if (sum.unknown > 0) parts.push(`${count(sum.unknown)} point${sum.unknown > 1 ? 's' : ''} sans état publié`);
+  return parts.join(' · ') || 'Aucun état publié par les opérateurs';
 }
 
 export const REPORT_LABEL: Record<ReportKind, string> = {
@@ -45,7 +57,8 @@ export function cheapest(stations: FuelStation[], fuel: string, now: Date) {
   let best: { station: FuelStation; price: number } | null = null;
   for (const s of stations) {
     const price = s.prices[fuel];
-    if (price === undefined || Date.parse(s.updatedAt) < week) continue;
+    // Date illisible : prix écarté, comme dans freshFuel (NaN < week est faux et le gardait).
+    if (price === undefined || !(Date.parse(s.updatedAt) >= week)) continue;
     if (!best || price < best.price) best = { station: s, price };
   }
   return best;

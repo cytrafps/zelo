@@ -21,6 +21,10 @@
   gap: 4px;
 }
 
+.title:focus {
+  outline: none; /* focus donné par la navigation, pour les lecteurs d'écran */
+}
+
 .title {
   font-size: 28px;
   font-weight: 700;
@@ -29,36 +33,6 @@
 .subtitle {
   font-size: 14px;
   color: var(--texte-2);
-}
-
-.segmented {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: rgba(28, 27, 25, 0.06);
-}
-
-.segment {
-  border: 0;
-  background: transparent;
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--texte-2);
-  cursor: pointer;
-}
-
-.segment[aria-pressed='true'] {
-  background: var(--surface);
-  color: var(--encre);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.segment:disabled {
-  cursor: not-allowed;
 }
 
 .button {
@@ -119,7 +93,7 @@
 }
 
 .warn {
-  color: #b37800;
+  color: #926200;
 }
 
 .bad {
