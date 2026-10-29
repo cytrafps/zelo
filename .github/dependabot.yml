@@ -18,3 +18,17 @@ updates:
     groups:
       actions: { patterns: ["*"] }
     commit-message: { prefix: "ci" }
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule: { interval: monthly }
+    groups:
+      web: { patterns: ["*"] }
+    commit-message: { prefix: "chore(web)" }
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule: { interval: monthly }
+    commit-message: { prefix: "chore(web)" }
+  - package-ecosystem: docker
+    directory: /services/valhalla
+    schedule: { interval: monthly }
+    commit-message: { prefix: "chore(valhalla)" }
